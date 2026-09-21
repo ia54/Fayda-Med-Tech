@@ -1,0 +1,65 @@
+import { Settings } from "lucide-react";
+import Link from "next/link";
+
+const globalMenus = [
+  {
+    label: "CTA",
+    icon: Settings,
+    href: "/dashboard/admin/application/global-settings/cta",
+  },
+  {
+    label: "FAQ",
+    icon: Settings,
+    href: "/dashboard/admin/application/global-settings/faq",
+  },
+  {
+    label: "Newsletter CTA",
+    icon: Settings,
+    href: "/dashboard/admin/application/global-settings/newsletter-cta",
+  },
+  {
+    label: "Testimonials",
+    icon: Settings,
+    href: "/dashboard/admin/application/global-settings/testimonials",
+  },
+  {
+    label: "Footer",
+    icon: Settings,
+    href: "/dashboard/admin/application/global-settings/footer",
+  },
+];
+
+export default function globalSettingsLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <h2 className="mb-5 font-semibold text-2xl">Global Settings</h2>
+      {/* Section Name */}
+      <div className="grid grid-cols-12 gap-6 ">
+        <aside className="col-span-12 xl:col-span-3 rounded-lg shadow-md bg-card p-4 space-y-2">
+          {globalMenus.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex items-start justify-start gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent/20"
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </aside>
+
+        {/* Section Details */}
+        <main className="col-span-12 xl:col-span-9 shadow-md rounded-lg  bg-card p-6">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}

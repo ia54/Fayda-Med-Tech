@@ -1,0 +1,548 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Updated color scheme from green to teal to match new FaydaTech logo */
+  --background: oklch(0.98 0.02 200); /* Light teal background */
+  --foreground: oklch(0.25 0.01 210); /* Dark gray text */
+  --card: oklch(1 0 0 / 0.8); /* Transparent white for floating cards */
+  --card-foreground: oklch(0.25 0.01 210); /* Dark gray for card text */
+  --popover: oklch(1 0 0); /* Solid white for popovers */
+  --popover-foreground: oklch(0.25 0.01 210); /* Dark gray for popover text */
+  --primary: oklch(0.45 0.15 200); /* Teal primary color matching logo */
+  --primary-foreground: oklch(1 0 0); /* White text on primary */
+  --secondary: oklch(0.65 0.12 200); /* Light teal secondary */
+  --secondary-foreground: oklch(1 0 0); /* White text on secondary */
+  --muted: oklch(0.96 0.02 200); /* Light teal for muted elements */
+  --muted-foreground: oklch(0.25 0.01 210); /* Dark gray for muted text */
+  --accent: oklch(0.55 0.15 200); /* Teal accent color */
+  --accent-foreground: oklch(1 0 0); /* White text on accent */
+  --destructive: oklch(0.55 0.22 25); /* Red for errors */
+  --destructive-foreground: oklch(1 0 0); /* White text on destructive */
+  --border: oklch(0.85 0.01 210); /* Light gray borders */
+  --input: oklch(1 0 0); /* White input fields */
+  --ring: oklch(0.55 0.15 200 / 0.5); /* Teal focus rings */
+  --chart-1: oklch(0.45 0.15 200); /* Teal for charts */
+  --chart-2: oklch(0.65 0.12 200); /* Light teal for charts */
+  --chart-3: oklch(0.65 0.18 65); /* Amber for charts */
+  --chart-4: oklch(0.55 0.22 25); /* Red for charts */
+  --chart-5: oklch(0.75 0.15 85); /* Yellow for charts */
+  --radius: 0.5rem; /* Rounded corners */
+  --sidebar: oklch(0.96 0.02 200); /* Light teal sidebar */
+  --sidebar-foreground: oklch(0.25 0.01 210); /* Dark gray sidebar text */
+  --sidebar-primary: oklch(0.45 0.15 200); /* Teal sidebar primary */
+  --sidebar-primary-foreground: oklch(1 0 0); /* White sidebar primary text */
+  --sidebar-accent: oklch(0.55 0.15 200); /* Teal sidebar accent */
+  --sidebar-accent-foreground: oklch(1 0 0); /* White sidebar accent text */
+  --sidebar-border: oklch(0.85 0.01 210); /* Light gray sidebar borders */
+  --sidebar-ring: oklch(0.55 0.15 200 / 0.5); /* Teal sidebar focus */
+}
+
+.dark {
+  /* Updated dark mode colors to teal theme */
+  --background: oklch(0.08 0.02 200); /* Dark teal background */
+  --foreground: oklch(0.98 0.01 200); /* Light teal text */
+  --card: oklch(0.12 0.02 200 / 0.8); /* Dark transparent cards */
+  --card-foreground: oklch(0.98 0.01 200); /* Light text on cards */
+  --popover: oklch(0.12 0.02 200); /* Solid dark popover background */
+  --popover-foreground: oklch(0.98 0.01 200); /* Light popover text */
+  --primary: oklch(0.65 0.15 200); /* Lighter teal for dark mode primary */
+  --primary-foreground: oklch(0.08 0.02 200); /* Dark text on primary */
+  --secondary: oklch(0.25 0.08 200); /* Darker teal secondary */
+  --secondary-foreground: oklch(0.98 0.01 200); /* Light text on secondary */
+  --muted: oklch(0.15 0.02 200); /* Dark muted background */
+  --muted-foreground: oklch(0.75 0.01 200); /* Light muted text */
+  --accent: oklch(0.55 0.15 200); /* Teal accent */
+  --accent-foreground: oklch(0.08 0.02 200); /* Dark text on accent */
+  --destructive: oklch(0.45 0.18 25); /* Darker red for dark mode */
+  --destructive-foreground: oklch(0.95 0.05 25); /* Light red text */
+  --border: oklch(0.25 0.02 200); /* Dark border */
+  --input: oklch(0.15 0.02 200); /* Dark input background */
+  --ring: oklch(0.65 0.15 200 / 0.5); /* Teal focus ring */
+  --chart-1: oklch(0.35 0.12 264); /* Adjusted chart colors for dark mode */
+  --chart-2: oklch(0.65 0.15 162);
+  --chart-3: oklch(0.75 0.18 70);
+  --chart-4: oklch(0.55 0.22 304);
+  --chart-5: oklch(0.65 0.2 16);
+  --sidebar: oklch(0.12 0.02 200); /* Dark teal sidebar */
+  --sidebar-foreground: oklch(0.98 0.01 200); /* Light sidebar text */
+  --sidebar-primary: oklch(0.35 0.12 264); /* Sidebar primary */
+  --sidebar-primary-foreground: oklch(0.98 0.01 200); /* Light sidebar primary text */
+  --sidebar-accent: oklch(0.25 0.02 200); /* Dark sidebar accent */
+  --sidebar-accent-foreground: oklch(0.98 0.01 200); /* Light sidebar accent text */
+  --sidebar-border: oklch(0.25 0.02 200); /* Dark sidebar border */
+  --sidebar-ring: oklch(0.45 0.08 200 / 0.5); /* Sidebar focus ring */
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* UserProfile component styles */
+.user-profile-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 200px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s;
+  height: auto;
+}
+
+.user-profile-trigger:hover {
+  background-color: hsl(var(--accent) / 0.1);
+}
+
+.user-profile-trigger--active {
+  background-color: hsl(var(--accent) / 0.2);
+}
+
+.user-profile-avatar-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.user-profile-avatar {
+  width: 30px;
+  height: 30px;
+}
+
+.user-profile-status-indicator {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+.user-profile-notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 3px;
+  font-size: 0.6rem;
+}
+
+.user-profile-info {
+  min-width: 0;
+  text-align: left;
+}
+
+.user-profile-name {
+  font-weight: 500;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.user-profile-role {
+  font-size: 0.7rem;
+  line-height: 1rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.user-profile-chevron {
+  transition: transform 0.2s;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.user-profile-chevron--rotated {
+  transform: rotate(180deg);
+}
+
+.user-profile-popover {
+  width: 280px;
+  max-width: 90vw;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background-color: hsl(var(--popover));
+  background-color: white; /* Fallback for light mode */
+  color: hsl(var(--popover-foreground));
+  z-index: 50;
+}
+
+.dark .user-profile-popover {
+  background-color: #1f2937; /* Fallback for dark mode */
+}
+
+.user-profile-header {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.user-profile-header-avatar {
+  position: relative;
+}
+
+.user-profile-header-avatar-image {
+  width: 40px;
+  height: 40px;
+}
+
+.user-profile-header-status {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+.user-profile-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-profile-header-name {
+  font-weight: 600;
+  margin: 0 0 0.125rem;
+  font-size: 0.9375rem;
+}
+
+.user-profile-header-email {
+  font-size: 0.8125rem;
+  color: hsl(var(--muted-foreground));
+  margin: 0 0 0.25rem;
+}
+
+.user-profile-header-role {
+  font-size: 0.7rem;
+}
+
+.user-profile-separator {
+  margin: 0;
+}
+
+.user-profile-actions {
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.user-profile-action {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background-color 0.2s;
+  font-size: 0.8125rem;
+}
+
+.user-profile-action:hover {
+  background-color: hsl(var(--accent) / 0.1);
+  color: hsl(var(--accent-foreground));
+}
+
+.user-profile-action-icon {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.75rem;
+}
+
+.user-profile-action-badge {
+  height: 1.125rem;
+  min-width: 1.125rem;
+  padding: 0 0.25rem;
+  font-size: 0.625rem;
+}
+
+.user-profile-secondary-actions {
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.user-profile-secondary-action {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background-color 0.2s;
+  font-size: 0.8125rem;
+}
+
+.user-profile-secondary-action:hover {
+  background-color: hsl(var(--accent) / 0.1);
+  color: hsl(var(--accent-foreground));
+}
+
+.user-profile-secondary-action-icon {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.75rem;
+}
+
+.user-profile-logout {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.5rem;
+  border-radius: 0;
+  border-bottom-left-radius: calc(var(--radius) - 2px);
+  border-bottom-right-radius: calc(var(--radius) - 2px);
+  border-top: 1px solid hsl(var(--border));
+  background-color: transparent;
+  color: hsl(var(--destructive));
+  font-size: 0.8125rem;
+}
+
+.user-profile-logout:hover {
+  background-color: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+}
+
+.user-profile-logout-icon {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.75rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* DataTable Dropdown Visibility Fix */
+[data-radix-popper-content-wrapper] {
+  z-index: 9999 !important;
+}
+
+[data-slot="dropdown-menu-content"],
+[data-slot="select-content"] {
+  z-index: 9999 !important;
+}
+
+/* Dialog/Modal Fix - prevent overflow constraints from affecting modals */
+[data-slot="dialog-portal"],
+[data-slot="dialog-overlay"],
+[data-slot="dialog-content"] {
+  max-width: none !important;
+}
+
+[data-slot="dialog-content"] {
+  width: auto !important;
+  max-width: calc(100vw - 2rem) !important;
+}
+
+/* Ensure table containers don't clip dropdowns but prevent page overflow */
+.data-table-container {
+  overflow: visible !important;
+  width: 100%;
+  max-width: 100%;
+}
+
+.data-table-container .rounded-md {
+  overflow: visible !important;
+}
+
+/* Ensure card components don't overflow */
+.data-table-container > * {
+  max-width: 100%;
+}
+
+/* Fix for backdrop blur interference */
+.bg-card\/80.backdrop-blur-sm {
+  isolation: isolate;
+}
+
+/* Prevent page-wide horizontal scroll */
+body,
+html {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Ensure main containers don't overflow */
+body > * {
+  max-width: 100vw;
+}
+
+/* Responsive Table Styles */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.4) hsl(var(--muted) / 0.3);
+  overflow-x: auto;
+  overflow-y: visible;
+  width: 100%;
+  max-width: 100%;
+  position: relative;
+  contain: layout style paint;
+}
+
+.overflow-x-auto::-webkit-scrollbar {
+  height: 12px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.2);
+  border-radius: 6px;
+  margin: 0 4px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 6px;
+  border: 3px solid hsl(var(--muted) / 0.2);
+  transition: background-color 0.2s ease;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.5);
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:active {
+  background-color: hsl(var(--muted-foreground) / 0.7);
+}
+
+/* Table responsive behavior */
+.overflow-x-auto table {
+  width: 100%;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* Dynamic minimum width based on viewport */
+.overflow-x-auto table {
+  min-width: max(100%, 800px);
+}
+
+/* Base cell styling */
+.overflow-x-auto table th,
+.overflow-x-auto table td {
+  white-space: nowrap;
+  padding: 0.75rem 1rem;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Column width distribution - using percentages for flexibility */
+.overflow-x-auto table th,
+.overflow-x-auto table td {
+  width: auto;
+}
+
+/* Checkbox column - only when it has specific class */
+.overflow-x-auto table th.w-\[50px\],
+.overflow-x-auto table td.w-\[50px\] {
+  width: 60px !important;
+  min-width: 60px !important;
+  max-width: 60px !important;
+}
+
+/* Last column (actions) - fixed small width */
+.overflow-x-auto table th:last-child,
+.overflow-x-auto table td:last-child {
+  width: 100px;
+  min-width: 100px;
+  max-width: 100px;
+  text-align: center;
+}
+
+/* Allow flex content in cells to adapt */
+.overflow-x-auto table td .flex,
+.overflow-x-auto table td .space-y-1 {
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+/* Truncate long text in cells */
+.overflow-x-auto table td .truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Header stays sticky during vertical scroll */
+.overflow-x-auto table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: hsl(var(--muted) / 0.95);
+  backdrop-filter: blur(8px);
+}
+
+.overflow-x-auto table thead th {
+  border-bottom: 2px solid hsl(var(--border));
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .overflow-x-auto table th,
+  .overflow-x-auto table td {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-thumb {
+    border: 2px solid hsl(var(--muted) / 0.2);
+  }
+}
