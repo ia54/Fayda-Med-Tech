@@ -303,33 +303,33 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::delete('/api-credentials/{id}', [\App\Http\Controllers\API\ApiCredentialController::class, 'destroy']);
 
         // Role & Permission Management
-        Route::get('/admin/roles', [RoleController::class, 'index']);
-        Route::post('/admin/roles', [RoleController::class, 'store']);
-        Route::get('/admin/roles/{id}', [RoleController::class, 'show']);
-        Route::put('/admin/roles/{id}', [RoleController::class, 'update']);
-        Route::delete('/admin/roles/{id}', [RoleController::class, 'destroy']);
+        Route::get('/admin/roles', [RoleController::class, 'index'])->middleware('role:admin');
+        Route::post('/admin/roles', [RoleController::class, 'store'])->middleware('role:admin');
+        Route::get('/admin/roles/{id}', [RoleController::class, 'show'])->middleware('role:admin');
+        Route::put('/admin/roles/{id}', [RoleController::class, 'update'])->middleware('role:admin');
+        Route::delete('/admin/roles/{id}', [RoleController::class, 'destroy'])->middleware('role:admin');
 
-        Route::get('/admin/permissions', [PermissionController::class, 'index']);
-        Route::post('/admin/permissions', [PermissionController::class, 'store']);
-        Route::get('/admin/permissions/{id}', [PermissionController::class, 'show']);
-        Route::put('/admin/permissions/{id}', [PermissionController::class, 'update']);
-        Route::delete('/admin/permissions/{id}', [PermissionController::class, 'destroy']);
+        Route::get('/admin/permissions', [PermissionController::class, 'index'])->middleware('role:admin');
+        Route::post('/admin/permissions', [PermissionController::class, 'store'])->middleware('role:admin');
+        Route::get('/admin/permissions/{id}', [PermissionController::class, 'show'])->middleware('role:admin');
+        Route::put('/admin/permissions/{id}', [PermissionController::class, 'update'])->middleware('role:admin');
+        Route::delete('/admin/permissions/{id}', [PermissionController::class, 'destroy'])->middleware('role:admin');
 
         // Audit Logs
         Route::get('/admin/audit-logs', [\App\Http\Controllers\Api\AuditLogController::class, 'index']);
         Route::get('/admin/audit-logs/{id}', [\App\Http\Controllers\Api\AuditLogController::class, 'show']);
 
         // Security Management
-        Route::get('/admin/security/settings', [SecurityController::class, 'getSettings']);
-        Route::put('/admin/security/settings', [SecurityController::class, 'updateSettings']);
-        Route::get('/admin/security/stats', [SecurityController::class, 'getSecurityStats']);
-        Route::get('/admin/security/events', [SecurityController::class, 'getSecurityEvents']);
+        Route::get('/admin/security/settings', [SecurityController::class, 'getSettings'])->middleware('role:admin');
+        Route::put('/admin/security/settings', [SecurityController::class, 'updateSettings'])->middleware('role:admin');
+        Route::get('/admin/security/stats', [SecurityController::class, 'getSecurityStats'])->middleware('role:admin');
+        Route::get('/admin/security/events', [SecurityController::class, 'getSecurityEvents'])->middleware('role:admin');
 
         // IP Allowlist
-        Route::get('/admin/security/ip-allowlist', [IpAllowlistController::class, 'index']);
-        Route::post('/admin/security/ip-allowlist', [IpAllowlistController::class, 'store']);
-        Route::put('/admin/security/ip-allowlist/{id}', [IpAllowlistController::class, 'update']);
-        Route::delete('/admin/security/ip-allowlist/{id}', [IpAllowlistController::class, 'destroy']);
+        Route::get('/admin/security/ip-allowlist', [IpAllowlistController::class, 'index'])->middleware('role:admin');
+        Route::post('/admin/security/ip-allowlist', [IpAllowlistController::class, 'store'])->middleware('role:admin');
+        Route::put('/admin/security/ip-allowlist/{id}', [IpAllowlistController::class, 'update'])->middleware('role:admin');
+        Route::delete('/admin/security/ip-allowlist/{id}', [IpAllowlistController::class, 'destroy'])->middleware('role:admin');
 
         Route::get('/admin/users', [UserController::class, 'index']);
         Route::post('/admin/users', [UserController::class, 'store']);
@@ -337,9 +337,9 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::put('/admin/users/{id}', [UserController::class, 'update']);
         Route::delete('/admin/users/{id}', [UserController::class, 'destroy']);
         
-        Route::post('setting-update', [AppSettingController::class, 'settingUpdate']);
-        Route::get('get-env-values', [AppSettingController::class, 'getEnvValues']);
-        Route::post('setting-env-update', [AppSettingController::class, 'settingEnvUpdate']);
+        Route::post('setting-update', [AppSettingController::class, 'settingUpdate'])->middleware('role:admin');
+        Route::get('get-env-values', [AppSettingController::class, 'getEnvValues'])->middleware('role:admin');
+        Route::post('setting-env-update', [AppSettingController::class, 'settingEnvUpdate'])->middleware('role:admin');
         // GDPR Tools (PDF Section 16 - Security & Compliance)
         Route::get('/gdpr/export/{userId}', [GdprController::class, 'exportUserData'])->middleware('role:admin,firm_admin');
         Route::delete('/gdpr/delete/{userId}', [GdprController::class, 'deleteUserData'])->middleware('role:admin,firm_admin');
@@ -433,7 +433,4 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
             Route::get('/reports/{id}', [\App\Http\Controllers\API\ReportsController::class, 'showReport']);
         });
 
-        // Public / Global shared routes
-        Route::get('/faqs', [FaqController::class, 'index']);
-        Route::get('/testimonials', [TestimonialController::class, 'index']);
     });

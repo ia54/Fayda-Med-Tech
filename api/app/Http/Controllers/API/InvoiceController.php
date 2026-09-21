@@ -128,7 +128,7 @@ class InvoiceController extends Controller
             ], 422);
         }
 
-        $invoice->update($request->all());
+        $invoice->update($validator->validated());
 
         return response()->json([
             'status' => true,

@@ -20,9 +20,6 @@ import { Separator } from "@/components/ui/separator";
 import {
   Eye,
   EyeOff,
-  Users,
-  Copy,
-  Check,
   Info,
   AlertCircle,
 } from "lucide-react";
@@ -36,73 +33,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [login, { isLoading }] = useLoginMutation();
   const dispatch = useDispatch();
   const router = useRouter();
   const { openConfirmModal } = useModal();
 
-  const demoAccounts = [
-    {
-      role: "Super Admin",
-      email: "admin@faydatech.com",
-      password: "password123",
-      color: "bg-red-500/10 text-red-700",
-    },
-    {
-      role: "Firm Admin",
-      email: "firmadmin@smithlegal.com",
-      password: "password123",
-      color: "bg-blue-500/10 text-blue-700",
-    },
-    {
-      role: "Attorney",
-      email: "attorney@smithlegal.com",
-      password: "password123",
-      color: "bg-orange-500/10 text-orange-700",
-    },
-    {
-      role: "Medical Biller",
-      email: "biller@wellnessmedical.com",
-      password: "password123",
-      color: "bg-purple-500/10 text-purple-700",
-    },
-    {
-      role: "Provider Staff",
-      email: "staff@wellnessmedical.com",
-      password: "password123",
-      color: "bg-green-500/10 text-green-700",
-    },
-    {
-      role: "Client (Patient)",
-      email: "client@example.com",
-      password: "password123",
-      color: "bg-cyan-500/10 text-cyan-700",
-    },
-  ];
-
-  const copyToClipboard = async (text: string, field: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedField(field);
-      setTimeout(() => setCopiedField(null), 2000);
-    } catch (err) {
-      console.error("Failed to copy: ", err);
-    }
-  };
-
-  const copyCredentials = (email: string, password: string) => {
-    setEmail(email);
-    setPassword(password);
-    setCopiedField("credentials");
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
   const showInfo = () => {
     openConfirmModal(
       "Login Information",
-      "Use one of the demo accounts to log in. Each account has a specific role with different permissions in the system.",
+      "Use the account assigned by your organization administrator. Contact them if you need access.",
       () => {
         console.log("Info modal closed");
       }
@@ -179,7 +119,7 @@ export default function LoginPage() {
                 Sign in to your FaydaTech account
               </CardDescription>
             </div>
-            <Button variant="ghost" size="sm" onClick={showInfo}>
+            <Button variant="ghost" size="sm" aria-label="Login help" onClick={showInfo}>
               <Info className="h-4 w-4" />
             </Button>
           </div>
@@ -223,6 +163,7 @@ export default function LoginPage() {
                   variant="ghost"
                   size="sm"
                   className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? (
@@ -254,88 +195,9 @@ export default function LoginPage() {
 
           <Separator />
 
-          <div className="text-center text-sm text-muted-foreground">
-            Don't have an account?{" "}
-            <Link
-              href="/auth/signup"
-              className="text-primary hover:underline font-medium"
-            >
-              Sign up
-            </Link>
-          </div>
-
-          <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-            <h4 className="font-medium text-sm flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Demo Accounts - Click to Use
-            </h4>
-            <div className="space-y-2">
-              {demoAccounts.map((account, index) => (
-                <div
-                  key={index}
-                  className={`rounded-md p-3 border transition-all hover:shadow-md ${account.color}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-xs">{account.role}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={() =>
-                        copyCredentials(account.email, account.password)
-                      }
-                    >
-                      {copiedField === "credentials" ? (
-                        <Check className="h-3 w-3 text-green-600" />
-                      ) : (
-                        <Copy className="h-3 w-3" />
-                      )}
-                      Use
-                    </Button>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono">{account.email}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-4 px-1"
-                        onClick={() =>
-                          copyToClipboard(account.email, `email-${index}`)
-                        }
-                      >
-                        {copiedField === `email-${index}` ? (
-                          <Check className="h-2 w-2 text-green-600" />
-                        ) : (
-                          <Copy className="h-2 w-2" />
-                        )}
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono">{account.password}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-4 px-1"
-                        onClick={() =>
-                          copyToClipboard(account.password, `password-${index}`)
-                        }
-                      >
-                        {copiedField === `password-${index}` ? (
-                          <Check className="h-2 w-2 text-green-600" />
-                        ) : (
-                          <Copy className="h-2 w-2" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground text-center">
-              Click "Use" to auto-fill credentials or copy individual fields
-            </p>
-          </div>
+          <p className="text-center text-sm text-muted-foreground">
+            Need an account? Contact your organization administrator for access.
+          </p>
         </CardContent>
       </Card>
     </div>

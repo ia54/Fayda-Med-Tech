@@ -11,6 +11,9 @@ class ApiCredential extends Model
 {
     use HasFactory, BelongsToTenant;
 
+    // Encrypted at rest does not make fields safe to serialize.
+    protected $hidden = ['key', 'value'];
+
     protected $fillable = [
         'organization_id',
         'provider',

@@ -65,8 +65,8 @@ export function IntegrationFormModal({
       setFormData({
         provider: editingCredential.provider,
         name: editingCredential.name,
-        key: editingCredential.key,
-        value: editingCredential.value || "",
+        key: "",
+        value: "",
         is_active: editingCredential.is_active,
       });
     } else {
@@ -83,7 +83,7 @@ export function IntegrationFormModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.provider || !formData.name || !formData.key) {
+    if (!formData.provider || !formData.name || (!editingCredential && !formData.key)) {
       toast({
         title: "Required fields missing",
         description: "Please fill in all required fields.",
@@ -96,7 +96,7 @@ export function IntegrationFormModal({
       if (editingCredential) {
         await updateCredential({
           id: editingCredential.id,
-          data: formData,
+          data: { provider: formData.provider, name: formData.name, is_active: formData.is_active, ...(formData.key ? { key: formData.key } : {}), ...(formData.value ? { value: formData.value } : {}) },
         }).unwrap();
         toast({
           title: "Integration updated",
@@ -106,7 +106,7 @@ export function IntegrationFormModal({
         await createCredential(formData).unwrap();
         toast({
           title: "Integration added",
-          description: "New service connected successfully.",
+          description: "Configuration saved. Service connectivity has not been verified.",
         });
       }
       onClose();
@@ -127,8 +127,8 @@ export function IntegrationFormModal({
             {editingCredential ? "Edit Integration" : "Add New Integration"}
           </DialogTitle>
           <DialogDescription>
-            {editingCredential 
-              ? "Update your existing integration credentials." 
+            {editingCredential
+              ? "Stored secrets are never displayed. Leave secret fields blank to keep their current values."
               : "Connect a new third-party service to your platform."}
           </DialogDescription>
         </DialogHeader>
@@ -217,8 +217,8 @@ export function IntegrationFormModal({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               disabled={isCreating || isUpdating}
               className="bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20"
             >

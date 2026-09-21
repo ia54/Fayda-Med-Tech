@@ -14,95 +14,13 @@ use Illuminate\Support\Facades\Validator;
 
 class AuthController extends Controller
 {
-    /**
-     * @OA\Post(
-     *     path="/api/register",
-     *     summary="Register a new user",
-     *     description="Register a new user in the system with first name, last name, email, password, role and organization",
-     *     operationId="register",
-     *     tags={"Authentication"},
-     *     @OA\RequestBody(
-     *         required=true,
-     *         description="User registration data",
-     *         @OA\JsonContent(
-     *             required={"first_name","last_name","email","password","password_confirmation","role","organization"},
-     *             @OA\Property(property="first_name", type="string", maxLength=255, example="John"),
-     *             @OA\Property(property="last_name", type="string", maxLength=255, example="Doe"),
-     *             @OA\Property(property="email", type="string", format="email", maxLength=255, example="john@example.com"),
-     *             @OA\Property(property="password", type="string", minLength=8, example="password123"),
-     *             @OA\Property(property="password_confirmation", type="string", minLength=8, example="password123"),
-     *             @OA\Property(property="role", type="string", enum={"provider_staff","billing_team","law_firm_staff","supervisor","admin"}, example="provider_staff"),
-     *             @OA\Property(property="organization", type="string", maxLength=255, example="Faydamed Healthcare")
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=201,
-     *         description="User registered successfully",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="status", type="boolean", example=true),
-     *             @OA\Property(property="message", type="string", example="User registered successfully"),
-     *             @OA\Property(property="user", ref="#/components/schemas/User"),
-     *             @OA\Property(property="access_token", type="string", example="eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9..."),
-     *             @OA\Property(property="refresh_token", type="string", example="def502004a2f4..."),
-     *             @OA\Property(property="token_type", type="string", example="Bearer"),
-     *             @OA\Property(property="expires_in", type="integer", example=3600)
-     *         )
-     *     ),
-     *     @OA\Response(
-     *         response=422,
-     *         description="Validation error",
-     *         @OA\JsonContent(
-     *             @OA\Property(property="status", type="boolean", example=false),
-     *             @OA\Property(property="message", type="string", example="Validation error"),
-     *             @OA\Property(property="errors", type="object",
-     *                 @OA\Property(property="email", type="array", @OA\Items(type="string", example="The email field is required."))
-     *             )
-     *         )
-     *     )
-     * )
-     */
+    /** Public accounts stay closed until verified organization invitations exist. */
     public function register(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|string|email|unique:users|max:255',
-            'password' => 'required|string|min:8|confirmed',
-            'role' => 'required|string|in:admin,firm_admin,attorney,medical_biller,provider_staff,client',
-            'organization' => 'required|string|max:255',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $user = User::create([
-            'first_name' => $request->first_name,
-            'last_name' => $request->last_name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => $request->role,
-            'organization' => $request->organization,
-        ]);
-
-        $tokens = $this->generateTokens($user);
-
-        // Audit Log
-        AuditLogger::log('user_registered', $user, null, $user->toArray());
-
         return response()->json([
-            'status' => true,
-            'message' => 'User registered successfully',
-            'user' => $user,
-            'access_token' => $tokens['access_token'],
-            'refresh_token' => $tokens['refresh_token'],
-            'token_type' => 'Bearer',
-            'expires_in' => $tokens['expires_in'],
-        ], 201);
+            'status' => false,
+            'message' => 'Account registration is managed by your organization administrator.',
+        ], 403);
     }
 
     /**
