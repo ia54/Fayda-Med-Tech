@@ -34,9 +34,9 @@ class StagingCheckTest extends TestCase
         $this->stagingConfig();
         config(['database.connections.mysql.database' => 'live', 'mail.default' => 'smtp', 'app.url' => 'https://api.faydamed.tech']);
         $this->artisan('staging:check')
+            ->expectsOutput('FAIL: Explicit HTTPS staging API and frontend origins')
             ->expectsOutput('FAIL: Dedicated named MySQL database and non-root account configured')
             ->expectsOutput('FAIL: Mail captured without delivery and initial queues synchronous')
-            ->expectsOutput('FAIL: Explicit HTTPS staging API and frontend origins')
             ->assertFailed();
     }
 
