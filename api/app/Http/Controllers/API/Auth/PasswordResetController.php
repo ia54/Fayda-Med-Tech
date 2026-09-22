@@ -119,6 +119,8 @@ class PasswordResetController extends Controller
                 ])->setRememberToken(Str::random(60));
 
                 $user->save();
+                app(\App\Services\ApiTokenService::class)->revokeAll($user);
+                \Illuminate\Support\Facades\DB::table('auth_challenges')->where('user_id', $user->id)->delete();
 
                 event(new PasswordReset($user));
             }

@@ -35,7 +35,7 @@ class OcrController extends Controller
      */
     public function process(OcrProcessRequest $request, int $documentId): JsonResponse
     {
-        $document = Document::find($documentId);
+        $document = Document::visibleTo(auth()->user())->find($documentId);
 
         if (! $document) {
             return response()->json([
@@ -45,7 +45,7 @@ class OcrController extends Controller
         }
         
         // 1. Check if file exists in storage
-        if (! Storage::disk('public')->exists($document->path)) {
+        if (! Storage::disk($document->disk())->exists($document->path)) {
             return response()->json([
                 'status' => false,
                 'message' => 'Document file not found in storage',
@@ -61,21 +61,6 @@ class OcrController extends Controller
         }
 
         $apiKey = getApiCredential('google_vision', 'API_KEY');
-        
-        // Fallback: If not found under google_vision/API_KEY, try general 'ocr' or just 'google_vision' with any name
-        if (!$apiKey) {
-            $fallback = \App\Models\ApiCredential::withoutGlobalScopes()
-                ->where(function($q) {
-                    $q->where('provider', 'google_vision')
-                      ->orWhere('provider', 'ocr');
-                })
-                ->where('is_active', true)
-                ->first();
-            
-            if ($fallback) {
-                $apiKey = $fallback->key;
-            }
-        }
         
         if (! $apiKey) {
             return response()->json([
@@ -96,7 +81,7 @@ class OcrController extends Controller
         $featureType = $request->feature_type ?: 'DOCUMENT_TEXT_DETECTION';
         $languageHints = $request->language_hints ?: [];
         
-        $absolutePath = storage_path('app/public/' . ltrim($document->path, '/'));
+        $absolutePath = Storage::disk($document->disk())->path($document->path);
         
         if (!file_exists($absolutePath)) {
              $ocrResult->update(['status' => 'failed']);
@@ -169,7 +154,7 @@ class OcrController extends Controller
             $fullAnnotation = trim($fullAnnotation);
             
             if (empty($fullAnnotation)) {
-                throw new Throwable("No text extracted from any pages.");
+                throw new \RuntimeException("No text extracted from any pages.");
             }
 
             $ocrResult->update([
@@ -230,7 +215,7 @@ class OcrController extends Controller
      */
     public function latest(int $documentId): JsonResponse
     {
-        $document = Document::find($documentId);
+        $document = Document::visibleTo(auth()->user())->find($documentId);
 
         if (! $document) {
             return response()->json([

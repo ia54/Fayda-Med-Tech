@@ -4,15 +4,19 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 use App\Traits\BelongsToTenant;
 
 class Document extends Model
 {
-    use HasFactory, BelongsToTenant;
+    use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
         'organization_id',
+        'case_id',
+        'storage_disk',
         'uploaded_by',
         'title',
         'original_name',
@@ -29,6 +33,44 @@ class Document extends Model
         'signed_at',
         'metadata',
     ];
+
+    protected $hidden = ['path'];
+
+    // Never serialize a legacy public storage URL. Download requires API authentication.
+    public function getUrlAttribute(): string
+    {
+        return url('/api/documents/' . $this->id . '/preview');
+    }
+
+    public function scopeVisibleTo(Builder $query, ?User $user): Builder
+    {
+        if (!$user || !in_array($user->role, User::getAvailableRoles(), true)) {
+            return $query->whereRaw('1 = 0');
+        }
+        if ($user->role === 'admin') {
+            return $query;
+        }
+        if (!$user->organization_id) {
+            return $query->whereRaw('1 = 0');
+        }
+        $query->where('documents.organization_id', $user->organization_id);
+        if (in_array($user->role, ['client', 'attorney'], true)) {
+            $cases = CaseModel::where('organization_id', $user->organization_id)
+                ->whereHas('parties', fn ($q) => $q->where('user_id', $user->id))->select('id');
+            $query->where(function ($q) use ($user, $cases) {
+                $q->where('uploaded_by', $user->id)
+                    ->orWhereHas('signers', fn ($signers) => $signers->where('user_id', $user->id))
+                    ->orWhereIn('case_id', $cases)
+                    ->orWhereIn('metadata->case_id', $cases);
+            });
+        }
+        return $query;
+    }
+
+    public function disk(): string
+    {
+        return $this->storage_disk === 'documents' ? 'documents' : 'public';
+    }
 
     protected $casts = [
         'size' => 'integer',

@@ -20,6 +20,12 @@ class AuthServiceProvider extends ServiceProvider
     /**
      * Register any authentication / authorization services.
      */
+    public function register(): void
+    {
+        // Custom MFA-aware endpoints are the only token issuance flow.
+        Passport::ignoreRoutes();
+    }
+
     public function boot(): void
     {
         $this->registerPolicies();
@@ -29,7 +35,7 @@ class AuthServiceProvider extends ServiceProvider
         Passport::refreshTokensExpireIn(now()->addDays(30));
         
         // Enable password grant
-        Passport::enablePasswordGrant();
+        Passport::personalAccessTokensExpireIn(now()->addHour());
         
         // Ensure token validation checks for expired tokens
         Passport::tokensCan([

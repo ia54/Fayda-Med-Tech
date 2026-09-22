@@ -3,7 +3,7 @@
 import type React from "react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useLoginMutation } from "@/store/api/authApiSlice";
+import { AuthResponse, MfaRequiredResponse, useLoginMutation } from "@/store/api/authApiSlice";
 import { setCredentials } from "@/store/slices/authSlice";
 import { useDispatch } from "react-redux";
 import { Button } from "@/components/ui/button";
@@ -29,12 +29,16 @@ import { useModal } from "@/hooks/useModal";
 import { redirectToDashboard } from "@/lib/roleUtils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+import { MfaChallenge } from "@/components/auth/MfaChallenge";
+
 export default function LoginPage() {
+  const [challenge, setChallenge] = useState<MfaRequiredResponse | null>(null);
+  const [enrollMfa, setEnrollMfa] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [login, { isLoading }] = useLoginMutation();
+  const [login, { isLoading, reset }] = useLoginMutation();
   const dispatch = useDispatch();
   const router = useRouter();
   const { openConfirmModal } = useModal();
@@ -49,47 +53,26 @@ export default function LoginPage() {
     );
   };
 
+  const completeLogin = (result: AuthResponse) => {
+    dispatch(setCredentials({ token: {
+      access_token: result.access_token, refresh_token: result.refresh_token,
+      token_type: result.token_type, expires_in: result.expires_in,
+    }, user: result.user }));
+    redirectToDashboard(result.user, router);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null); // Clear any previous errors
-
+    e.preventDefault(); setError(null);
     try {
-      const result = await login({ email, password }).unwrap();
-
-      if (result.status) {
-        dispatch(
-          setCredentials({
-            token: {
-              access_token: result.access_token,
-              refresh_token: result.refresh_token,
-              token_type: result.token_type,
-              expires_in: result.expires_in,
-            },
-            user: result.user,
-          })
-        );
-
-        // Redirect based on user role using the utility function
-        console.log("Login result:", result);
-        console.log("User object:", result.user);
-        console.log("User role:", result.user.role);
-        console.log("Router object:", router);
-
-        redirectToDashboard(result.user, router);
-      } else {
-        // Handle API response with status false
-        setError(result.message || "Invalid login credentials");
-      }
-    } catch (err: any) {
-      console.error("Login failed:", err);
-      // Handle different types of errors
-      if (err.data && err.data.message) {
-        setError(err.data.message);
-      } else if (err.status === 401) {
-        setError("Invalid email or password");
-      } else {
-        setError("An error occurred during login. Please try again.");
-      }
+      const result = await login({ email, password, enroll_mfa: enrollMfa }).unwrap();
+      reset(); setPassword("");
+      if ("mfa_required" in result) setChallenge(result);
+      else if (result.status) completeLogin(result);
+      else setError(result.message || "Unable to sign in.");
+    } catch (err: unknown) {
+      reset();
+      const response = err as { data?: { message?: string } };
+      setError(response.data?.message || "Unable to sign in. Please try again.");
     }
   };
 
@@ -132,7 +115,7 @@ export default function LoginPage() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <form onSubmit={handleLogin} className="space-y-4">
+          <>{challenge ? <MfaChallenge challenge={challenge} onComplete={completeLogin} onCancel={() => { setChallenge(null); setError(null); }} /> : <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <Input
@@ -184,6 +167,8 @@ export default function LoginPage() {
               </Link>
             </div>
 
+            <label className="flex gap-2 text-sm"><input type="checkbox" checked={enrollMfa} onChange={e => setEnrollMfa(e.target.checked)} />Set up an authenticator for my account</label>
+
             <Button
               type="submit"
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
@@ -191,7 +176,7 @@ export default function LoginPage() {
             >
               {isLoading ? "Signing In..." : "Sign In"}
             </Button>
-          </form>
+          </form>}</>
 
           <Separator />
 

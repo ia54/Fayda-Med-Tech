@@ -34,7 +34,7 @@ class SignatureController extends Controller
      */
     public function historyByDocument(int $documentId): JsonResponse
     {
-        $document = Document::with(['signatures', 'signers'])->find($documentId);
+        $document = Document::visibleTo(auth()->user())->with(['signatures', 'signers'])->find($documentId);
 
         if (!$document) {
             return response()->json([
@@ -58,9 +58,10 @@ class SignatureController extends Controller
     public function docusignWebhook(Request $request, DocuSignService $docuSignService): JsonResponse
     {
         $webhookSecret = (string) $docuSignService->getWebhookSecret();
-        $incomingSecret = (string) $request->header('X-Docusign-Secret');
+        $incomingSignature = (string) $request->header('X-Docusign-Signature-1');
+        $expectedSignature = base64_encode(hash_hmac('sha256', $request->getContent(), $webhookSecret, true));
 
-        if ($webhookSecret && $incomingSecret !== $webhookSecret) {
+        if ($webhookSecret === '' || $incomingSignature === '' || !hash_equals($expectedSignature, $incomingSignature)) {
             return response()->json([
                 'status' => false,
                 'message' => 'Unauthorized webhook request',
@@ -88,7 +89,7 @@ class SignatureController extends Controller
                 'request_method' => 'POST',
                 'response_status' => 404,
                 'status' => 'failed',
-                'request_payload' => $payload,
+                'request_payload' => ['envelope_id' => $envelopeId],
                 'error_message' => 'Document not found for envelope: ' . $envelopeId,
             ]);
 
@@ -145,7 +146,7 @@ class SignatureController extends Controller
                         'status' => $this->mapSignatureEventStatus($recipientStatus),
                         'signed_file_path' => data_get($payload, 'data.documents.0.uri'),
                         'signed_file_url' => data_get($payload, 'data.documents.0.url'),
-                        'provider_payload' => $recipient,
+                        'provider_payload' => ['status' => $recipientStatus],
                         'processed_at' => now(),
                     ]);
                 }
@@ -158,7 +159,7 @@ class SignatureController extends Controller
                 'request_method' => 'POST',
                 'response_status' => 200,
                 'status' => 'success',
-                'request_payload' => $payload,
+                'request_payload' => ['envelope_id' => $envelopeId],
                 'response_payload' => ['processed' => true, 'envelope_id' => $envelopeId],
             ]);
 
@@ -178,7 +179,7 @@ class SignatureController extends Controller
                 'request_method' => 'POST',
                 'response_status' => 500,
                 'status' => 'failed',
-                'request_payload' => $payload,
+                'request_payload' => ['envelope_id' => $envelopeId],
                 'error_message' => $exception->getMessage(),
             ]);
 

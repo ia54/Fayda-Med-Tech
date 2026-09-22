@@ -4,7 +4,7 @@ import { logout, setCredentials } from '../slices/authSlice';
 import type { RootState } from '../store';
 
 // API Base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.faydamed.tech/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api';
 
 // Tag Types for RTK Query Cache Invalidation
 export const TAG_TYPES = {
@@ -57,6 +57,9 @@ const rawBaseQuery = fetchBaseQuery({
   credentials: 'include',
 });
 
+type RefreshPayload = { access_token: string; refresh_token: string; token_type: string; expires_in: number };
+let refreshInFlight: Promise<RefreshPayload | null> | null = null;
+
 // Custom baseQuery that adds auth headers selectively and handles 401 errors
 const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
   args,
@@ -103,46 +106,37 @@ const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, Fetch
 
   let result = await rawBaseQuery(modifiedArgs, api, extraOptions);
 
-  // 401 Handling with Refresh (only for non-auth endpoints)
-  if (result.error && result.error.status === 401 && !isAuthEndpoint) {
-    const refreshToken = (api.getState() as RootState).auth.token?.refresh_token;
-
-    if (refreshToken) {
-      const refreshResult: any = await rawBaseQuery(
-        {
-          url: '/refresh-token',
-          method: 'POST',
-          body: { refresh_token: refreshToken },
-          headers: new Headers({ 'Accept': 'application/json' })
-        },
-        api,
-        extraOptions
-      );
-
-      if (refreshResult.data && refreshResult.data.status) {
-        api.dispatch(
-          setCredentials({
-            token: {
-              access_token: (refreshResult.data as any).access_token,
-              refresh_token: (refreshResult.data as any).refresh_token,
-              token_type: (refreshResult.data as any).token_type,
-              expires_in: (refreshResult.data as any).expires_in,
-            },
-            user: (api.getState() as RootState).auth.user!,
-          })
-        );
-        result = await rawBaseQuery(modifiedArgs, api, extraOptions);
+  // Serialize refreshes: single-use refresh tokens must not race across parallel requests.
+  if (result.error?.status === 401 && !isAuthEndpoint) {
+    const state = (api.getState() as RootState).auth;
+    if (state.token?.access_token && headers.get('Authorization') !== `Bearer ${state.token.access_token}`) {
+      headers.set('Authorization', `Bearer ${state.token.access_token}`);
+      result = await rawBaseQuery({ ...modifiedArgs, headers }, api, extraOptions);
+    } else if (state.token?.refresh_token) {
+      if (!refreshInFlight) {
+        const refreshToken = state.token.refresh_token;
+        refreshInFlight = (async () => {
+          const refreshed = await rawBaseQuery({ url: '/refresh-token', method: 'POST', body: { refresh_token: refreshToken } }, api, extraOptions);
+          const data = refreshed.data as RefreshPayload | undefined;
+          if (!data?.access_token || !data.refresh_token) return null;
+          const current = (api.getState() as RootState).auth;
+          // Never resurrect a signed-out or switched account.
+          if (!current.user || current.token?.refresh_token !== refreshToken) return null;
+          api.dispatch(setCredentials({ token: data, user: current.user }));
+          return data;
+        })().finally(() => { refreshInFlight = null; });
+      }
+      const refreshed = await refreshInFlight;
+      if (refreshed) {
+        headers.set('Authorization', `Bearer ${refreshed.access_token}`);
+        result = await rawBaseQuery({ ...modifiedArgs, headers }, api, extraOptions);
       } else {
         api.dispatch(logout());
-        if (typeof window !== "undefined") {
-          window.location.href = "/auth/login";
-        }
+        if (typeof window !== 'undefined') window.location.href = '/auth/login';
       }
     } else {
       api.dispatch(logout());
-      if (typeof window !== "undefined") {
-        window.location.href = "/auth/login";
-      }
+      if (typeof window !== 'undefined') window.location.href = '/auth/login';
     }
   }
 

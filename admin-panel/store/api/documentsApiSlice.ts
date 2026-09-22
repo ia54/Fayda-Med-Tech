@@ -28,9 +28,9 @@ export interface SignatureEvent {
     provider_envelope_id: string | null;
     provider_event: string | null;
     status: SignatureEventStatus;
-    signed_file_path: string | null;
-    signed_file_url: string | null;
-    provider_payload: unknown;
+    signed_file_path?: string | null;
+    signed_file_url?: string | null;
+    provider_payload?: unknown;
     processed_at: string | null;
     created_at: string;
     updated_at: string;
@@ -58,7 +58,7 @@ export interface Document {
     filename: string;
     mime_type: string;
     size: number;
-    path: string;
+    path?: string;
     url: string;
     document_status: DocumentStatus;
     signature_status: SignatureStatus;
@@ -179,6 +179,9 @@ export interface ProcessOcrInput {
 
 export const documentsApiSlice = apiSlice.injectEndpoints({
     endpoints: (builder) => ({
+        getEligibleSigners: builder.query<{ data: { id: number; first_name: string; last_name: string; email: string }[] }, number>({
+            query: (id) => `/documents/${id}/eligible-signers`,
+        }),
         getDocuments: builder.query<DocumentsResponse, GetDocumentsParams>({
             query: ({ page = 1, per_page = 10, document_status, signature_status, ocr_status } = {}) => ({
                 url: "/documents",
@@ -311,6 +314,7 @@ export const documentsApiSlice = apiSlice.injectEndpoints({
 });
 
 export const {
+    useGetEligibleSignersQuery,
     useGetDocumentsQuery,
     useGetDocumentByIdQuery,
     useUploadDocumentMutation,

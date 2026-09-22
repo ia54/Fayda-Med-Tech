@@ -38,19 +38,19 @@ class ClientDashboardController extends Controller
                 ->count();
 
             // 3. Pending Signatures count
-            $pendingSignaturesCount = Document::whereHas('signers', function($q) use ($user) {
+            $pendingSignaturesCount = Document::visibleTo($user)->whereHas('signers', function($q) use ($user) {
                 $q->where(function($sq) use ($user) {
                     $sq->where('user_id', $user->id)
-                       ->orWhere('email', $user->email);
+                       ;
                 })->where('status', 'pending');
             })->count();
 
             // 4. Recent Documents (Related to their cases)
             $caseIds = $cases->pluck('id')->toArray();
-            $documents = Document::where(function($q) use ($user, $caseIds) {
+            $documents = Document::visibleTo($user)->where(function($q) use ($user, $caseIds) {
                 $q->whereHas('signers', function($sq) use ($user) {
                     $sq->where('user_id', $user->id)
-                       ->orWhere('email', $user->email);
+                       ;
                 })->orWhereIn('metadata->case_id', $caseIds);
             })
                 ->latest()
@@ -144,11 +144,11 @@ class ClientDashboardController extends Controller
         try {
             $user = $request->user();
 
-            $documents = Document::with(['signers'])
+            $documents = Document::visibleTo($user)->with(['signers'])
                 ->whereHas('signers', function($q) use ($user) {
                     $q->where(function($sq) use ($user) {
                         $sq->where('user_id', $user->id)
-                           ->orWhere('email', $user->email);
+                           ;
                     })->whereIn('status', ['pending', 'sent']);
                 })
                 ->latest()

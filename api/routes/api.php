@@ -40,8 +40,11 @@ use Illuminate\Support\Facades\Route;
 
 // Public authentication routes
 Route::post('register', [AuthController::class, 'register']);
-Route::post('login', [AuthController::class, 'login']);
-Route::post('refresh', [AuthController::class, 'refreshToken']);
+Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::post('auth/mfa/setup', [\App\Http\Controllers\API\Auth\MfaController::class, 'setup'])->middleware('throttle:mfa-setup');
+Route::post('auth/mfa/verify', [\App\Http\Controllers\API\Auth\MfaController::class, 'verify'])->middleware('throttle:mfa-verify');
+Route::post('refresh', [AuthController::class, 'refreshToken'])->middleware('throttle:token-refresh');
+Route::post('refresh-token', [AuthController::class, 'refreshToken'])->middleware('throttle:token-refresh');
 
 // Password reset routes
 Route::post('forgot-password', [PasswordResetController::class, 'forgotPassword']);
@@ -56,7 +59,9 @@ Route::get('whywedifferent', [WhyWeDifferentController::class, 'index']);
 Route::post('signatures/docusign/webhook', [SignatureController::class, 'docusignWebhook']);
 
 // Protected routes
-Route::middleware(['auth:api', 'tenant'])->group(function () {
+Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
+    Route::get('/auth/mfa/status', [\App\Http\Controllers\API\Auth\MfaController::class, 'status']);
+    Route::post('/auth/mfa/manage', [\App\Http\Controllers\API\Auth\MfaController::class, 'manage'])->middleware('throttle:mfa-manage');
     Route::post('/logout', [AuthController::class, 'logout']);
 
     // Routes accessible to all authenticated users (admin, manager, and user)
@@ -136,10 +141,11 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::post('/documents', [DocumentController::class, 'store']);
         Route::get('/documents/{id}', [DocumentController::class, 'show']);
         Route::get('/documents/{id}/preview', [DocumentController::class, 'preview']);
-        Route::delete('/documents/{id}', [DocumentController::class, 'destroy']);
+        Route::delete('/documents/{id}', [DocumentController::class, 'destroy'])->middleware('role:admin,firm_admin,attorney');
         
-        Route::post('/documents/{id}/signers', [DocumentController::class, 'assignSigners']);
-        Route::post('/documents/{id}/send-for-signature', [DocumentController::class, 'sendForSignature']);
+        Route::get('/documents/{id}/eligible-signers', [DocumentController::class, 'eligibleSigners'])->middleware('role:admin,firm_admin,attorney');
+        Route::post('/documents/{id}/signers', [DocumentController::class, 'assignSigners'])->middleware('role:admin,firm_admin,attorney');
+        Route::post('/documents/{id}/send-for-signature', [DocumentController::class, 'sendForSignature'])->middleware('role:admin,firm_admin,attorney');
         Route::post('/documents/{id}/sign-in-app', [DocumentController::class, 'signInApp']);
         Route::get('/documents/{id}/signature-status', [DocumentController::class, 'signatureStatus']);
         Route::get('/signatures/document/{documentId}', [SignatureController::class, 'historyByDocument']);

@@ -15,6 +15,7 @@ class CredentialTenantTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutMiddleware(\App\Http\Middleware\TwoFactorMiddleware::class);
         Schema::create('organizations', function (Blueprint $table) { $table->id(); });
         DB::table('organizations')->insert([['id' => 1], ['id' => 2]]);
         $migration = require database_path('migrations/2026_04_25_232557_create_api_credentials_table.php');
