@@ -1,4 +1,8 @@
 <?php
+// Standalone declaration check; Laravel supplies env() in the application.
+if (!function_exists('env')) {
+    function env($key, $default = null) { return $default; }
+}
 // This must return configuration even during a browser preflight request.
 $_SERVER['REQUEST_METHOD'] = 'OPTIONS';
 $_SERVER['HTTP_ORIGIN'] = 'https://untrusted.example.invalid';

@@ -5,7 +5,9 @@
 return [
     'paths' => ['api/*'],
     'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    'allowed_origins' => [
+    'allowed_origins' => env('CORS_ALLOWED_ORIGINS') !== null
+        ? array_values(array_filter(array_map('trim', explode(',', env('CORS_ALLOWED_ORIGINS')))))
+        : [
         'https://www.faydatech.com',
         'https://faydatech.com',
         'https://admin.faydatech.com',
