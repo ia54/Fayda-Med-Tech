@@ -1,0 +1,36 @@
+[Unit]
+Description=Private synthetic FaydaMedTech admin staging
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/admin.faydamed.tech/staging/admin-panel/.next/standalone
+ExecStart=/home/admin.faydamed.tech/staging/runtime/bin/node server.js
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=13005
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+User=fmd-stage
+Group=fmd-stage
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+InaccessiblePaths=/home/api.faydamed.tech/public_html /home/admin.faydamed.tech/public_html /home/faydamed.tech/public_html /var/www/admin-faydamed-tech
+UMask=0077
+MemoryMax=1G
+TasksMax=64
+ReadWritePaths=/home/admin.faydamed.tech/staging/admin-panel/.next
+
+[Install]
+WantedBy=multi-user.target
