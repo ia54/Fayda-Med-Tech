@@ -327,7 +327,11 @@ export const apiSlice = createApi({
         method: "POST",
         body: data,
       }),
-      invalidatesTags: ["Settlement" as any, "Case"],
+      invalidatesTags: ["Settlement" as any, "Case", "Report"],
+    }),
+    correctSettlement: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/settlements/${id}/corrections`, method: "POST", body: data }),
+      invalidatesTags: ["Settlement" as any, "Case", "Report"],
     }),
     updateSettlement: builder.mutation({
       query: ({ id, ...data }) => ({
@@ -335,14 +339,14 @@ export const apiSlice = createApi({
         method: "PUT",
         body: data,
       }),
-      invalidatesTags: ["Settlement" as any, "Case"],
+      invalidatesTags: ["Settlement" as any, "Case", "Report"],
     }),
     deleteSettlement: builder.mutation({
       query: (id) => ({
         url: `/settlements/${id}`,
         method: "DELETE",
       }),
-      invalidatesTags: ["Settlement" as any, "Case"],
+      invalidatesTags: ["Settlement" as any, "Case", "Report"],
     }),
 
     // ===== NEW: Medical History (PDF Section 5) =====
@@ -530,6 +534,7 @@ export const {
   useGetSettlementsQuery,
   useCreateSettlementMutation,
   useUpdateSettlementMutation,
+  useCorrectSettlementMutation,
   useDeleteSettlementMutation,
   // Medical History
   useGetMedicalHistoriesQuery,

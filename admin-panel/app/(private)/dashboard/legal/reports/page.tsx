@@ -5,22 +5,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { 
-  Download, 
-  BarChart3, 
-  TrendingUp, 
-  FileText, 
-  Search, 
-  Users, 
-  DollarSign, 
+import {
+  Download,
+  BarChart3,
+  TrendingUp,
+  FileText,
+  Search,
+  Users,
+  DollarSign,
   Briefcase,
   History,
   CheckCircle2,
   AlertCircle
 } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { 
-  useGetReportHistoryQuery, 
+import {
+  useGetReportHistoryQuery,
   useGetAttorneyProductionReportQuery,
   useGetSettlementSummaryReportQuery,
   useGetRevenueByPeriodReportQuery,
@@ -88,7 +88,7 @@ const reportTemplates = [
 
 export default function FirmReportsPage() {
   const [searchTerm, setSearchTerm] = useState("")
-  
+
   // Fetch real data for stats
   const { data: productionData, isLoading: prodLoading } = useGetAttorneyProductionReportQuery({})
   const { data: settlementData, isLoading: settLoading } = useGetSettlementSummaryReportQuery({})
@@ -96,42 +96,42 @@ export default function FirmReportsPage() {
   const { data: reportHistory, isLoading: historyLoading } = useGetReportHistoryQuery({})
 
   const stats = [
-    { 
-      label: "Gross Settlements", 
-      value: settlementData?.data?.result_summary?.total_gross_settlement ? `$${settlementData.data.result_summary.total_gross_settlement.toLocaleString()}` : "$0", 
-      subtext: "Life-to-date",
+    {
+      label: "Gross Settlements",
+      value: settlementData?.data?.result_summary?.total_gross_settlement ? `$${settlementData.data.result_summary.total_gross_settlement.toLocaleString()}` : "$0",
+      subtext: "Current completed records",
       icon: DollarSign,
       color: "text-emerald-600",
       bg: "bg-emerald-50"
     },
-    { 
-      label: "Total Fees Generated", 
-      value: settlementData?.data?.result_summary?.total_attorney_fees ? `$${settlementData.data.result_summary.total_attorney_fees.toLocaleString()}` : "$0", 
-      subtext: "Total Revenue",
+    {
+      label: "Recorded Attorney Fees",
+      value: settlementData?.data?.result_summary?.total_attorney_fees ? `$${settlementData.data.result_summary.total_attorney_fees.toLocaleString()}` : "$0",
+      subtext: "Not verified cash receipts",
       icon: TrendingUp,
       color: "text-blue-600",
       bg: "bg-blue-50"
     },
-    { 
-      label: "Outstanding Revenue", 
-      value: revenueData?.data?.result_summary?.total_outstanding ? `$${revenueData.data.result_summary.total_outstanding.toLocaleString()}` : "$0", 
+    {
+      label: "Outstanding Revenue",
+      value: revenueData?.data?.result_summary?.total_outstanding ? `$${revenueData.data.result_summary.total_outstanding.toLocaleString()}` : "$0",
       subtext: "Uncollected",
       icon: AlertCircle,
       color: "text-amber-600",
       bg: "bg-amber-50"
     },
-    { 
-      label: "Cases Settled", 
-      value: settlementData?.data?.result_summary?.total_settlements || "0", 
-      subtext: "Successfully Closed",
+    {
+      label: "Completed Settlement Records",
+      value: settlementData?.data?.result_summary?.total_settlements || "0",
+      subtext: "Excludes replaced records",
       icon: CheckCircle2,
       color: "text-purple-600",
       bg: "bg-purple-50"
     }
   ]
 
-  const filteredTemplates = reportTemplates.filter(t => 
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+  const filteredTemplates = reportTemplates.filter(t =>
+    t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.description.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
@@ -183,8 +183,8 @@ export default function FirmReportsPage() {
                 </div>
                 <div className="relative w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input 
-                    placeholder="Search templates..." 
+                  <Input
+                    placeholder="Search templates..."
                     className="pl-9 bg-white/50 border-emerald-50"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}

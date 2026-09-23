@@ -1,6 +1,8 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { useAuth } from "@/hooks/useAuth"
+import { SettlementCorrectionDialog } from "@/components/cases/SettlementCorrectionDialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -42,6 +44,11 @@ interface Settlement {
   status: string;
   notes: string;
   case?: Case;
+  supersedes_id?: number | null;
+  correction_reason?: string | null;
+  correction?: { id: number } | null;
+  created_at?: string;
+  creator?: { first_name: string; last_name: string };
   attorney_fees?: string | null;
   costs?: string | null;
   other_deductions?: string | null;
@@ -53,6 +60,10 @@ export default function SettlementsPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const { toast } = useToast()
+  const { user } = useAuth()
+  const canCorrect = user?.role === "admin" || user?.role === "firm_admin"
+  const [correctionTarget, setCorrectionTarget] = useState<Settlement | null>(null)
+  const [includeHistory, setIncludeHistory] = useState(false)
   const [page, setPage] = useState(1)
   const [caseSearch, setCaseSearch] = useState("")
   const [selected, setSelected] = useState<Settlement | null>(null)
@@ -63,7 +74,7 @@ export default function SettlementsPage() {
 
   // Queries
   const { currentData: settlementsData, isFetching: isSettlementsLoading, isError, refetch } = useGetSettlementsQuery({
-    page, per_page: 15, search: searchTerm,
+    page, per_page: 15, search: searchTerm, include_history: includeHistory ? 1 : 0,
     status: statusFilter === "all" ? undefined : statusFilter
   })
   const { data: casesData, isError: casesError } = useGetCasesQuery({ per_page: 100, search: caseSearch })
@@ -142,6 +153,7 @@ export default function SettlementsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50/50 via-white to-green-50/30 dark:from-emerald-950/20 dark:via-slate-950 dark:to-green-950/20 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
+        {correctionTarget && <SettlementCorrectionDialog key={correctionTarget.id} record={correctionTarget} onClose={() => setCorrectionTarget(null)} />}
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -159,8 +171,10 @@ export default function SettlementsPage() {
               <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>{readOnly ? "Completed Settlement" : selected ? "Edit Settlement" : "Record Settlement"}</DialogTitle>
-                  <DialogDescription>{readOnly ? "Completed records are read-only. An auditable financial correction workflow is not yet available." : "Save a pending or negotiated record. Mark completed only after the settlement has been finalized; completed records cannot be edited here."}</DialogDescription>
+                  <DialogDescription>{readOnly ? "Completed originals are preserved. Firm administrators can record a linked correction from the current record." : "Save a pending or negotiated record. Mark completed only after the settlement has been finalized; completed records cannot be edited here."}</DialogDescription>
                 </DialogHeader>
+                {selected && <p className="text-sm">Record #{selected.id}{selected.supersedes_id ? `; corrects #${selected.supersedes_id}` : ""}{selected.correction ? `; replaced by #${selected.correction.id}` : ""}. Recorded by {selected.creator ? `${selected.creator.first_name} ${selected.creator.last_name}` : "Unknown"}{selected.created_at ? ` on ${format(new Date(selected.created_at), "MMM dd, yyyy HH:mm")}` : ""}.</p>}
+                {selected?.correction_reason && <p className="text-sm whitespace-pre-wrap">Correction reason: {selected.correction_reason}</p>}
                 {saveError && <p role="alert" className="text-destructive">{saveError}</p>}
                 {selected && <p className="text-sm">{selected.other_deductions != null ? `Saved allocations: fees $${selected.attorney_fees}; costs $${selected.costs}; other deductions $${selected.other_deductions}; net $${selected.net_to_client}. Amount edits must cover these deductions.` : "Allocation breakdown has not been recorded."} Use the case settlement calculator for new detailed allocations.</p>}
                 <fieldset disabled={readOnly || isCreating || isUpdating} className="space-y-4">
@@ -262,7 +276,7 @@ export default function SettlementsPage() {
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
                 {isError || isSettlementsLoading ? "—" : totalSettlementValue.toLocaleString(undefined, { style: "currency", currency: "USD" })}
               </div>
-              <p className="text-xs text-emerald-600 dark:text-white mt-1">Current filtered page</p>
+              <p className="text-xs text-emerald-600 dark:text-white mt-1">{includeHistory ? "History included; amounts may overlap" : "Current filtered page"}</p>
             </CardContent>
           </Card>
 
@@ -342,6 +356,7 @@ export default function SettlementsPage() {
               </Select>
             </div>
 
+            <label className="flex items-center gap-2 mb-4 text-sm"><input type="checkbox" checked={includeHistory} onChange={e => { setIncludeHistory(e.target.checked); setPage(1) }} />Show replaced records</label>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -381,12 +396,15 @@ export default function SettlementsPage() {
                         <TableCell>{format(new Date(`${settlement.settlement_date.slice(0, 10)}T12:00:00`), "MMM dd, yyyy")}</TableCell>
                         <TableCell>
                           {getStatusBadge(settlement.status)}
+                          {settlement.correction && <p className="text-xs">Replaced by #{settlement.correction.id}</p>}
+                          {settlement.supersedes_id && <p className="text-xs">Corrects #{settlement.supersedes_id}</p>}
                         </TableCell>
                         <TableCell className="max-w-xs truncate">{settlement.notes}</TableCell>
                         <TableCell>
                           <Button variant="ghost" size="sm" onClick={() => openRecord(settlement)} aria-label={`${settlement.status === "completed" ? "View" : "Edit"} settlement ${settlement.id}`}>
                             <Edit className="w-4 h-4 mr-2" />{settlement.status === "completed" ? "View" : "Edit"}
                           </Button>
+                          {canCorrect && settlement.status === "completed" && !settlement.correction && <Button size="sm" variant="outline" onClick={() => setCorrectionTarget(settlement)} aria-label={`Correct settlement ${settlement.id}`}>Correct</Button>}
                         </TableCell>
                       </TableRow>
                     ))

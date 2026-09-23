@@ -108,22 +108,21 @@ class ReportsController extends Controller
      */
     public function settlementSummary(Request $request)
     {
-        $settlements = CaseSettlement::with(['case'])->get();
-        $totalGross = $settlements->sum('settlement_amount');
-        
-        // Safely check for columns that might not exist if migration failed
-        $attorneyFees = Schema::hasColumn('case_settlements', 'attorney_fees') ? $settlements->sum('attorney_fees') : 0;
-        $costs = Schema::hasColumn('case_settlements', 'costs') ? $settlements->sum('costs') : 0;
-        
-        $totalFees = $attorneyFees + $costs;
-        $totalNetToClient = $totalGross - $totalFees;
-
+        abort_unless($request->user()->organization_id && in_array($request->user()->role, ['admin', 'firm_admin', 'attorney'], true), 403);
+        $query = CaseSettlement::where('organization_id', $request->user()->organization_id)->current()->where('status', 'completed');
+        if ($request->user()->role === 'attorney') $query->whereHas('case', fn ($q) => $q->assignedToAttorney($request->user()->id));
+        $settlements = $query->get();
+        $unknown = $settlements->whereNull('other_deductions')->count();
+        $sum = fn ($field) => $settlements->sum(fn ($s) => CaseSettlement::cents($s->$field ?? 0)) / 100;
         $report = $this->storeReport($request, 'settlement', [
+            'basis' => 'Current completed records; excludes pending and replaced records. Not cash receipts.',
             'total_settlements' => $settlements->count(),
-            'total_gross_settlement' => $totalGross,
-            'total_attorney_fees' => $settlements->sum('attorney_fees'),
-            'total_costs' => $settlements->sum('costs'),
-            'total_net_to_client' => $totalNetToClient,
+            'total_gross_settlement' => $sum('settlement_amount'),
+            'total_attorney_fees' => $sum('attorney_fees'),
+            'total_costs' => $sum('costs'),
+            'total_other_deductions' => $unknown ? null : $sum('other_deductions'),
+            'unknown_allocation_count' => $unknown,
+            'total_net_to_client' => $unknown ? null : $settlements->sum(fn ($s) => CaseSettlement::cents($s->net_to_client)) / 100,
         ]);
         return response()->json(['status' => true, 'data' => $report]);
     }
@@ -133,18 +132,21 @@ class ReportsController extends Controller
      */
     public function attorneyProduction(Request $request)
     {
-        $attorneys = User::where('role', 'attorney')->get();
+        abort_unless($request->user()->organization_id && in_array($request->user()->role, ['admin', 'firm_admin', 'attorney'], true), 403);
+        $attorneyQuery = User::where('organization_id', $request->user()->organization_id)->where('role', 'attorney');
+        if ($request->user()->role === 'attorney') $attorneyQuery->whereKey($request->user()->id);
+        $attorneys = $attorneyQuery->get();
         $production = [];
 
         foreach ($attorneys as $attorney) {
-            $caseQuery = CaseModel::whereHas('parties', fn($q) => $q->where('user_id', $attorney->id));
-            
+            $caseQuery = CaseModel::where('organization_id', $request->user()->organization_id)->assignedToAttorney($attorney->id);
+
             $totalCases = $caseQuery->count();
-            $closedCases = (clone $caseQuery)->whereIn('status', ['settled', 'closed'])->count();
-            
-            $feesGenerated = Schema::hasColumn('case_settlements', 'attorney_fees') 
-                ? CaseSettlement::whereHas('case', fn($q) => 
-                    $q->whereHas('parties', fn($pq) => $pq->where('user_id', $attorney->id))
+            $closedCases = (clone $caseQuery)->where('status', 'Closed')->count();
+
+            $feesGenerated = Schema::hasColumn('case_settlements', 'attorney_fees')
+                ? CaseSettlement::where('organization_id', $request->user()->organization_id)->current()->where('status', 'completed')->whereHas('case', fn($q) =>
+                    $q->assignedToAttorney($attorney->id)
                   )->sum('attorney_fees')
                 : 0;
 

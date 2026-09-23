@@ -37,8 +37,10 @@ class CaseSettlementController extends Controller
      */
     public function index(Request $request)
     {
-        $request->validate(['per_page' => 'sometimes|integer|min:1|max:100', 'page' => 'sometimes|integer|min:1', 'status' => 'sometimes|in:pending,completed,in-negotiation']);
-        $query = $this->visibleSettlements($request)->with(['case:id,case_number,title', 'creator:id,first_name,last_name']);
+        $request->validate(['per_page' => 'sometimes|integer|min:1|max:100', 'page' => 'sometimes|integer|min:1', 'status' => 'sometimes|in:pending,completed,in-negotiation', 'include_history' => 'sometimes|boolean']);
+        $query = $this->visibleSettlements($request)->with(['case:id,case_number,title', 'creator:id,first_name,last_name', 'correction:id,supersedes_id']);
+
+        if (!$request->boolean('include_history')) $query->current();
 
         if ($request->case_id) {
             $query->where('case_id', $request->case_id);
@@ -123,13 +125,7 @@ class CaseSettlementController extends Controller
                 ...$request->only(['case_id', 'settlement_amount', 'settlement_date', 'status', 'notes', 'attorney_fees', 'costs', 'other_deductions'])
             ]);
 
-            // If status is completed, update the case total_case_value
-            if ($request->status === 'completed') {
-                CaseModel::where('id', $request->case_id)->update([
-                    'total_case_value' => $request->settlement_amount,
-                    'status' => 'Settlement'
-                ]);
-            }
+            if ($settlement->status === 'completed') $this->refreshCaseValue($settlement);
 
             $settlement->load(['case:id,case_number,title', 'creator:id,first_name,last_name']);
 
@@ -148,7 +144,7 @@ class CaseSettlementController extends Controller
      */
     public function show($id)
     {
-        $settlement = $this->visibleSettlements(request())->with(['case', 'creator:id,first_name,last_name'])
+        $settlement = $this->visibleSettlements(request())->with(['case', 'creator:id,first_name,last_name', 'correction:id,supersedes_id'])
             ->findOrFail($id);
 
         return response()->json([
@@ -185,17 +181,13 @@ class CaseSettlementController extends Controller
         }
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($request, &$settlement) {
+            CaseModel::where('organization_id', $request->user()->organization_id)->lockForUpdate()->findOrFail($settlement->case_id);
             $settlement = $this->visibleSettlements($request)->lockForUpdate()->findOrFail($settlement->id);
             abort_if($settlement->status === 'completed', 409, 'Completed settlements require an auditable correction workflow.');
             $this->validateAllocations(array_replace($settlement->getAttributes(), $request->only(['settlement_amount', 'attorney_fees', 'costs', 'other_deductions'])));
             $settlement->update($request->only(['settlement_amount', 'settlement_date', 'status', 'notes', 'attorney_fees', 'costs', 'other_deductions']));
 
-            if ($settlement->status === 'completed') {
-                CaseModel::where('id', $settlement->case_id)->update([
-                    'total_case_value' => $settlement->settlement_amount,
-                    'status' => 'Settlement'
-                ]);
-            }
+            if ($settlement->status === 'completed') $this->refreshCaseValue($settlement);
 
             $settlement->load(['case:id,case_number,title', 'creator:id,first_name,last_name']);
 
@@ -208,6 +200,69 @@ class CaseSettlementController extends Controller
         ]);
     }
 
+    private function refreshCaseValue(CaseSettlement $settlement, bool $preserveStatus = false): void
+    {
+        $total = CaseSettlement::where('organization_id', $settlement->organization_id)
+            ->where('case_id', $settlement->case_id)->current()->where('status', 'completed')
+            ->get()->sum(fn ($record) => CaseSettlement::cents($record->settlement_amount));
+        abort_if($total > 999999999999999, 422, 'Combined completed settlements exceed the supported case value.');
+        CaseModel::where('organization_id', $settlement->organization_id)->whereKey($settlement->case_id)
+            ->update(['total_case_value' => sprintf('%d.%02d', intdiv($total, 100), $total % 100), ...($preserveStatus ? [] : ['status' => 'Settlement'])]);
+    }
+
+    /** Append a replacement; the completed original remains unchanged. */
+    public function correct(Request $request, $id)
+    {
+        abort_unless(in_array($request->user()->role, ['admin', 'firm_admin'], true), 403);
+        $original = $this->visibleSettlements($request)->findOrFail($id);
+        $values = $request->validate([
+            'request_id' => 'required|uuid',
+            'correction_reason' => 'required|string|min:5|max:2000',
+            'settlement_amount' => 'required|numeric|min:0|max:9999999999999.99|decimal:0,2',
+            'settlement_date' => 'required|date',
+            'attorney_fees' => 'required|numeric|min:0|max:9999999999999.99|decimal:0,2',
+            'costs' => 'required|numeric|min:0|max:9999999999999.99|decimal:0,2',
+            'other_deductions' => 'required|numeric|min:0|max:9999999999999.99|decimal:0,2',
+            'notes' => 'nullable|string',
+        ]);
+        $this->validateAllocations($values);
+        $payload = $values;
+        unset($payload['request_id']);
+        $payload['notes'] = $payload['notes'] ?? null;
+        $payload['settlement_date'] = \Carbon\Carbon::parse($payload['settlement_date'])->toDateString();
+        $payload['supersedes_id'] = $original->id;
+        foreach (['settlement_amount', 'attorney_fees', 'costs', 'other_deductions'] as $field) $payload[$field] = CaseSettlement::cents($payload[$field]);
+        ksort($payload);
+        $hash = hash('sha256', json_encode($payload));
+        $replacement = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $original, $values, $hash) {
+            CaseModel::where('organization_id', $original->organization_id)->lockForUpdate()->findOrFail($original->case_id);
+            $original = $this->visibleSettlements($request)->lockForUpdate()->findOrFail($original->id);
+            $existing = CaseSettlement::withTrashed()->where('organization_id', $original->organization_id)
+                ->where('case_id', $original->case_id)->where('request_id', $values['request_id'])->first();
+            if ($existing) {
+                abort_if($existing->trashed() || $existing->created_by !== $request->user()->id || !hash_equals($existing->request_hash ?? '', $hash), 409, 'This save reference was already used for different details.');
+                return $existing;
+            }
+            abort_unless($original->status === 'completed', 409, 'Only completed records can be corrected here.');
+            abort_if($original->correction()->exists(), 409, 'This record already has a correction. Open the current record.');
+            $replacement = CaseSettlement::create([
+                ...$values,
+                'organization_id' => $original->organization_id,
+                'case_id' => $original->case_id,
+                'created_by' => $request->user()->id,
+                'status' => 'completed',
+                'supersedes_id' => $original->id,
+                'request_hash' => $hash,
+            ]);
+            $this->refreshCaseValue($replacement, true);
+            $this->logTimeline($original->case_id, 'legal', 'Settlement Corrected',
+                "Settlement #{$original->id} replaced by #{$replacement->id}; original preserved.",
+                ['original_id' => $original->id, 'replacement_id' => $replacement->id, 'reason' => $values['correction_reason']]);
+            return $replacement;
+        });
+        return response()->json(['status' => true, 'message' => 'Correction recorded; original preserved.', 'data' => $replacement], 201);
+    }
+
     /**
      * Remove the specified settlement.
      */
@@ -217,6 +272,7 @@ class CaseSettlementController extends Controller
             ->findOrFail($id);
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($settlement) {
+            CaseModel::where('organization_id', request()->user()->organization_id)->lockForUpdate()->findOrFail($settlement->case_id);
             // Re-read after acquiring the same lock used by completion updates.
             $current = $this->visibleSettlements(request())->lockForUpdate()->findOrFail($settlement->id);
             abort_if($current->status === 'completed', 409, 'Completed settlements cannot be archived.');

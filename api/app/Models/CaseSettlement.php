@@ -24,6 +24,8 @@ class CaseSettlement extends Model
         'created_by',
         'request_id',
         'request_hash',
+        'supersedes_id',
+        'correction_reason',
     ];
 
     protected $casts = [
@@ -49,6 +51,16 @@ class CaseSettlement extends Model
         if ($this->other_deductions === null) return null;
         $net = self::cents($this->settlement_amount) - self::cents($this->attorney_fees) - self::cents($this->costs) - self::cents($this->other_deductions);
         return sprintf('%d.%02d', intdiv($net, 100), $net % 100);
+    }
+
+    public function correction()
+    {
+        return $this->hasOne(self::class, 'supersedes_id')->withTrashed();
+    }
+
+    public function scopeCurrent($query)
+    {
+        return $query->whereDoesntHave('correction');
     }
 
     public function case()

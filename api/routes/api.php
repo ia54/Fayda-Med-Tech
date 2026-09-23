@@ -245,6 +245,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/settlements', [\App\Http\Controllers\API\CaseSettlementController::class, 'index']);
         Route::post('/settlements', [\App\Http\Controllers\API\CaseSettlementController::class, 'store']);
         Route::get('/settlements/{id}', [\App\Http\Controllers\API\CaseSettlementController::class, 'show']);
+        Route::post('/settlements/{id}/corrections', [\App\Http\Controllers\API\CaseSettlementController::class, 'correct']);
         Route::put('/settlements/{id}', [\App\Http\Controllers\API\CaseSettlementController::class, 'update']);
         Route::delete('/settlements/{id}', [\App\Http\Controllers\API\CaseSettlementController::class, 'destroy']);
     });
