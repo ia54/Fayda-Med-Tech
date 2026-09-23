@@ -13,13 +13,22 @@ use App\Traits\LogsTimeline;
 class CaseSettlementController extends Controller
 {
     use LogsTimeline;
+
+    private function visibleSettlements(Request $request)
+    {
+        abort_unless($request->user()->organization_id, 403);
+        return CaseSettlement::where('organization_id', $request->user()->organization_id)
+            ->whereHas('case', function ($query) use ($request) {
+                if ($request->user()->role === 'attorney') $query->assignedToAttorney($request->user()->id);
+            });
+    }
+
     /**
      * List all settlements for the organization.
      */
     public function index(Request $request)
     {
-        $query = CaseSettlement::with(['case:id,case_number,title', 'creator:id,first_name,last_name'])
-            ->where('organization_id', $request->user()->organization_id);
+        $query = $this->visibleSettlements($request)->with(['case:id,case_number,title', 'creator:id,first_name,last_name']);
 
         if ($request->case_id) {
             $query->where('case_id', $request->case_id);
@@ -37,7 +46,7 @@ class CaseSettlementController extends Controller
             });
         }
 
-        $settlements = $query->orderBy('settlement_date', 'desc')
+        $settlements = $query->orderBy('settlement_date', 'desc')->orderByDesc('id')
             ->paginate($request->get('per_page', 15));
 
         return response()->json([
@@ -53,8 +62,8 @@ class CaseSettlementController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'case_id' => 'required|exists:cases,id',
-            'settlement_amount' => 'required|numeric|min:0',
+            'case_id' => 'required|integer',
+            'settlement_amount' => 'required|numeric|min:0|max:9999999999999.99|decimal:0,2',
             'settlement_date' => 'required|date',
             'status' => 'required|in:pending,completed,in-negotiation',
             'notes' => 'nullable|string',
@@ -68,30 +77,30 @@ class CaseSettlementController extends Controller
             ], 422);
         }
 
-        $settlement = CaseSettlement::create([
-            'organization_id' => $request->user()->organization_id,
-            'created_by' => $request->user()->id,
-            ...$request->only(['case_id', 'settlement_amount', 'settlement_date', 'status', 'notes'])
-        ]);
+        abort_unless($request->user()->organization_id, 403);
+        $caseQuery = CaseModel::where('organization_id', $request->user()->organization_id);
+        if ($request->user()->role === 'attorney') $caseQuery->assignedToAttorney($request->user()->id);
+        $caseQuery->findOrFail($request->case_id);
 
-        // If status is completed, update the case total_case_value
-        if ($request->status === 'completed') {
-            CaseModel::where('id', $request->case_id)->update([
-                'total_case_value' => $request->settlement_amount,
-                'status' => 'Settlement'
+        $settlement = \Illuminate\Support\Facades\DB::transaction(function () use ($request) {
+            $settlement = CaseSettlement::create([
+                'organization_id' => $request->user()->organization_id,
+                'created_by' => $request->user()->id,
+                ...$request->only(['case_id', 'settlement_amount', 'settlement_date', 'status', 'notes'])
             ]);
-        }
 
-        $settlement->load(['case:id,case_number,title', 'creator:id,first_name,last_name']);
+            // If status is completed, update the case total_case_value
+            if ($request->status === 'completed') {
+                CaseModel::where('id', $request->case_id)->update([
+                    'total_case_value' => $request->settlement_amount,
+                    'status' => 'Settlement'
+                ]);
+            }
 
-        // Log to timeline
-        $this->logTimeline(
-            $settlement->case_id,
-            'milestone',
-            'Settlement Recorded',
-            "A settlement of ${$settlement->settlement_amount} has been recorded with status '{$settlement->status}'.",
-            ['amount' => $settlement->settlement_amount, 'status' => $settlement->status]
-        );
+            $settlement->load(['case:id,case_number,title', 'creator:id,first_name,last_name']);
+
+            return $settlement;
+        });
 
         return response()->json([
             'status' => true,
@@ -105,8 +114,7 @@ class CaseSettlementController extends Controller
      */
     public function show($id)
     {
-        $settlement = CaseSettlement::with(['case', 'creator:id,first_name,last_name'])
-            ->where('organization_id', request()->user()->organization_id)
+        $settlement = $this->visibleSettlements(request())->with(['case', 'creator:id,first_name,last_name'])
             ->findOrFail($id);
 
         return response()->json([
@@ -121,11 +129,11 @@ class CaseSettlementController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $settlement = CaseSettlement::where('organization_id', $request->user()->organization_id)
+        $settlement = $this->visibleSettlements($request)
             ->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
-            'settlement_amount' => 'sometimes|required|numeric|min:0',
+            'settlement_amount' => 'sometimes|required|numeric|min:0|max:9999999999999.99|decimal:0,2',
             'settlement_date' => 'sometimes|required|date',
             'status' => 'sometimes|required|in:pending,completed,in-negotiation',
             'notes' => 'nullable|string',
@@ -139,16 +147,20 @@ class CaseSettlementController extends Controller
             ], 422);
         }
 
-        $settlement->update($request->only(['settlement_amount', 'settlement_date', 'status', 'notes']));
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $settlement) {
+            abort_if($settlement->status === 'completed', 409, 'Completed settlements require an auditable correction workflow.');
+            $settlement->update($request->only(['settlement_amount', 'settlement_date', 'status', 'notes']));
 
-        if ($settlement->status === 'completed') {
-            CaseModel::where('id', $settlement->case_id)->update([
-                'total_case_value' => $settlement->settlement_amount,
-                'status' => 'Settlement'
-            ]);
-        }
+            if ($settlement->status === 'completed') {
+                CaseModel::where('id', $settlement->case_id)->update([
+                    'total_case_value' => $settlement->settlement_amount,
+                    'status' => 'Settlement'
+                ]);
+            }
 
-        $settlement->load(['case:id,case_number,title', 'creator:id,first_name,last_name']);
+            $settlement->load(['case:id,case_number,title', 'creator:id,first_name,last_name']);
+
+        });
 
         return response()->json([
             'status' => true,
@@ -162,9 +174,10 @@ class CaseSettlementController extends Controller
      */
     public function destroy($id)
     {
-        $settlement = CaseSettlement::where('organization_id', request()->user()->organization_id)
+        $settlement = $this->visibleSettlements(request())
             ->findOrFail($id);
 
+        abort_if($settlement->status === 'completed', 409, 'Completed settlements cannot be archived.');
         $settlement->delete();
 
         return response()->json([

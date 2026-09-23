@@ -21,7 +21,7 @@ class SettlementObserver
                 $settlement->case_id,
                 'legal',
                 'Settlement Recorded',
-                "A settlement of ${$settlement->settlement_amount} has been recorded with status '{$settlement->status}'.",
+                "A settlement of \${$settlement->settlement_amount} has been recorded with status '{$settlement->status}'.",
                 ['settlement_id' => $settlement->id, 'amount' => $settlement->settlement_amount]
             );
         }
@@ -40,7 +40,7 @@ class SettlementObserver
                     $settlement->case_id,
                     'legal',
                     'Settlement Updated',
-                    "Settlement status changed to '{$settlement->status}' with amount ${$settlement->settlement_amount}.",
+                    "Settlement status changed to '{$settlement->status}' with amount \${$settlement->settlement_amount}.",
                     ['settlement_id' => $settlement->id, 'status' => $settlement->status]
                 );
             }
@@ -51,7 +51,7 @@ class SettlementObserver
     {
         $case = $settlement->case;
         if ($case) {
-            $message = "Settlement for Case #{$case->case_number} has been updated to ${$settlement->settlement_amount} with status '{$settlement->status}'.";
+            $message = "Settlement for Case #{$case->case_number} has been updated to \${$settlement->settlement_amount} with status '{$settlement->status}'.";
             $url = "/dashboard/legal/settlements";
 
             // Notify Assigned Attorneys
