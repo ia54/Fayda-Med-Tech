@@ -25,10 +25,14 @@ class CaseUpdateTest extends TestCase
         $this->assertDatabaseCount('case_timeline',1);
         $this->putJson($url,['status'=>null])->assertUnprocessable();
         foreach ([1,2] as $i) $this->putJson('/api/cases/'.$cases[$i]->id,['title'=>'Denied'])->assertNotFound();
-        $settlementBody=['case_id'=>$cases[0]->id,'settlement_amount'=>100.25,'settlement_date'=>now()->toDateString(),'status'=>'pending'];
+        $settlementBody=['request_id'=>'b762c400-546d-4dc7-9f4d-f5c3230c47a1','case_id'=>$cases[0]->id,'settlement_amount'=>100.25,'settlement_date'=>now()->toDateString(),'status'=>'pending'];
         foreach ([1,2] as $i) $this->postJson('/api/settlements',array_replace($settlementBody,['case_id'=>$cases[$i]->id]))->assertNotFound();
         $this->postJson('/api/settlements',array_replace($settlementBody,['settlement_amount'=>1.234]))->assertUnprocessable();
         $settlementId=$this->postJson('/api/settlements',$settlementBody)->assertCreated()->json('data.id');
+        $this->assertDatabaseCount('case_timeline',2);
+        $this->postJson('/api/settlements',$settlementBody)->assertCreated()->assertJsonPath('data.id',$settlementId)->assertJsonMissingPath('data.request_hash');
+        $this->postJson('/api/settlements',array_replace($settlementBody,['settlement_amount'=>101]))->assertStatus(409);
+        $this->assertDatabaseCount('case_settlements',1);
         $this->assertDatabaseCount('case_timeline',2);
         $other=\App\Models\CaseSettlement::withoutEvents(fn()=>\App\Models\CaseSettlement::create(array_replace($settlementBody,['case_id'=>$cases[1]->id,'organization_id'=>1,'created_by'=>$actor->id])));
         $this->getJson('/api/settlements')->assertOk()->assertJsonPath('data.total',1);

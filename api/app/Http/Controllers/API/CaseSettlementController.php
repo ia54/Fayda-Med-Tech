@@ -72,6 +72,7 @@ class CaseSettlementController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'case_id' => 'required|integer',
+            'request_id' => 'nullable|uuid',
             'settlement_amount' => 'required|numeric|min:0|max:9999999999999.99|decimal:0,2',
             'settlement_date' => 'required|date',
             'status' => 'required|in:pending,completed,in-negotiation',
@@ -94,11 +95,30 @@ class CaseSettlementController extends Controller
         if ($request->user()->role === 'attorney') $caseQuery->assignedToAttorney($request->user()->id);
         $caseQuery->findOrFail($request->case_id);
 
-        $settlement = \Illuminate\Support\Facades\DB::transaction(function () use ($request) {
+        $settlement = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $caseQuery) {
+            $caseQuery->lockForUpdate()->findOrFail($request->case_id);
             $this->validateAllocations($request->all());
+            $payload = $request->only(['case_id', 'settlement_date', 'status', 'notes']);
+            $payload['case_id'] = (int) $request->case_id;
+            $payload['notes'] = $request->notes ?? null;
+            $payload['settlement_date'] = \Carbon\Carbon::parse($request->settlement_date)->toDateString();
+            foreach (['settlement_amount', 'attorney_fees', 'costs', 'other_deductions'] as $field) {
+                $payload[$field] = $request->has($field) ? CaseSettlement::cents($request->input($field)) : null;
+            }
+            $hash = hash('sha256', json_encode($payload));
+            if ($request->request_id) {
+                $existing = CaseSettlement::withTrashed()->where('organization_id', $request->user()->organization_id)
+                    ->where('case_id', $request->case_id)->where('request_id', $request->request_id)->first();
+                if ($existing) {
+                    abort_if($existing->trashed() || $existing->created_by !== $request->user()->id || !hash_equals($existing->request_hash, $hash), 409, 'This save reference was already used. Review the existing settlement before creating another.');
+                    return $existing->load(['case:id,case_number,title', 'creator:id,first_name,last_name']);
+                }
+            }
             $settlement = CaseSettlement::create([
                 'organization_id' => $request->user()->organization_id,
                 'created_by' => $request->user()->id,
+                'request_id' => $request->request_id,
+                'request_hash' => $request->request_id ? $hash : null,
                 ...$request->only(['case_id', 'settlement_amount', 'settlement_date', 'status', 'notes', 'attorney_fees', 'costs', 'other_deductions'])
             ]);
 

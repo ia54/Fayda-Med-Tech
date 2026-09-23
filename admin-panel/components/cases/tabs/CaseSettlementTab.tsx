@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,6 +31,9 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
     other_deductions: "0"
   })
 
+  const saveAttempt = useRef<{ fingerprint: string; key: string } | null>(null)
+  const [savedInputs, setSavedInputs] = useState("")
+  const inputs = JSON.stringify({ caseId, ...calcData })
   const [error, setError] = useState("")
   const settlement = settlementResponse?.data?.data?.[0] // Assuming one main settlement record for now
 
@@ -43,12 +46,13 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
   const netToClient = gross - fees - costs - other
 
   const handleSaveSettlement = async () => {
+    if (isCreating || savedInputs === inputs) return
     setError("")
     if (Object.values(calcData).some(value => !/^\d+(\.\d{1,2})?$/.test(value)) || gross <= 0 || feePercent > 100 || netToClient < 0) {
       setError("Enter a positive gross amount, a fee from 0 to 100%, and non-negative deductions that do not exceed the gross amount."); return
     }
     try {
-      await createSettlement({
+      const payload = {
         case_id: caseId,
         settlement_amount: gross.toFixed(2),
         attorney_fees: fees.toFixed(2),
@@ -57,7 +61,11 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
         settlement_date: new Date().toISOString().split('T')[0],
         status: "pending",
         notes: `Breakdown: Fees(${feePercent}%) = $${fees.toFixed(2)}, Costs = $${costs.toFixed(2)}, Other deductions = $${other.toFixed(2)}, Net = $${netToClient.toFixed(2)}`
-      }).unwrap()
+      }
+      const fingerprint = JSON.stringify(payload)
+      if (saveAttempt.current?.fingerprint !== fingerprint) saveAttempt.current = { fingerprint, key: crypto.randomUUID() }
+      await createSettlement({ ...payload, request_id: saveAttempt.current.key }).unwrap()
+      setSavedInputs(inputs)
       toast({ title: "Settlement Recorded", description: "Pending record saved. No funds were transferred." })
       refetch()
     } catch (error: any) {
@@ -135,9 +143,9 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
               />
             </div>
 
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 mt-4" onClick={handleSaveSettlement} disabled={isCreating}>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 mt-4" onClick={handleSaveSettlement} disabled={isCreating || savedInputs === inputs}>
               <FileCheck2 className="w-4 h-4 mr-2" />
-              Save Pending Settlement
+              {savedInputs === inputs ? "Pending Settlement Saved" : "Save Pending Settlement"}
             </Button>
           </CardContent>
         </Card>

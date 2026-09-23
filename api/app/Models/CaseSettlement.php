@@ -22,6 +22,8 @@ class CaseSettlement extends Model
         'status',
         'notes',
         'created_by',
+        'request_id',
+        'request_hash',
     ];
 
     protected $casts = [
@@ -31,6 +33,8 @@ class CaseSettlement extends Model
         'costs' => 'decimal:2',
         'other_deductions' => 'decimal:2',
     ];
+
+    protected $hidden = ['request_id', 'request_hash'];
 
     protected $appends = ['net_to_client'];
 
