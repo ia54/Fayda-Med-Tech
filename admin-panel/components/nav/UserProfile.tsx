@@ -191,7 +191,7 @@ export function UserProfile({ user, onLogout }: UserProfileProps) {
                 <span className="text-sm">Account security</span>
               </div>
             </Link>
-            <Link href="/notifications" className="user-profile-action group p-2">
+            <Link href="/dashboard/notifications" className="user-profile-action group p-2">
               <div className="flex items-center flex-1">
                 <Bell className="user-profile-action-icon group-hover:text-accent-foreground w-4 h-4" />
                 <span className="text-sm">Notifications</span>

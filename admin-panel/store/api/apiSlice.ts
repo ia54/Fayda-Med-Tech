@@ -3,6 +3,30 @@ import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolk
 import { logout, setCredentials } from '../slices/authSlice';
 import type { RootState } from '../store';
 
+export interface Notification {
+  id: string;
+  read_at: string | null;
+  created_at: string;
+  data: {
+    title: string;
+    message: string;
+    type: string;
+    action_url?: string | null;
+  };
+}
+
+interface NotificationsResponse {
+  status: boolean;
+  message: string;
+  data: {
+    notifications: Notification[];
+    unread_count: number;
+    pagination: { current_page: number; last_page: number; total: number };
+  };
+}
+
+type NotificationUpdateResponse = { status: boolean; message: string };
+
 // API Base URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api';
 
@@ -149,7 +173,7 @@ export const apiSlice = createApi({
   tagTypes: Object.values(TAG_TYPES),
   endpoints: (builder) => ({
     // ========= Notifications (PDF Section 14) =========
-    getNotifications: builder.query<any, { page?: number }>({
+    getNotifications: builder.query<NotificationsResponse, { page?: number }>({
       query: ({ page = 1 }) => ({
         url: '/notifications',
         params: { page },
@@ -157,27 +181,27 @@ export const apiSlice = createApi({
       providesTags: (result) =>
         result
           ? [
-              ...(result as any).data.notifications.map(({ id }: { id: number | string }) => ({ type: 'Notification' as const, id })),
+              ...result.data.notifications.map(({ id }) => ({ type: 'Notification' as const, id })),
               { type: 'Notification' as const, id: 'LIST' },
             ]
           : [{ type: 'Notification' as const, id: 'LIST' }],
     }),
-    markAsRead: builder.mutation({
+    markAsRead: builder.mutation<NotificationUpdateResponse, string>({
       query: (id) => ({
         url: `/notifications/${id}/read`,
         method: 'POST',
       }),
-      invalidatesTags: (result, error, id) => [
+      invalidatesTags: (result, error, id) => error ? [] : [
         { type: 'Notification' as const, id },
         { type: 'Notification' as const, id: 'LIST' },
       ],
     }),
-    markAllAsRead: builder.mutation({
+    markAllAsRead: builder.mutation<NotificationUpdateResponse, void>({
       query: () => ({
         url: '/notifications/read-all',
         method: 'POST',
       }),
-      invalidatesTags: [{ type: 'Notification' as const, id: 'LIST' }],
+      invalidatesTags: (result, error) => error ? [] : [{ type: 'Notification' as const, id: 'LIST' }],
     }),
 
     // ========= Insurance Management (PDF Section 7) =========
