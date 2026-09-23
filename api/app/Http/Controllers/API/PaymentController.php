@@ -37,6 +37,9 @@ class PaymentController extends Controller
         }
         $payments = $query->latest()->orderByDesc('id')->paginate($request->get('per_page', 15));
 
+        if ($user->role === 'client') {
+            $payments->getCollection()->each(fn ($payment) => $this->hideInternalNotes($payment));
+        }
         return response()->json([
             'status' => true,
             'message' => 'Payments retrieved successfully',
@@ -89,12 +92,20 @@ class PaymentController extends Controller
             $query->whereHas('invoice.case.parties', fn ($q) => $q->where('user_id', $user->id));
         }
         $payment = $query->findOrFail($id);
+        if ($user->role === 'client') $this->hideInternalNotes($payment);
 
         return response()->json([
             'status' => true,
             'message' => 'Payment details retrieved successfully',
             'data' => $payment
         ]);
+    }
+
+    private function hideInternalNotes(Payment $payment): void
+    {
+        $payment->makeHidden(['notes', 'recorded_by']);
+        $payment->invoice?->makeHidden(['metadata', 'notes']);
+        $payment->reversal?->makeHidden(['notes', 'recorded_by']);
     }
 
     /** Append a correcting entry; retain the original receipt and its reference. */

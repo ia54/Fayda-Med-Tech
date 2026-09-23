@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import { useSelector } from "react-redux"
+import { RootState } from "@/store/store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +18,8 @@ import { useToast } from "@/hooks/use-toast"
 
 export default function PaymentsPage() {
   const { toast } = useToast()
+  const role = useSelector((state: RootState) => state.auth.user?.role)
+  const canRecord = ["admin", "firm_admin", "medical_biller"].includes(role || "")
   const [correction, setCorrection] = useState<Payment | null>(null)
   const [reason, setReason] = useState("")
   const [correctionError, setCorrectionError] = useState("")
@@ -79,7 +83,7 @@ export default function PaymentsPage() {
           <p className="text-muted-foreground">Track and reconcile all incoming payments</p>
         </div>
         <div className="flex gap-2">
-          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          {canRecord && <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
@@ -142,7 +146,7 @@ export default function PaymentsPage() {
                 </Button>
               </DialogFooter>
             </DialogContent>
-          </Dialog>
+          </Dialog>}
         </div>
       </div>
 
@@ -193,7 +197,7 @@ export default function PaymentsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{payment.transaction_id || "-"}</TableCell>
-                      <TableCell>{payment.reversal_of_id ? <span>Reversal of receipt #{payment.reversal_of_id}: {payment.notes}</span> : payment.reversal ? <span>Reversed: {payment.reversal.notes}</span> : <Button variant="outline" size="sm" aria-label={`Correct ${payment.transaction_id}`} onClick={() => { setCorrection(payment); setReason(''); setCorrectionError('') }}>Correct receipt</Button>}</TableCell>
+                      <TableCell>{payment.reversal_of_id ? <span>Reversal of receipt #{payment.reversal_of_id}: {payment.notes}</span> : payment.reversal ? <span>Reversed: {payment.reversal.notes}</span> : canRecord ? <Button variant="outline" size="sm" aria-label={`Correct ${payment.transaction_id}`} onClick={() => { setCorrection(payment); setReason(''); setCorrectionError('') }}>Correct receipt</Button> : <span>Recorded receipt</span>}</TableCell>
 
                     </TableRow>
                   ))}

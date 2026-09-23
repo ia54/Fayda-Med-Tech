@@ -187,7 +187,7 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       providesTags: ['Invoice', 'Document'],
     }),
     // Client-specific endpoints
-    getClientInvoices: builder.query<{ data: { data: Invoice[] } }, any>({
+    getClientInvoices: builder.query<{ data: { data: Invoice[]; last_page: number; total: number } }, any>({
       query: (params) => ({
         url: '/client/invoices',
         params,
@@ -198,7 +198,7 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       query: (id) => `/client/invoices/${id}`,
       providesTags: (result, error, id) => [{ type: 'Invoice' as const, id }],
     }),
-    getClientPayments: builder.query<{ data: { data: Payment[] } }, any>({
+    getClientPayments: builder.query<{ data: { data: Payment[]; last_page: number; total: number } }, any>({
       query: (params) => ({
         url: '/client/payments',
         params,

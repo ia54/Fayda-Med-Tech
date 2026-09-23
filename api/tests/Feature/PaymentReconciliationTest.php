@@ -110,4 +110,29 @@ class PaymentReconciliationTest extends TestCase
         $this->assertDatabaseCount('payments', 1);
     }
 
+    public function test_client_sees_only_assigned_case_finances_without_internal_notes(): void
+    {
+        $this->actor->role = 'medical_biller';
+        $own = $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 10, 'status' => 'sent', 'notes' => 'Staff private', 'metadata' => ['notes' => 'Clinical internal']])->assertCreated()->json('data.id');
+        $receipt = $this->postJson('/api/payments', ['invoice_id' => $own, 'amount' => 10, 'payment_method' => 'cash', 'transaction_id' => 'CLIENT-OWN', 'payment_date' => now()->toDateString(), 'notes' => 'Staff receipt note'])->assertCreated()->json('data.id');
+        $this->postJson('/api/payments/'.$receipt.'/reverse', ['reason' => 'Internal correction note'])->assertCreated();
+        $unassigned = CaseModel::create(['organization_id' => 1, 'case_number' => 'UNASSIGNED', 'title' => 'Other client case', 'created_by' => $this->actor->id]);
+        $other = $this->postJson('/api/invoices', ['case_id' => $unassigned->id, 'amount' => 10, 'status' => 'sent'])->assertCreated()->json('data.id');
+        $otherPayment = $this->postJson('/api/payments', ['invoice_id' => $other, 'amount' => 10, 'payment_method' => 'cash', 'transaction_id' => 'CLIENT-OTHER', 'payment_date' => now()->toDateString()])->assertCreated()->json('data.id');
+        \App\Models\CaseParty::create(['case_id' => $this->cases[1]->id, 'user_id' => $this->actor->id, 'role_in_case' => 'Plaintiff']);
+        $this->actor->role = 'client';
+        $this->cases[1]->update(['status' => 'New']);
+        $this->getJson('/api/client/stats')->assertOk()->assertJsonPath('data.case_summary.status', 'New')->assertJsonPath('data.stats.billing_summary.paid', '$0.00');
+        $this->getJson('/api/client/invoices')->assertOk()->assertJsonPath('data.total', 1)->assertJsonMissingPath('data.data.0.metadata')->assertJsonMissingPath('data.data.0.notes');
+        $this->getJson('/api/client/invoices/'.$own)->assertOk()->assertJsonPath('data.total_paid', 0)->assertJsonMissingPath('data.metadata')->assertJsonMissingPath('data.payments.0.notes')->assertJsonMissingPath('data.payments.0.reversal.notes');
+        $this->getJson('/api/client/payments')->assertOk()->assertJsonPath('data.total', 2)->assertJsonMissingPath('data.data.0.notes')->assertJsonMissingPath('data.data.0.invoice.metadata');
+        $this->getJson('/api/payments/'.$receipt)->assertOk()->assertJsonMissingPath('data.notes')->assertJsonMissingPath('data.reversal.notes');
+        $this->getJson('/api/client/invoices/'.$other)->assertNotFound();
+        $this->getJson('/api/payments/'.$otherPayment)->assertNotFound();
+        $this->actor->role = 'medical_biller';
+        $this->postJson('/api/payments', ['invoice_id' => $own, 'amount' => 2, 'payment_method' => 'cash', 'transaction_id' => 'CLIENT-PARTIAL', 'payment_date' => now()->toDateString()])->assertCreated();
+        $this->actor->role = 'client';
+        $this->getJson('/api/client/stats')->assertOk()->assertJsonPath('data.stats.billing_summary.paid', '$2.00');
+    }
+
 }

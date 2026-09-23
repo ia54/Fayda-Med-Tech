@@ -48,6 +48,9 @@ class InvoiceController extends Controller
         }
         $invoices = $query->latest()->orderByDesc('id')->paginate($request->get('per_page', 15));
 
+        if ($user->role === 'client') {
+            $invoices->getCollection()->each(fn ($invoice) => $invoice->makeHidden(['metadata', 'notes']));
+        }
         return response()->json([
             'status' => true,
             'message' => 'Invoices retrieved successfully',
@@ -115,7 +118,7 @@ class InvoiceController extends Controller
     {
         $user = $request->user();
         abort_if($user->role !== 'admin' && !$user->organization_id, 403);
-        $query = Invoice::with(['case', 'payments'])->withSum('payments as total_paid', 'amount');
+        $query = Invoice::with(['case', 'payments.reversal'])->withSum('payments as total_paid', 'amount');
 
         if ($user->role === 'client') {
             $query->whereHas('case.parties', function($q) use ($user) {
@@ -124,6 +127,13 @@ class InvoiceController extends Controller
         }
 
         $invoice = $query->findOrFail($id);
+        if ($user->role === 'client') {
+            $invoice->makeHidden(['metadata', 'notes']);
+            $invoice->payments->each(function ($payment) {
+                $payment->makeHidden(['notes', 'recorded_by']);
+                $payment->reversal?->makeHidden(['notes', 'recorded_by']);
+            });
+        }
 
         return response()->json([
             'status' => true,

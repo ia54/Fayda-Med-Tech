@@ -21,7 +21,7 @@ const statusColors: Record<string, string> = {
 export default function ClientInvoiceDetailPage() {
   const params = useParams()
   const invoiceId = Number(params.id)
-  const { data, isLoading, error } = useGetClientInvoiceDetailQuery(invoiceId)
+  const { data, isLoading, error, refetch } = useGetClientInvoiceDetailQuery(invoiceId)
 
   if (isLoading) {
     return (
@@ -37,7 +37,8 @@ export default function ClientInvoiceDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <FileText className="h-12 w-12 text-slate-300 mb-4" />
-        <h3 className="text-lg font-semibold text-slate-600">Invoice not found</h3>
+        <h3 className="text-lg font-semibold text-slate-600">Invoice unavailable</h3>
+        <p>It could not be loaded, or you may not have access.</p><Button onClick={() => refetch()}>Try again</Button>
         <Button variant="outline" className="mt-4" asChild>
           <Link href="/dashboard/client/invoices"><ArrowLeft className="h-4 w-4 mr-2" /> Back</Link>
         </Button>
@@ -84,7 +85,7 @@ export default function ClientInvoiceDetailPage() {
               <p className="text-xs text-muted-foreground uppercase tracking-wider">Due Date</p>
               <p className="text-lg font-bold mt-1 flex items-center gap-1">
                 <Calendar className="h-4 w-4" />
-                {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "N/A"}
+                {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString(undefined, { timeZone: "UTC" }) : "N/A"}
               </p>
             </div>
           </div>
@@ -107,11 +108,12 @@ export default function ClientInvoiceDetailPage() {
                   <div className="flex items-center gap-3">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                     <div>
+                      <p className="text-sm">{p.reversal_of_id ? "Correction entry (not a refund)" : p.reversal ? "Receipt reversed" : "Recorded receipt"}</p>
                       <p className="text-sm font-bold">${Number(p.amount).toFixed(2)}</p>
                       <p className="text-xs text-muted-foreground capitalize">{p.payment_method?.replace("_", " ")}</p>
                     </div>
                   </div>
-                  <p className="text-sm text-muted-foreground">{p.payment_date ? new Date(p.payment_date).toLocaleDateString() : ""}</p>
+                  <p className="text-sm text-muted-foreground">{p.payment_date ? new Date(p.payment_date).toLocaleDateString(undefined, { timeZone: "UTC" }) : ""}</p>
                 </div>
               ))}
             </div>
