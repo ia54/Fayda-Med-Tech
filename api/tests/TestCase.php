@@ -16,7 +16,9 @@ abstract class TestCase extends BaseTestCase
                 || config('database.connections.mysql.database') !== 'faydamed_ci' || config('database.connections.mysql.host') !== '127.0.0.1') {
                 throw new \RuntimeException('Refusing to reset a database outside disposable MySQL CI.');
             }
-            \Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
+            if (\Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]) !== 0) {
+                throw new \RuntimeException('Disposable MySQL schema reset failed.');
+            }
         }
         \Illuminate\Support\Facades\Schema::useNativeSchemaOperationsIfPossible();
         // Public-only fixture. Its private key is discarded; no deployment

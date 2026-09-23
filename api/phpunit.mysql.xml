@@ -8,6 +8,7 @@
         <testsuite name="MySQL financial workflows">
             <file>tests/Feature/SettlementCorrectionTest.php</file>
             <file>tests/Feature/CaseUpdateTest.php</file>
+            <file>tests/Feature/PaymentReconciliationTest.php</file>
         </testsuite>
     </testsuites>
     <source>
