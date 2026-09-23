@@ -51,7 +51,7 @@ type TMyInp = {
   selectionMode?: "single" | "multiple";
   // For array type (using useFieldArray)
   fields?: any[]; // from useFieldArray
-  append?: (value: string) => void;
+  append?: (value: { value: string }) => void;
   remove?: (index: number) => void;
   existingImageUrl?: string;
 };

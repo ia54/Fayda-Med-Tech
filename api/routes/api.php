@@ -322,8 +322,8 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::delete('/admin/permissions/{id}', [PermissionController::class, 'destroy'])->middleware('role:admin');
 
         // Audit Logs
-        Route::get('/admin/audit-logs', [\App\Http\Controllers\Api\AuditLogController::class, 'index']);
-        Route::get('/admin/audit-logs/{id}', [\App\Http\Controllers\Api\AuditLogController::class, 'show']);
+        Route::get('/admin/audit-logs', [\App\Http\Controllers\API\AuditLogController::class, 'index']);
+        Route::get('/admin/audit-logs/{id}', [\App\Http\Controllers\API\AuditLogController::class, 'show']);
 
         // Security Management
         Route::get('/admin/security/settings', [SecurityController::class, 'getSettings'])->middleware('role:admin');

@@ -80,7 +80,7 @@ export default function ClientSignaturesPage() {
       
       // 5. Save stamped PDF
       const modifiedPdfBytes = await pdfDoc.save()
-      const blob = new Blob([modifiedPdfBytes], { type: 'application/pdf' })
+      const blob = new Blob([new Uint8Array(modifiedPdfBytes)], { type: 'application/pdf' })
       
       const formData = new FormData()
       formData.append('file', blob, selectedDoc.original_name || 'signed_document.pdf')

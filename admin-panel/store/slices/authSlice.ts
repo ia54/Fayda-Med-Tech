@@ -7,6 +7,7 @@ export interface User {
   email: string;
   role: string;
   organization: string;
+  organization_id?: number | null;
   email_verified_at: string | null;
   created_at: string;
   updated_at: string;

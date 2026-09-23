@@ -202,10 +202,10 @@ export default function ClientCaseDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="relative pl-6 space-y-6">
-              {c.timeline.map((event: any, i: number) => (
+              {c.timeline.map((event: any, i: number, timeline) => (
                 <div key={event.id || i} className="relative">
                   <div className="absolute -left-6 top-1 h-3 w-3 rounded-full bg-primary border-2 border-white dark:border-slate-900" />
-                  {i < c.timeline.length - 1 && (
+                  {i < timeline.length - 1 && (
                     <div className="absolute -left-[18px] top-4 h-full w-0.5 bg-slate-200 dark:bg-slate-700" />
                   )}
                   <div>
