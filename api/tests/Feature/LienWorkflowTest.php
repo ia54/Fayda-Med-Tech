@@ -31,6 +31,12 @@ class LienWorkflowTest extends TestCase
         $this->postJson('/api/liens',array_replace($body,['status'=>null]))->assertUnprocessable();
         $id = $this->postJson('/api/liens',array_replace($body,['organization_id'=>2]))->assertCreated()->assertJsonPath('data.status','pending')->assertJsonPath('data.organization_id',1)->assertJsonPath('data.amount','100.25')->json('data.id');
         $url='/api/liens/'.$id;
+        $this->postJson('/api/liens',array_replace($body,['reduction_amount'=>'101.00']))->assertUnprocessable();
+        $this->putJson($url,['reduction_amount'=>'25.15'])->assertOk()->assertJsonPath('data.reduction_amount','25.15');
+        $this->putJson($url,['amount'=>'20.00'])->assertUnprocessable();
+        $this->putJson($url,['reduction_amount'=>null])->assertOk()->assertJsonPath('data.reduction_amount',null);
+        $this->putJson($url,['negotiated_amount'=>'101.00'])->assertUnprocessable();
+
         $other = Lien::create(array_replace($body,['case_id'=>$cases[1]->id,'organization_id'=>1]));
         $foreign = Lien::create(array_replace($body,['case_id'=>$cases[2]->id,'organization_id'=>2]));
         // A legacy mismatched case link must not widen tenant access.

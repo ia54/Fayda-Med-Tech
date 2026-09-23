@@ -8,6 +8,7 @@ use App\Traits\LogsTimeline;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class LienController extends Controller
 {
@@ -79,9 +80,21 @@ class LienController extends Controller
         return $data;
     }
 
+    private function validateAmounts(array $data, ?Lien $lien = null): void
+    {
+        $amount = $data['amount'] ?? $lien?->amount;
+        foreach (['reduction_amount', 'negotiated_amount'] as $field) {
+            $value = array_key_exists($field, $data) ? $data[$field] : $lien?->$field;
+            if ($value !== null && (int) round((float) $value * 100) > (int) round((float) $amount * 100)) {
+                throw ValidationException::withMessages([$field => 'The recorded amount cannot exceed the original lien amount.']);
+            }
+        }
+    }
+
     public function store(Request $request)
     {
         $data = $this->payload($request);
+        $this->validateAmounts($data);
         $lien = DB::transaction(function () use ($request, $data) {
             $lien = Lien::create(array_merge(['status' => 'pending'], $data, ['organization_id' => $request->user()->organization_id]));
             $this->logTimeline((int) $lien->case_id, 'legal', 'Lien Added', 'Lien record added; no payment or legal release is confirmed.', ['lien_id' => $lien->id, 'details' => $lien->getAttributes()]);
@@ -105,6 +118,7 @@ class LienController extends Controller
                 $allowed = $lien->status === 'released' ? ['released'] : ['settled', 'released'];
                 abort_unless(in_array($data['status'], $allowed, true), 409, 'Settled or released records cannot return to a deletable status.');
             }
+            $this->validateAmounts($data, $lien);
             $before = $lien->getAttributes();
             $lien->fill($data);
             if ($lien->isDirty()) {

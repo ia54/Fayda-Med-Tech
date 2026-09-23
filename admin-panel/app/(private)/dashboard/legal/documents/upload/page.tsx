@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Upload, FileText, CheckCircle, Clock, Trash2, Loader2, FolderOpen, Scale, AlertCircle } from "lucide-react"
 import { useGetDocumentsQuery, useUploadDocumentMutation } from "@/store/api/billingApiSlice"
-import { useGetCasesQuery } from "@/store/api/casesApiSlice"
+import { useGetCaseByIdQuery, useGetCasesQuery } from "@/store/api/casesApiSlice"
 import { useToast } from "@/hooks/use-toast"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -21,18 +21,21 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 
-export default function LegalDocumentUploadPage() {
+export default function LegalDocumentUploadPage({ searchParams }: { searchParams: { case_id?: string } }) {
+  const initialCase = /^\d+$/.test(searchParams.case_id || "") ? searchParams.case_id! : ""
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [selectedCase, setSelectedCase] = useState<string>("")
+  const [selectedCase, setSelectedCase] = useState<string>(initialCase)
   const [documentCategory, setDocumentCategory] = useState<string>("general")
   const [uploadingFiles, setUploadingFiles] = useState<{ name: string; progress: number }[]>([])
   
   const { data: documentsData, isLoading } = useGetDocumentsQuery({})
   const { data: casesData } = useGetCasesQuery({ per_page: 100 })
+  const { data: linkedCase, isError: linkedCaseError } = useGetCaseByIdQuery(Number(initialCase), { skip: !initialCase })
   const [uploadDocument] = useUploadDocumentMutation()
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (uploadingFiles.length) return
     const files = e.target.files
     if (!files || files.length === 0) return
 
@@ -50,20 +53,16 @@ export default function LegalDocumentUploadPage() {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
+      if (!/\.(pdf|png|jpe?g|docx?)$/i.test(file.name) || file.size > 20 * 1024 * 1024) {
+        setUploadingFiles(prev => prev.filter(f => f.name !== file.name))
+        toast({ title: "Unsupported file", description: "Use a PDF, image or Word document up to 20 MB.", variant: "destructive" })
+        continue
+      }
       const formData = new FormData()
       formData.append("file", file)
       formData.append("title", file.name)
       
-      // Pass case_id and category in metadata
-      const caseInfo = casesData?.data?.find((c: any) => c.id.toString() === selectedCase)
-      const metadata = { 
-        type: 'legal_document', 
-        category: documentCategory,
-        case_id: selectedCase,
-        case_number: caseInfo?.case_number,
-        case_title: caseInfo?.title,
-        context: 'firm_upload' 
-      }
+      const metadata = { category: documentCategory, case_id: Number(selectedCase) }
       formData.append("metadata", JSON.stringify(metadata))
 
       try {
@@ -72,7 +71,7 @@ export default function LegalDocumentUploadPage() {
         toast({ title: "Upload Success", description: `${file.name} uploaded successfully.` })
       } catch (err: any) {
         setUploadingFiles(prev => prev.filter(f => f.name !== file.name))
-        toast({ title: "Upload Failed", description: `Failed to upload ${file.name}`, variant: "destructive" })
+        toast({ title: "Upload Failed", description: Object.values(err.data?.errors || {}).flat().join(" ") || err.data?.message || `Failed to upload ${file.name}`, variant: "destructive" })
       }
     }
     
@@ -91,12 +90,13 @@ export default function LegalDocumentUploadPage() {
         </div>
         <input
           type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
           multiple
           className="hidden"
           ref={fileInputRef}
           onChange={handleFileSelect}
         />
-        <Button onClick={() => fileInputRef.current?.click()} className="bg-emerald-600 hover:bg-emerald-700">
+        <Button disabled={!!uploadingFiles.length || !selectedCase || (selectedCase === initialCase && linkedCaseError)} onClick={() => fileInputRef.current?.click()} className="bg-emerald-600 hover:bg-emerald-700">
           <Upload className="h-4 w-4 mr-2" />
           Upload Document
         </Button>
@@ -113,11 +113,13 @@ export default function LegalDocumentUploadPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="case-select">Related Case</Label>
-                <Select value={selectedCase} onValueChange={setSelectedCase}>
+                {linkedCaseError && <p role="alert">The linked case is unavailable. Select an accessible case.</p>}
+                <Select disabled={!!uploadingFiles.length} value={selectedCase} onValueChange={setSelectedCase}>
                   <SelectTrigger id="case-select" className="bg-white/50 border-emerald-100">
                     <SelectValue placeholder="Choose a case..." />
                   </SelectTrigger>
                   <SelectContent>
+                    {initialCase && linkedCase && !casesData?.data?.some((c: any) => String(c.id) === initialCase) && <SelectItem value={initialCase}>{linkedCase.case_number} - {linkedCase.title}</SelectItem>}
                     {casesData?.data?.map((c: any) => (
                       <SelectItem key={c.id} value={c.id.toString()}>
                         {c.case_number} - {c.title}

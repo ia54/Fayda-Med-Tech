@@ -7,8 +7,8 @@ export interface Lien {
   lien_type: 'medical' | 'attorney' | 'government_medicare' | 'government_medicaid' | 'health_insurance';
   amount: number | string;
   status: 'pending' | 'negotiated' | 'settled' | 'released';
-  negotiated_amount?: number;
-  reduction_amount?: number;
+  negotiated_amount?: number | string | null;
+  reduction_amount?: number | string | null;
   payoff_date?: string;
   release_document_url?: string;
   notes?: string;
