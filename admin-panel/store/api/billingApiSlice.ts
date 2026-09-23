@@ -39,7 +39,7 @@ export interface Invoice {
   created_at?: string;
   notes?: string;
   paid_at?: string;
-  metadata?: { payer?: string; cpt_codes?: string; diagnosis_codes?: string; patient_name?: string; service_date?: string; notes?: string };
+  metadata?: { billing_review?: { state: 'reviewed' | 'returned'; note: string; reviewed_by: number; reviewed_at: string }; payer?: string; cpt_codes?: string; diagnosis_codes?: string; patient_name?: string; service_date?: string; notes?: string };
   case_id?: number;
   case?: {
     id: number;
@@ -136,6 +136,10 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       query: ({ id, ...body }) => ({ url: `/provider/invoices/${id}/draft`, method: 'PUT', body }),
       invalidatesTags: ['Invoice'],
     }),
+    reviewInvoice: builder.mutation<{ data: Invoice }, { id: number; action: 'reviewed' | 'return'; note: string }>({
+      query: ({ id, ...body }) => ({ url: `/invoices/${id}/review`, method: 'POST', body }),
+      invalidatesTags: ['Invoice'],
+    }),
     deleteInvoice: builder.mutation<any, number>({
       query: (id) => ({
         url: `/invoices/${id}`,
@@ -227,6 +231,7 @@ export const {
   useGetDocumentsQuery,
   useUploadDocumentMutation,
   useCreateInvoiceMutation,
+  useReviewInvoiceMutation,
   useUpdateProviderDraftMutation,
   useDeleteInvoiceMutation,
   useCreatePaymentMutation,

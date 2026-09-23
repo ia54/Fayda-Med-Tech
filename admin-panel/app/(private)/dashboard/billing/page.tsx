@@ -11,10 +11,10 @@ import { useGetBillingStatsQuery } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function BillingDashboard() {
-  const { data: billingData, isLoading } = useGetBillingStatsQuery()
+  const { data: billingData, isLoading, isError, refetch } = useGetBillingStatsQuery()
 
   const statsData = billingData?.data?.stats || { work_queue: 0, appeals_generated: 0, claims_processed: 0, success_rate: "0%" }
-  
+
   const stats = [
     {
       title: "Work Queue Items",
@@ -69,6 +69,8 @@ export default function BillingDashboard() {
     )
   }
 
+  if (isError) return <p role="alert">Could not load billing totals. <Button onClick={() => refetch()}>Try again</Button></p>
+
   const getPriorityColor = (priority: string) => {
     switch (priority.toLowerCase()) {
       case "high": return "bg-red-100 text-red-700 border-red-200"
@@ -122,9 +124,7 @@ export default function BillingDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stat.value}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                <span className="text-emerald-500">{stat.change}</span> since yesterday
-              </p>
+
             </CardContent>
           </Card>
         ))}
@@ -142,6 +142,7 @@ export default function BillingDashboard() {
           </CardHeader>
           <CardContent className="space-y-3">
             {[
+              { label: "Review Invoices", icon: CheckCircle, href: "/dashboard/billing/invoices" },
               { label: "Work Queue", icon: AlertTriangle, href: "/dashboard/billing/queue" },
               { label: "Code Validation", icon: CheckCircle, href: "/dashboard/billing/validation" },
               { label: "AI Appeals", icon: Bot, href: "/dashboard/billing/appeals" },
@@ -274,6 +275,7 @@ export default function BillingDashboard() {
             <CardDescription>Claim acceptance success rates</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {payerPerformance.length === 0 && <p className="text-sm text-muted-foreground">Payer acceptance data is not available.</p>}
             {payerPerformance.map((item: any, i: number) => (
               <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/30 transition-colors">
                 <div className="flex items-center gap-3">

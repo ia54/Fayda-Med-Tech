@@ -159,6 +159,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         // Invoices - All can view, only biller/firm_admin can create/edit
         Route::get('/invoices', [InvoiceController::class, 'index']);
         Route::post('/invoices', [InvoiceController::class, 'store'])->middleware('role:admin,firm_admin,medical_biller,provider_staff');
+        Route::post('/invoices/{id}/review', [InvoiceController::class, 'review'])->middleware('role:admin,firm_admin,medical_biller');
         Route::get('/invoices/{id}', [InvoiceController::class, 'show']);
         Route::put('/invoices/{id}', [InvoiceController::class, 'update'])->middleware('role:admin,firm_admin,medical_biller');
         Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy'])->middleware('role:admin,firm_admin,medical_biller');

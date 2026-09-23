@@ -77,6 +77,8 @@ class InvoiceController extends Controller
             'status' => $user->role === 'provider_staff' ? 'nullable|in:draft,sent' : 'nullable|in:draft,sent,paid,denied,voided',
             'notes' => 'nullable|string',
             'metadata' => 'nullable|array',
+            'metadata.billing_review' => 'missing',
+            'metadata.billing_review_history' => 'missing',
         ]);
 
         if ($validator->fails()) {
@@ -143,6 +145,8 @@ class InvoiceController extends Controller
             'paid_at' => 'nullable|date',
             'notes' => 'nullable|string',
             'metadata' => 'nullable|array',
+            'metadata.billing_review' => 'missing',
+            'metadata.billing_review_history' => 'missing',
         ]);
 
         if ($validator->fails()) {
@@ -153,7 +157,11 @@ class InvoiceController extends Controller
             ], 422);
         }
 
-        $invoice->update($validator->validated());
+        $data = $validator->validated();
+        if (array_key_exists('metadata', $data)) {
+            $data['metadata'] = array_merge($invoice->metadata ?? [], $data['metadata'] ?? []);
+        }
+        $invoice->update($data);
 
         return response()->json([
             'status' => true,
@@ -189,6 +197,24 @@ class InvoiceController extends Controller
                 'metadata' => array_merge($invoice->metadata ?? [], $data['metadata']),
             ]);
             return response()->json(['status' => true, 'message' => 'Billing record saved for internal use. No insurer submission was made.', 'data' => $invoice]);
+        });
+    }
+
+    /** Record an internal billing review without asserting insurer delivery or payment. */
+    public function review(Request $request, $id)
+    {
+        abort_if($request->user()->role !== 'admin' && !$request->user()->organization_id, 403);
+        $data = $request->validate(['action' => 'required|in:reviewed,return', 'note' => 'required|string|max:5000']);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id, $data) {
+            $invoice = Invoice::lockForUpdate()->findOrFail($id);
+            abort_unless($invoice->status === 'sent', 409, 'Only records awaiting billing review can be reviewed.');
+            $metadata = $invoice->metadata ?? [];
+            abort_if(($metadata['billing_review']['state'] ?? null) === 'reviewed', 409, 'This record has already been reviewed.');
+            $event = ['state' => $data['action'] === 'return' ? 'returned' : 'reviewed', 'note' => $data['note'], 'reviewed_by' => $request->user()->id, 'reviewed_at' => now()->toIso8601String()];
+            $metadata['billing_review'] = $event;
+            $metadata['billing_review_history'][] = $event;
+            $invoice->update(['status' => $data['action'] === 'return' ? 'draft' : 'sent', 'metadata' => $metadata]);
+            return response()->json(['status' => true, 'data' => $invoice]);
         });
     }
 

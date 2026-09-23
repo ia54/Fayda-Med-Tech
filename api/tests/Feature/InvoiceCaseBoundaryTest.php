@@ -92,6 +92,37 @@ class InvoiceCaseBoundaryTest extends TestCase
         $this->putJson($url, $body)->assertForbidden();
     }
 
+    public function test_review_return_resubmit_and_completion_preserve_history(): void
+    {
+        $id = $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 50, 'status' => 'sent'])->assertCreated()->json('data.id');
+        $url = '/api/invoices/'.$id.'/review';
+        foreach (['client', 'attorney', 'provider_staff'] as $role) {
+            $this->actor->role = $role;
+            $this->postJson($url, ['action' => 'reviewed', 'note' => 'Synthetic'])->assertForbidden();
+        }
+        $this->actor->role = 'medical_biller';
+        $this->actor->organization_id = 2;
+        $this->postJson($url, ['action' => 'reviewed', 'note' => 'Synthetic'])->assertNotFound();
+        $this->actor->organization_id = 1;
+        $this->postJson($url, ['action' => 'reviewed'])->assertUnprocessable();
+        $this->postJson($url, ['action' => 'return', 'note' => 'Correct codes'])->assertOk()->assertJsonPath('data.status', 'draft');
+        $this->postJson($url, ['action' => 'reviewed', 'note' => 'Premature'])->assertStatus(409);
+        $this->actor->role = 'provider_staff';
+        $this->putJson('/api/provider/invoices/'.$id.'/draft', ['amount' => 50, 'status' => 'sent', 'metadata' => ['patient_name' => 'Synthetic', 'service_date' => '2026-09-23']])->assertOk();
+        $this->actor->role = 'medical_biller';
+        $this->postJson($url, ['action' => 'reviewed', 'note' => 'Codes checked'])->assertOk()->assertJsonPath('data.metadata.billing_review.state', 'reviewed')->assertJsonCount(2, 'data.metadata.billing_review_history');
+        $this->postJson($url, ['action' => 'reviewed', 'note' => 'Duplicate'])->assertStatus(409);
+        $this->assertDatabaseHas('invoices', ['id' => $id, 'status' => 'sent']);
+        $this->putJson('/api/invoices/'.$id, ['metadata' => ['payer' => 'Synthetic payer']])->assertOk()->assertJsonCount(2, 'data.metadata.billing_review_history');
+        $this->putJson('/api/invoices/'.$id, ['metadata' => ['billing_review_history' => []]])->assertUnprocessable();
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_review_state_cannot_be_forged_during_invoice_creation(): void
+    {
+        $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 10, 'metadata' => ['billing_review' => ['state' => 'reviewed']]])->assertUnprocessable();
+    }
+
     public function test_other_organization_missing_and_archived_cases_are_rejected(): void
     {
         $this->cases[1]->delete();

@@ -171,7 +171,7 @@ export default function ClaimsPage() {
                         </TableCell>
                         <TableCell className="font-bold text-slate-900 dark:text-slate-100">${Number(claim.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={getStatusColor(claim.status)}>{claim.status === 'sent' ? 'BILLING REVIEW' : claim.status.toUpperCase()}</Badge>
+                          <Badge variant="outline" className={getStatusColor(claim.status)}>{claim.status === 'sent' && claim.metadata?.billing_review?.state === 'reviewed' ? 'REVIEWED' : claim.status === 'sent' ? 'BILLING REVIEW' : claim.status.toUpperCase()}</Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{new Date(claim.created_at).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
@@ -200,7 +200,7 @@ export default function ClaimsPage() {
         <Dialog open={!!selected} onOpenChange={open => { if (!open) setSelected(null) }}>
           <DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{selected?.invoice_number}</DialogTitle><DialogDescription>Internal billing record. Drafts can be edited before sending for billing review.</DialogDescription></DialogHeader>
             {selected?.status === "draft" ? <DraftEditor key={selected.id} invoice={selected} onSaved={() => setSelected(null)} /> : selected && <dl className="space-y-3 break-words">
-              {Object.entries({Patient: selected.metadata?.patient_name, Case: selected.case?.title, Amount: `$${Number(selected.amount).toFixed(2)}`, Status: selected.status === 'sent' ? 'Billing review' : selected.status, 'Service date': selected.metadata?.service_date, Payer: selected.metadata?.payer, 'CPT codes': selected.metadata?.cpt_codes, 'Diagnosis codes': selected.metadata?.diagnosis_codes, Notes: selected.metadata?.notes || selected.notes}).map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="whitespace-pre-wrap">{value || 'Not recorded'}</dd></div>)}
+              {Object.entries({Patient: selected.metadata?.patient_name, Case: selected.case?.title, Amount: `$${Number(selected.amount).toFixed(2)}`, Status: selected.status === 'sent' && selected.metadata?.billing_review?.state === 'reviewed' ? 'Reviewed' : selected.status === 'sent' ? 'Billing review' : selected.status, 'Service date': selected.metadata?.service_date, Payer: selected.metadata?.payer, 'CPT codes': selected.metadata?.cpt_codes, 'Diagnosis codes': selected.metadata?.diagnosis_codes, Notes: selected.metadata?.notes || selected.notes}).map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="whitespace-pre-wrap">{value || 'Not recorded'}</dd></div>)}
             </dl>}
           </DialogContent>
         </Dialog>
@@ -221,6 +221,7 @@ function DraftEditor({ invoice, onSaved }: { invoice: Invoice; onSaved: () => vo
   }
   return <div className="space-y-3">
     <p className="text-sm">Case: {invoice.case?.title || invoice.case_id}</p>
+    {invoice.metadata?.billing_review && <p role="status">Billing feedback: {invoice.metadata.billing_review.note}</p>}
     <label className="block">Amount ($)<Input aria-label="Draft amount" value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" disabled={isLoading} /></label>
     {(Object.keys(metadata) as (keyof typeof metadata)[]).map(key => <label key={key} className="block capitalize">{key.replaceAll('_',' ')}<Input aria-label={`Draft ${key.replaceAll('_',' ')}`} type={key === 'service_date' ? 'date' : 'text'} value={metadata[key]} onChange={e => setMetadata({...metadata, [key]: e.target.value})} disabled={isLoading} /></label>)}
     {error && <p role="alert" className="text-destructive">{error}</p>}
