@@ -1,10 +1,10 @@
 # Synthetic staging deployment
 
-Status: configuration prepared; no hosting account or server session has been verified. No staging DNS or deployment exists as a result of these files.
+Status (23 September 2026): hosting access and the three application locations are verified. The owner explicitly selected files-only preparation: no new ports, database provisioning, service startup, DNS changes or production deployment. Prepared copies remain outside the public web roots. The provisioning steps below are a later runbook, not completed operations.
 
 ## Host access needed
 
-The public API currently resolves to 144.126.132.98 and reports CyberPanel/OpenLiteSpeed. That identifies a probable server stack, not a hosting account. Obtain the actual console or SSH host/user from its operator. Existing unrelated Fayda cPanel sessions and SSH keys are not evidence of access to this server.
+Authorized SSH inspection confirmed the host serving the three FaydaMedTech domains and its OpenLiteSpeed, PHP 8.3 and MariaDB 10.11 stack. Access to unrelated servers, applications and folders is outside scope. Credentials must remain outside this repository.
 
 Record the deployed commit, PHP/MySQL/Node versions, vhosts, process manager, document roots, database grants, storage paths and backup destinations without copying secret values into reports. Inspect available capacity before adding staging. Prefer a separate server/account; if sharing a host, use a separate OS user, vhosts, database user, document storage, Passport keys and application key. Do not copy production patient records or credential tables.
 
@@ -27,3 +27,7 @@ Record tested commit and time, trusted HTTPS, API/frontend origins, config-check
 Snapshot the staging database and storage, restore into a second isolated target, and verify record/file hashes and login. Preserve the staging encryption and Passport keys through the protected backup mechanism. Do not run legacy-file removal on production as part of staging setup. Workers, outbound email, external signing, payments and AI remain disabled/unverified until individually tested with vendor sandboxes.
 
 Current project gates: 19 pre-existing TypeScript errors, remaining dependency remediation, mobile header clipping, unfinished clinical/financial workflows and external-event idempotency. Existing CI proves scoped backend behavior and fresh MySQL migrations, not host readiness or launch readiness.
+
+## Files-only verification limits
+
+The host SQLite version is 3.34.1, below the 3.35 minimum documented in api/TESTING.md. The full in-memory suite cannot run there because native DROP COLUMN is unavailable; do not alter shared system packages to work around this during files-only preparation. Native CI remains the full-suite evidence until a compatible isolated test runtime or authorized staging database is available. Host platform requirements, declaration checks and the three staging configuration tests can run without a persistent database. Frontend compilation inherits the existing build configuration that skips TypeScript/lint gates and does not prove complete user journeys.
