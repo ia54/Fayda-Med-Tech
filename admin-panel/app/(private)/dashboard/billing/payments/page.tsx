@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DollarSign, Search, Plus, Loader2, Download } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { useGetPaymentsQuery, useGetInvoicesQuery, useCreatePaymentMutation } from "@/store/api/billingApiSlice"
+import { Payment, useGetPaymentsQuery, useGetInvoicesQuery, useCreatePaymentMutation, useReversePaymentMutation } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
@@ -16,6 +16,10 @@ import { useToast } from "@/hooks/use-toast"
 
 export default function PaymentsPage() {
   const { toast } = useToast()
+  const [correction, setCorrection] = useState<Payment | null>(null)
+  const [reason, setReason] = useState("")
+  const [correctionError, setCorrectionError] = useState("")
+  const [reversePayment, {isLoading: reversing}] = useReversePaymentMutation()
   const [error, setError] = useState("")
   const [page, setPage] = useState(1)
   const [invoiceSearch, setInvoiceSearch] = useState("")
@@ -57,6 +61,14 @@ export default function PaymentsPage() {
     } catch (err: any) {
       setError(Object.values(err.data?.errors || {}).flat().join(" ") || err.data?.message || "Failed to record payment")
     }
+  }
+
+  async function reverseReceipt() {
+    if (!correction) return
+    setCorrectionError('')
+    if (!reason.trim()) { setCorrectionError('Explain why this receipt needs correcting.'); return }
+    try { await reversePayment({id: correction.id, reason: reason.trim()}).unwrap(); setCorrection(null); setReason('') }
+    catch (err: any) { setCorrectionError(err.data?.message || 'Could not reverse this receipt. Please try again.') }
   }
 
   return (
@@ -165,6 +177,7 @@ export default function PaymentsPage() {
                     <TableHead>Amount</TableHead>
                     <TableHead>Method</TableHead>
                     <TableHead>Transaction ID</TableHead>
+                    <TableHead>Correction history</TableHead>
 
                   </TableRow>
                 </TableHeader>
@@ -180,12 +193,13 @@ export default function PaymentsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{payment.transaction_id || "-"}</TableCell>
+                      <TableCell>{payment.reversal_of_id ? <span>Reversal of receipt #{payment.reversal_of_id}: {payment.notes}</span> : payment.reversal ? <span>Reversed: {payment.reversal.notes}</span> : <Button variant="outline" size="sm" aria-label={`Correct ${payment.transaction_id}`} onClick={() => { setCorrection(payment); setReason(''); setCorrectionError('') }}>Correct receipt</Button>}</TableCell>
 
                     </TableRow>
                   ))}
                   {paymentsData?.data?.data?.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="h-24 text-center">No payments recorded yet.</TableCell>
+                      <TableCell colSpan={6} className="h-24 text-center">No payments recorded yet.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -195,6 +209,7 @@ export default function PaymentsPage() {
         </CardContent>
       </Card>
       <div className="flex justify-between items-center"><Button variant="outline" disabled={page <= 1 || isLoading} onClick={() => setPage(p => p-1)}>Previous</Button><span>Page {page} of {paymentsData?.data.last_page || 1}</span><Button variant="outline" disabled={isLoading || isError || !paymentsData || page >= paymentsData.data.last_page} onClick={() => setPage(p => p+1)}>Next</Button></div>
+      <Dialog open={!!correction} onOpenChange={open => { if (!open && !reversing) setCorrection(null) }}><DialogContent><DialogHeader><DialogTitle>Reverse recorded receipt</DialogTitle><DialogDescription>This adds an equal negative entry and reopens the invoice balance. The original receipt remains in history. No money is refunded or transferred.</DialogDescription></DialogHeader><p>{correction?.transaction_id} · ${Number(correction?.amount || 0).toFixed(2)}</p><Label htmlFor="correction-reason">Correction reason</Label><Input id="correction-reason" value={reason} onChange={e => setReason(e.target.value)} disabled={reversing} />{correctionError && <p role="alert">{correctionError}</p>}<DialogFooter><Button variant="outline" disabled={reversing} onClick={() => setCorrection(null)}>Cancel</Button><Button disabled={reversing} onClick={reverseReceipt}>Reverse receipt entry</Button></DialogFooter></DialogContent></Dialog>
     </div>
   )
 }

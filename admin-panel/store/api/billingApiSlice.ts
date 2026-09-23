@@ -50,6 +50,10 @@ export interface Invoice {
 }
 
 export interface Payment {
+  notes?: string;
+  recorded_by?: number;
+  reversal_of_id?: number | null;
+  reversal?: { id: number; notes?: string } | null;
   id: number;
   invoice_id: number;
   amount: number;
@@ -116,6 +120,10 @@ export const billingApiSlice = apiSlice.injectEndpoints({
     getBillingAnalytics: builder.query<any, void>({
       query: () => '/billing/analytics',
       providesTags: ['Invoice', 'Payment'],
+    }),
+    reversePayment: builder.mutation<any, { id: number; reason: string }>({
+      query: ({ id, reason }) => ({ url: `/payments/${id}/reverse`, method: 'POST', body: { reason } }),
+      invalidatesTags: ['Payment', 'Invoice'],
     }),
     createPayment: builder.mutation<any, Partial<Payment>>({
       query: (body) => ({
@@ -236,6 +244,7 @@ export const {
   useUpdateProviderDraftMutation,
   useDeleteInvoiceMutation,
   useCreatePaymentMutation,
+  useReversePaymentMutation,
   useGenerateAppealMutation,
   useGetProviderStatsQuery,
   useGetClientStatsQuery,

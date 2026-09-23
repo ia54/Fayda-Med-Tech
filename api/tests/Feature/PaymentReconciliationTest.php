@@ -75,4 +75,39 @@ class PaymentReconciliationTest extends TestCase
         $this->postJson('/api/client/payments', $body)->assertForbidden();
         $this->getJson('/api/payments/'.$payment)->assertNotFound();
     }
+    public function test_reversal_preserves_original_reopens_balance_and_cannot_repeat(): void
+    {
+        $this->actor->role = 'medical_biller';
+        $id = $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 80.25, 'status' => 'sent'])->assertCreated()->json('data.id');
+        $receipt = $this->postJson('/api/payments', ['invoice_id' => $id, 'amount' => 80.25, 'payment_method' => 'check', 'transaction_id' => 'ORIGINAL', 'payment_date' => now()->toDateString()])->assertCreated()->json('data.id');
+        $this->postJson('/api/payments/'.$receipt.'/reverse', [])->assertUnprocessable();
+        $reversal = $this->postJson('/api/payments/'.$receipt.'/reverse', ['reason' => 'Synthetic wrong receipt'])->assertCreated()->assertJsonPath('data.amount', '-80.25')->assertJsonPath('data.recorded_by', $this->actor->id)->json('data.id');
+        $this->assertDatabaseHas('payments', ['id' => $receipt, 'amount' => 80.25, 'transaction_id' => 'ORIGINAL']);
+        $this->assertDatabaseHas('payments', ['id' => $reversal, 'reversal_of_id' => $receipt]);
+        $this->getJson('/api/invoices/'.$id)->assertOk()->assertJsonPath('data.total_paid', 0)->assertJsonPath('data.status', 'sent')->assertJsonPath('data.paid_at', null);
+        $this->postJson('/api/payments/'.$receipt.'/reverse', ['reason' => 'Again'])->assertStatus(409);
+        $this->postJson('/api/payments/'.$reversal.'/reverse', ['reason' => 'Again'])->assertStatus(409);
+        $this->assertDatabaseCount('payments', 2);
+        $this->postJson('/api/payments', ['invoice_id' => $id, 'amount' => 80.25, 'payment_method' => 'check', 'transaction_id' => 'CORRECTED', 'payment_date' => now()->toDateString()])->assertCreated();
+        $this->assertDatabaseHas('invoices', ['id' => $id, 'status' => 'paid']);
+    }
+
+    public function test_reversal_denies_other_organizations_and_unprivileged_roles(): void
+    {
+        $this->actor->role = 'medical_biller';
+        $id = $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 10, 'status' => 'sent'])->assertCreated()->json('data.id');
+        $receipt = $this->postJson('/api/payments', ['invoice_id' => $id, 'amount' => 10, 'payment_method' => 'cash', 'transaction_id' => 'ACCESS', 'payment_date' => now()->toDateString()])->assertCreated()->json('data.id');
+        $url = '/api/payments/'.$receipt.'/reverse';
+        foreach (['client', 'provider_staff', 'attorney'] as $role) {
+            $this->actor->role = $role;
+            $this->postJson($url, ['reason' => 'Denied'])->assertForbidden();
+        }
+        $this->actor->role = 'medical_biller';
+        $this->actor->organization_id = 2;
+        $this->postJson($url, ['reason' => 'Denied'])->assertNotFound();
+        $this->actor->organization_id = null;
+        $this->postJson($url, ['reason' => 'Denied'])->assertForbidden();
+        $this->assertDatabaseCount('payments', 1);
+    }
+
 }

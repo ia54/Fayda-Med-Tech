@@ -12,6 +12,8 @@ class Payment extends Model
 
     protected $fillable = [
         'organization_id',
+        'reversal_of_id',
+        'recorded_by',
         'invoice_id',
         'amount',
         'payment_method',
@@ -24,6 +26,11 @@ class Payment extends Model
         'amount' => 'decimal:2',
         'payment_date' => 'date',
     ];
+
+    public function reversal()
+    {
+        return $this->hasOne(self::class, 'reversal_of_id');
+    }
 
     public function invoice()
     {

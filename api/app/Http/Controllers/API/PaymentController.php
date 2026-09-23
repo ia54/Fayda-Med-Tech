@@ -18,7 +18,7 @@ class PaymentController extends Controller
         $user = $request->user();
         abort_if($user->role !== 'admin' && !$user->organization_id, 403);
         $request->validate(['search' => 'nullable|string|max:200', 'per_page' => 'nullable|integer|min:1|max:100', 'page' => 'nullable|integer|min:1']);
-        $query = Payment::with(['invoice.case']);
+        $query = Payment::with(['invoice.case', 'reversal']);
 
         // Client scoping: only see payments for invoices on their cases
         if ($user->role === 'client') {
@@ -60,7 +60,7 @@ class PaymentController extends Controller
             'payment_date' => 'required|date_format:Y-m-d|before_or_equal:today',
             'notes' => 'nullable|string|max:5000',
         ]);
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data, $user) {
             $invoice = Invoice::lockForUpdate()->findOrFail($data['invoice_id']);
             abort_unless($invoice->organization_id, 422, 'The invoice needs an organization.');
             abort_if($invoice->payments()->where('transaction_id', $data['transaction_id'])->exists(), 409, 'This reference has already been recorded for this invoice.');
@@ -69,7 +69,7 @@ class PaymentController extends Controller
             $invoiceCents = (int) round((float) $invoice->amount * 100);
             $incomingCents = (int) round((float) $data['amount'] * 100);
             abort_if($incomingCents > $invoiceCents - $paidCents, 422, 'Payment exceeds the outstanding balance.');
-            $payment = Payment::create(array_merge($data, ['organization_id' => $invoice->organization_id]));
+            $payment = Payment::create(array_merge($data, ['organization_id' => $invoice->organization_id, 'recorded_by' => $user->id]));
             if ($paidCents + $incomingCents === $invoiceCents) {
                 $invoice->update(['status' => 'paid', 'paid_at' => $data['payment_date']]);
             }
@@ -84,7 +84,7 @@ class PaymentController extends Controller
     {
         $user = $request->user();
         abort_if($user->role !== 'admin' && !$user->organization_id, 403);
-        $query = Payment::with(['invoice.case']);
+        $query = Payment::with(['invoice.case', 'reversal']);
         if ($user->role === 'client') {
             $query->whereHas('invoice.case.parties', fn ($q) => $q->where('user_id', $user->id));
         }
@@ -95,6 +95,38 @@ class PaymentController extends Controller
             'message' => 'Payment details retrieved successfully',
             'data' => $payment
         ]);
+    }
+
+    /** Append a correcting entry; retain the original receipt and its reference. */
+    public function reverse(Request $request, $id)
+    {
+        $user = $request->user();
+        abort_unless(in_array($user->role, ['admin', 'firm_admin', 'medical_biller'], true), 403);
+        abort_if($user->role !== 'admin' && !$user->organization_id, 403);
+        $data = $request->validate(['reason' => 'required|string|max:5000']);
+        $original = Payment::findOrFail($id);
+        return DB::transaction(function () use ($original, $user, $data) {
+            // Same lock order as recording a receipt: serialize changes on the invoice.
+            $invoice = Invoice::lockForUpdate()->findOrFail($original->invoice_id);
+            $payment = Payment::lockForUpdate()->findOrFail($original->id);
+            abort_if($payment->reversal_of_id || (float) $payment->amount <= 0, 409, 'A correction entry cannot be reversed. Record a new receipt if needed.');
+            abort_if($payment->reversal()->exists(), 409, 'This receipt has already been reversed.');
+            $reversal = Payment::create([
+                'organization_id' => $invoice->organization_id,
+                'invoice_id' => $invoice->id,
+                'amount' => '-' . $payment->amount,
+                'payment_method' => $payment->payment_method,
+                'transaction_id' => 'REV-' . \Illuminate\Support\Str::uuid(),
+                'payment_date' => now()->toDateString(),
+                'notes' => $data['reason'],
+                'reversal_of_id' => $payment->id,
+                'recorded_by' => $user->id,
+            ]);
+            if ($invoice->status === 'paid') {
+                $invoice->update(['status' => 'sent', 'paid_at' => null]);
+            }
+            return response()->json(['status' => true, 'message' => 'Receipt reversed in the ledger. No refund or transfer was issued.', 'data' => $reversal], 201);
+        });
     }
 
     /**

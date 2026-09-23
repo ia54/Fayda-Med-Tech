@@ -168,6 +168,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/payments', [PaymentController::class, 'index']);
         Route::post('/payments', [PaymentController::class, 'store'])->middleware('role:admin,firm_admin,medical_biller');
         Route::get('/payments/{id}', [PaymentController::class, 'show']);
+        Route::post('/payments/{id}/reverse', [PaymentController::class, 'reverse'])->middleware('role:admin,firm_admin,medical_biller');
         Route::delete('/payments/{id}', [PaymentController::class, 'destroy'])->middleware('role:admin,firm_admin,medical_biller');
 
         // AI Appeals
