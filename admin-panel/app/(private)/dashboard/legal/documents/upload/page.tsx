@@ -4,7 +4,7 @@ import { useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
+import { AuthenticatedDocumentPreview } from "@/components/AuthenticatedDocumentPreview"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Upload, FileText, CheckCircle, Clock, Trash2, Loader2, FolderOpen, Scale, AlertCircle } from "lucide-react"
 import { useGetDocumentsQuery, useUploadDocumentMutation } from "@/store/api/billingApiSlice"
@@ -27,7 +27,7 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedCase, setSelectedCase] = useState<string>(initialCase)
   const [documentCategory, setDocumentCategory] = useState<string>("general")
-  const [uploadingFiles, setUploadingFiles] = useState<{ name: string; progress: number }[]>([])
+  const [uploadingFiles, setUploadingFiles] = useState<{ name: string }[]>([])
   
   const { data: documentsData, isLoading } = useGetDocumentsQuery({})
   const { data: casesData } = useGetCasesQuery({ per_page: 100 })
@@ -48,7 +48,7 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
       return
     }
 
-    const newUploads = Array.from(files).map(f => ({ name: f.name, progress: 10 }))
+    const newUploads = Array.from(files).map(f => ({ name: f.name }))
     setUploadingFiles(prev => [...prev, ...newUploads])
 
     for (let i = 0; i < files.length; i++) {
@@ -164,10 +164,10 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-4 text-muted-foreground">
-              <p>• Ensure all medical records are clearly legible for AI processing.</p>
+              <p>• Ensure all medical records are clearly legible.</p>
               <p>• Settlement letters should include the claim number in the file name.</p>
-              <p>• Maximum file size is 50MB per document.</p>
-              <p>• Documents are automatically encrypted upon upload.</p>
+              <p>• Maximum file size is 20 MB per document.</p>
+              <p>• Supported formats: PDF, PNG, JPEG and Word documents.</p>
             </CardContent>
           </Card>
         </div>
@@ -187,9 +187,8 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
                   <div key={idx} className="space-y-1">
                     <div className="flex justify-between text-xs font-medium">
                       <span>{file.name}</span>
-                      <span>{file.progress}%</span>
+                      <span>Uploading…</span>
                     </div>
-                    <Progress value={file.progress} className="h-1 bg-emerald-100" indicatorClassName="bg-emerald-600" />
                   </div>
                 ))}
               </CardContent>
@@ -203,7 +202,7 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
                 ? "border-emerald-200 hover:border-emerald-500" 
                 : "border-slate-200 opacity-50 cursor-not-allowed"
             )}
-            onClick={() => selectedCase && fileInputRef.current?.click()}
+            onClick={() => selectedCase && !uploadingFiles.length && !(selectedCase === initialCase && linkedCaseError) && fileInputRef.current?.click()}
           >
             <CardContent className="py-20 text-center">
               <div className={cn(
@@ -215,7 +214,7 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
               <h3 className="text-xl font-semibold mb-2">Secure Document Intake</h3>
               <p className="text-muted-foreground text-sm max-w-sm mx-auto">
                 {selectedCase 
-                  ? "Drag and drop your legal files here, or click to browse." 
+                  ? "Click Upload Document to browse your files." 
                   : "Please select a case above to begin uploading documents."}
               </p>
             </CardContent>
@@ -228,10 +227,10 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Recent Legal Filings</CardTitle>
-            <CardDescription>A centralized history of all documents uploaded to this firm</CardDescription>
+            <CardDescription>Recently accessible documents; this list shows the first page.</CardDescription>
           </div>
           <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
-            {documentsData?.data?.documents?.length || 0} Total Files
+            {documentsData?.data?.documents?.length || 0} files shown
           </Badge>
         </CardHeader>
         <CardContent>
@@ -265,7 +264,7 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="text-xs font-semibold">{doc.metadata?.case_number || 'N/A'}</span>
+                          <span className="text-xs font-semibold">{doc.case_id ? `Case #${doc.case_id}` : 'Unassigned'}</span>
                           <span className="text-[10px] text-muted-foreground truncate max-w-[150px]">{doc.metadata?.case_title}</span>
                         </div>
                       </TableCell>
@@ -284,9 +283,7 @@ export default function LegalDocumentUploadPage({ searchParams }: { searchParams
                         {new Date(doc.created_at).toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <AuthenticatedDocumentPreview id={doc.id} title={doc.title || doc.original_name} />
                       </TableCell>
                     </TableRow>
                   ))}
