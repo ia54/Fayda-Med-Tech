@@ -187,6 +187,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
 
     // 4. Provider Staff (Provider Portal)
     Route::middleware(['role:admin,firm_admin,provider_staff'])->group(function () {
+        Route::put('/provider/invoices/{id}/draft', [InvoiceController::class, 'updateProviderDraft'])->middleware('role:provider_staff');
         Route::get('/provider/stats', [\App\Http\Controllers\API\ProviderDashboardController::class, 'index']);
         Route::get('/provider/claims', [\App\Http\Controllers\API\ProviderClaimController::class, 'index']);
         Route::post('/provider/claims', [\App\Http\Controllers\API\ProviderClaimController::class, 'store']);

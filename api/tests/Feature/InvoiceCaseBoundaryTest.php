@@ -65,6 +65,33 @@ class InvoiceCaseBoundaryTest extends TestCase
         $this->getJson('/api/invoices/'.$first)->assertForbidden();
     }
 
+    public function test_provider_draft_can_be_edited_then_locked_for_review(): void
+    {
+        $id = $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 10])->assertCreated()->json('data.id');
+        $body = ['amount' => 45.25, 'status' => 'draft', 'metadata' => ['patient_name' => 'Synthetic', 'service_date' => '2026-09-23']];
+        $url = '/api/provider/invoices/'.$id.'/draft';
+        $this->putJson($url, $body)->assertOk()->assertJsonPath('data.amount', '45.25');
+        foreach ([['case_id' => $this->cases[2]->id], ['organization_id' => 2], ['paid_at' => '2026-09-23'], ['status' => 'paid'], ['amount' => 1.234]] as $invalid) {
+            $this->putJson($url, array_replace($body, $invalid))->assertUnprocessable();
+        }
+        $this->putJson($url, array_replace($body, ['status' => 'sent']))->assertOk()->assertJsonPath('data.status', 'sent');
+        $this->putJson($url, $body)->assertStatus(409);
+        $this->assertDatabaseHas('invoices', ['id' => $id, 'organization_id' => 1, 'case_id' => $this->cases[1]->id, 'status' => 'sent', 'amount' => 45.25]);
+    }
+
+    public function test_provider_draft_endpoint_rejects_other_organizations_and_roles(): void
+    {
+        $invoice = \App\Models\Invoice::withoutEvents(fn () => \App\Models\Invoice::create(['organization_id' => 2, 'case_id' => $this->cases[2]->id, 'invoice_number' => 'OTHER-DRAFT', 'amount' => 10, 'status' => 'draft']));
+        $body = ['amount' => 45, 'status' => 'draft', 'metadata' => ['patient_name' => 'Synthetic', 'service_date' => '2026-09-23']];
+        $url = '/api/provider/invoices/'.$invoice->id.'/draft';
+        $this->putJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = null;
+        $this->putJson($url, $body)->assertForbidden();
+        $this->actor->organization_id = 2;
+        $this->actor->role = 'client';
+        $this->putJson($url, $body)->assertForbidden();
+    }
+
     public function test_other_organization_missing_and_archived_cases_are_rejected(): void
     {
         $this->cases[1]->delete();

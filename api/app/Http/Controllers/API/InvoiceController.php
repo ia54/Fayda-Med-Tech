@@ -162,6 +162,36 @@ class InvoiceController extends Controller
         ]);
     }
 
+    /** Providers can edit their organization's drafts, or send them for internal review. */
+    public function updateProviderDraft(Request $request, $id)
+    {
+        abort_unless($request->user()->organization_id, 403);
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'gt:0', 'decimal:0,2'],
+            'status' => 'required|in:draft,sent',
+            'metadata' => 'required|array:patient_name,service_date,payer,cpt_codes,diagnosis_codes,notes',
+            'metadata.patient_name' => 'required|string|max:255',
+            'metadata.service_date' => 'required|date_format:Y-m-d',
+            'metadata.payer' => 'nullable|string|max:255',
+            'metadata.cpt_codes' => 'nullable|string|max:1000',
+            'metadata.diagnosis_codes' => 'nullable|string|max:1000',
+            'metadata.notes' => 'nullable|string|max:10000',
+            'organization_id' => 'prohibited',
+            'case_id' => 'prohibited',
+            'paid_at' => 'prohibited',
+        ]);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id, $data) {
+            $invoice = Invoice::where('organization_id', $request->user()->organization_id)->lockForUpdate()->findOrFail($id);
+            abort_unless($invoice->status === 'draft', 409, 'Only draft records can be changed by a provider.');
+            $invoice->update([
+                'amount' => $data['amount'],
+                'status' => $data['status'],
+                'metadata' => array_merge($invoice->metadata ?? [], $data['metadata']),
+            ]);
+            return response()->json(['status' => true, 'message' => 'Billing record saved for internal use. No insurer submission was made.', 'data' => $invoice]);
+        });
+    }
+
     /**
      * Remove the specified invoice from storage.
      */

@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FileText, Plus, Search, Eye, Filter, Loader2, Clock, CheckCircle, DollarSign } from "lucide-react"
-import { Invoice, useGetInvoicesQuery, useGetProviderStatsQuery } from "@/store/api/billingApiSlice"
+import { Invoice, useGetInvoicesQuery, useGetProviderStatsQuery, useUpdateProviderDraftMutation } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ClaimsPage() {
@@ -198,12 +198,33 @@ export default function ClaimsPage() {
           <Button variant="outline" disabled={isClaimsLoading || claimsFailed || !claimsData || page >= claimsData.data.last_page} onClick={() => setPage(p => p + 1)}>Next</Button>
         </div>
         <Dialog open={!!selected} onOpenChange={open => { if (!open) setSelected(null) }}>
-          <DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{selected?.invoice_number}</DialogTitle><DialogDescription>Saved internal billing record. Changes are managed by authorized billing staff.</DialogDescription></DialogHeader>
-            {selected && <dl className="space-y-3 break-words">
+          <DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{selected?.invoice_number}</DialogTitle><DialogDescription>Internal billing record. Drafts can be edited before sending for billing review.</DialogDescription></DialogHeader>
+            {selected?.status === "draft" ? <DraftEditor key={selected.id} invoice={selected} onSaved={() => setSelected(null)} /> : selected && <dl className="space-y-3 break-words">
               {Object.entries({Patient: selected.metadata?.patient_name, Case: selected.case?.title, Amount: `$${Number(selected.amount).toFixed(2)}`, Status: selected.status === 'sent' ? 'Billing review' : selected.status, 'Service date': selected.metadata?.service_date, Payer: selected.metadata?.payer, 'CPT codes': selected.metadata?.cpt_codes, 'Diagnosis codes': selected.metadata?.diagnosis_codes, Notes: selected.metadata?.notes || selected.notes}).map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="whitespace-pre-wrap">{value || 'Not recorded'}</dd></div>)}
             </dl>}
           </DialogContent>
         </Dialog>
       </div>
   )
+}
+
+function DraftEditor({ invoice, onSaved }: { invoice: Invoice; onSaved: () => void }) {
+  const [amount, setAmount] = useState(String(invoice.amount))
+  const [metadata, setMetadata] = useState({ patient_name: invoice.metadata?.patient_name || '', service_date: invoice.metadata?.service_date || '', payer: invoice.metadata?.payer || '', cpt_codes: invoice.metadata?.cpt_codes || '', diagnosis_codes: invoice.metadata?.diagnosis_codes || '', notes: invoice.metadata?.notes || invoice.notes || '' })
+  const [error, setError] = useState('')
+  const [save, {isLoading}] = useUpdateProviderDraftMutation()
+  async function submit(status: 'draft' | 'sent') {
+    setError('')
+    if (!/^\d+(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) { setError('Enter a positive amount with at most two decimal places.'); return }
+    try { await save({id: invoice.id, amount: Number(amount), status, metadata}).unwrap(); onSaved() }
+    catch (err: any) { setError(Object.values(err.data?.errors || {}).flat().join(' ') || err.data?.message || 'Could not save. Please try again.') }
+  }
+  return <div className="space-y-3">
+    <p className="text-sm">Case: {invoice.case?.title || invoice.case_id}</p>
+    <label className="block">Amount ($)<Input aria-label="Draft amount" value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" disabled={isLoading} /></label>
+    {(Object.keys(metadata) as (keyof typeof metadata)[]).map(key => <label key={key} className="block capitalize">{key.replaceAll('_',' ')}<Input aria-label={`Draft ${key.replaceAll('_',' ')}`} type={key === 'service_date' ? 'date' : 'text'} value={metadata[key]} onChange={e => setMetadata({...metadata, [key]: e.target.value})} disabled={isLoading} /></label>)}
+    {error && <p role="alert" className="text-destructive">{error}</p>}
+    <p className="text-sm text-muted-foreground">Sending for review locks provider editing. Authorized billing staff can continue the record. No claim is sent to an insurer.</p>
+    <div className="flex flex-wrap gap-2"><Button disabled={isLoading} onClick={() => submit('draft')}>Save draft</Button><Button variant="outline" disabled={isLoading} onClick={() => submit('sent')}>Send for billing review</Button></div>
+  </div>
 }

@@ -64,7 +64,7 @@ class DocumentController extends Controller
                     return $query->where('ocr_status', $request->ocr_status);
                 })
                 ->when($request->filled('case_id'), function ($query) use ($request) {
-                    return $query->where('metadata->case_id', $request->case_id);
+                    return $query->where('case_id', $request->case_id);
                 })
                 ->orderBy('created_at', 'desc')
                 ->paginate($perPage);

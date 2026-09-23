@@ -108,6 +108,22 @@ class DocumentAccessTest extends TestCase
         $this->assertStringContainsString('/api/documents/', $response->json('data.url'));
     }
 
+    public function test_provider_upload_links_only_an_available_case_in_its_organization(): void
+    {
+        $cases = [];
+        foreach ([1, 2] as $org) {
+            $cases[$org] = \App\Models\CaseModel::withoutEvents(fn () => \App\Models\CaseModel::create(['organization_id' => $org, 'case_number' => 'DOC-'.$org, 'title' => 'Synthetic case', 'created_by' => $this->actor->id]));
+        }
+        $this->signIn('provider_staff');
+        $upload = fn ($caseId) => $this->postJson('/api/documents', ['title' => 'Linked synthetic', 'file' => UploadedFile::fake()->create('linked.pdf', 1, 'application/pdf'), 'metadata' => ['case_id' => $caseId, 'category' => 'clinical_record']]);
+        $upload($cases[2]->id)->assertNotFound();
+        $id = $upload($cases[1]->id)->assertCreated()->json('data.id');
+        $this->assertDatabaseHas('documents', ['id' => $id, 'case_id' => $cases[1]->id, 'organization_id' => 1]);
+        $this->getJson('/api/documents?case_id='.$cases[1]->id)->assertOk()->assertJsonCount(1, 'data.documents');
+        $cases[1]->delete();
+        $upload($cases[1]->id)->assertNotFound();
+    }
+
     public function test_archiving_retains_original_bytes_and_removes_api_access(): void
     {
         $this->signIn('firm_admin');

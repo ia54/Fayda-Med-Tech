@@ -132,6 +132,10 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['Invoice'],
     }),
+    updateProviderDraft: builder.mutation<{ data: Invoice }, { id: number; amount: number; status: 'draft' | 'sent'; metadata: Invoice['metadata'] }>({
+      query: ({ id, ...body }) => ({ url: `/provider/invoices/${id}/draft`, method: 'PUT', body }),
+      invalidatesTags: ['Invoice'],
+    }),
     deleteInvoice: builder.mutation<any, number>({
       query: (id) => ({
         url: `/invoices/${id}`,
@@ -223,6 +227,7 @@ export const {
   useGetDocumentsQuery,
   useUploadDocumentMutation,
   useCreateInvoiceMutation,
+  useUpdateProviderDraftMutation,
   useDeleteInvoiceMutation,
   useCreatePaymentMutation,
   useGenerateAppealMutation,
