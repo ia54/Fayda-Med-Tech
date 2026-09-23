@@ -104,7 +104,7 @@ export function UserProfile({ user, onLogout }: UserProfileProps) {
               />
 
             </div>
-            <div className="user-profile-info min-w-0">
+            <div className="user-profile-info min-w-0 !hidden sm:!flex">
               <span className="user-profile-name truncate block text-xs font-medium">
                 {user?.full_name || 'User'}
               </span>

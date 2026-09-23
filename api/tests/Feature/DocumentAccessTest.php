@@ -62,6 +62,17 @@ class DocumentAccessTest extends TestCase
         }
     }
 
+    public function test_client_document_search_is_paginated_and_cannot_bypass_visibility(): void
+    {
+        $this->signIn('client');
+        $this->own->update(['title' => 'Findable record']);
+        $this->other->update(['title' => 'Findable record']);
+        $this->getJson('/api/client/documents?search=Findable&per_page=1')->assertOk()->assertJsonPath('data.pagination.total', 1)->assertJsonPath('data.documents.0.id', $this->own->id);
+        $this->getJson('/api/client/documents?search=test.pdf')->assertOk()->assertJsonPath('data.pagination.total', 1);
+        $this->getJson('/api/client/documents?search=absent')->assertOk()->assertJsonCount(0, 'data.documents');
+        $this->getJson('/api/client/documents?search=Findable&per_page=1&page=2')->assertOk()->assertJsonCount(0, 'data.documents');
+    }
+
     public function test_email_alone_does_not_grant_client_or_attorney_access(): void
     {
         DB::table('document_signers')->update(['user_id' => null]);

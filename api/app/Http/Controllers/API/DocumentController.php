@@ -54,6 +54,13 @@ class DocumentController extends Controller
 
             $query = Document::visibleTo(auth()->user())->with(['signers', 'ocrResults']);
 
+            if ($request->filled('search')) {
+                $search = trim((string) $request->input('search'));
+                $query->where(function ($query) use ($search) {
+                    $query->where('title', 'like', '%'.$search.'%')->orWhere('original_name', 'like', '%'.$search.'%');
+                });
+            }
+
             $documents = $query->when($request->filled('document_status'), function ($query) use ($request) {
                     return $query->where('document_status', $request->document_status);
                 })
@@ -66,7 +73,7 @@ class DocumentController extends Controller
                 ->when($request->filled('case_id'), function ($query) use ($request) {
                     return $query->where('case_id', $request->case_id);
                 })
-                ->orderBy('created_at', 'desc')
+                ->orderBy('created_at', 'desc')->orderByDesc('id')
                 ->paginate($perPage);
 
             return response()->json([
