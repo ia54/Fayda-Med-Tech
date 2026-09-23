@@ -34,7 +34,7 @@ class PaymentReconciliationTest extends TestCase
     {
         $this->actor->role = 'medical_biller';
         $id = $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 100.25, 'status' => 'sent'])->assertCreated()->json('data.id');
-        $this->getJson('/api/invoices?status=sent,denied')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/invoices?status=sent,denied')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.total_paid', null);
         $this->getJson('/api/invoices?status=invalid')->assertUnprocessable();
         $body = ['invoice_id' => $id, 'amount' => 40.10, 'payment_method' => 'check', 'transaction_id' => 'QA-ONE', 'payment_date' => now()->toDateString()];
         $payment = $this->postJson('/api/payments', $body)->assertCreated()->json('data.id');
@@ -44,7 +44,8 @@ class PaymentReconciliationTest extends TestCase
         $this->postJson('/api/payments', array_replace($body, ['transaction_id' => 'QA-TWO', 'amount' => 1.234]))->assertUnprocessable();
         $this->postJson('/api/payments', array_replace($body, ['transaction_id' => 'QA-TWO', 'amount' => 60.15]))->assertCreated();
         $this->assertDatabaseHas('invoices', ['id' => $id, 'status' => 'paid']);
-        $this->getJson('/api/invoices/'.$id)->assertOk()->assertJsonPath('data.total_paid', 100.25);
+        $this->getJson('/api/invoices/'.$id)->assertOk()->assertJsonPath('data.total_paid', '100.25');
+        $this->getJson('/api/invoices?status=paid')->assertOk()->assertJsonPath('data.data.0.total_paid', '100.25');
         $this->getJson('/api/payments?search=QA-ONE')->assertOk()->assertJsonPath('data.total', 1);
         $this->deleteJson('/api/payments/'.$payment)->assertStatus(409);
         $this->deleteJson('/api/invoices/'.$id)->assertStatus(409);
@@ -84,7 +85,7 @@ class PaymentReconciliationTest extends TestCase
         $reversal = $this->postJson('/api/payments/'.$receipt.'/reverse', ['reason' => 'Synthetic wrong receipt'])->assertCreated()->assertJsonPath('data.amount', '-80.25')->assertJsonPath('data.recorded_by', $this->actor->id)->json('data.id');
         $this->assertDatabaseHas('payments', ['id' => $receipt, 'amount' => 80.25, 'transaction_id' => 'ORIGINAL']);
         $this->assertDatabaseHas('payments', ['id' => $reversal, 'reversal_of_id' => $receipt]);
-        $this->getJson('/api/invoices/'.$id)->assertOk()->assertJsonPath('data.total_paid', 0)->assertJsonPath('data.status', 'sent')->assertJsonPath('data.paid_at', null);
+        $this->getJson('/api/invoices/'.$id)->assertOk()->assertJsonPath('data.total_paid', '0.00')->assertJsonPath('data.status', 'sent')->assertJsonPath('data.paid_at', null);
         $this->postJson('/api/payments/'.$receipt.'/reverse', ['reason' => 'Again'])->assertStatus(409);
         $this->postJson('/api/payments/'.$reversal.'/reverse', ['reason' => 'Again'])->assertStatus(409);
         $this->assertDatabaseCount('payments', 2);
@@ -124,7 +125,7 @@ class PaymentReconciliationTest extends TestCase
         $this->cases[1]->update(['status' => 'New']);
         $this->getJson('/api/client/stats')->assertOk()->assertJsonPath('data.case_summary.status', 'New')->assertJsonPath('data.stats.billing_summary.paid', '$0.00');
         $this->getJson('/api/client/invoices')->assertOk()->assertJsonPath('data.total', 1)->assertJsonMissingPath('data.data.0.metadata')->assertJsonMissingPath('data.data.0.notes');
-        $this->getJson('/api/client/invoices/'.$own)->assertOk()->assertJsonPath('data.total_paid', 0)->assertJsonMissingPath('data.metadata')->assertJsonMissingPath('data.payments.0.notes')->assertJsonMissingPath('data.payments.0.reversal.notes');
+        $this->getJson('/api/client/invoices/'.$own)->assertOk()->assertJsonPath('data.total_paid', '0.00')->assertJsonMissingPath('data.metadata')->assertJsonMissingPath('data.payments.0.notes')->assertJsonMissingPath('data.payments.0.reversal.notes');
         $this->getJson('/api/client/payments')->assertOk()->assertJsonPath('data.total', 2)->assertJsonMissingPath('data.data.0.notes')->assertJsonMissingPath('data.data.0.invoice.metadata');
         $this->getJson('/api/payments/'.$receipt)->assertOk()->assertJsonMissingPath('data.notes')->assertJsonMissingPath('data.reversal.notes');
         $this->getJson('/api/client/invoices/'.$other)->assertNotFound();
