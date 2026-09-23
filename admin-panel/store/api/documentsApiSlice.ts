@@ -220,7 +220,7 @@ export const documentsApiSlice = apiSlice.injectEndpoints({
                 method: "POST",
                 body: formData,
             }),
-            invalidatesTags: [{ type: TAG_TYPES.DOCUMENT, id: "LIST" }],
+            invalidatesTags: [TAG_TYPES.DOCUMENT, TAG_TYPES.CASE],
         }),
 
         assignSigners: builder.mutation<DocumentResponse, { documentId: number; signers: AssignSignerInput[] }>({

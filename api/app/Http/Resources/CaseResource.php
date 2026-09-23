@@ -34,9 +34,13 @@ class CaseResource extends JsonResource
                 'name' => $this->creator->full_name,
             ],
             'organization_id' => $this->organization_id,
-            'metadata' => $this->metadata,
+            'metadata' => $this->when($request->user()?->role !== 'client', $this->metadata),
             'parties' => $this->parties,
-            'timeline' => $this->whenLoaded('timeline'),
+            'timeline' => $this->whenLoaded('timeline', function () use ($request) {
+                return $request->user()?->role === 'client'
+                    ? $this->timeline->map(fn ($event) => $event->only(['id', 'event_type', 'title', 'description', 'created_at']))
+                    : $this->timeline;
+            }),
             'created_at' => $this->created_at->toDateTimeString(),
             'updated_at' => $this->updated_at->toDateTimeString(),
         ];

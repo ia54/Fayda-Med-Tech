@@ -135,6 +135,24 @@ class DocumentAccessTest extends TestCase
         $upload($cases[1]->id)->assertNotFound();
     }
 
+    public function test_client_upload_and_case_details_follow_case_assignment(): void
+    {
+        $this->signIn('client');
+        $cases = [];
+        foreach (['Assigned', 'Unassigned'] as $title) {
+            $cases[] = \App\Models\CaseModel::create(['organization_id' => 1, 'case_number' => $title, 'title' => $title, 'created_by' => $this->actor->id, 'metadata' => ['internal' => 'Private']]);
+        }
+        \App\Models\CaseParty::create(['case_id' => $cases[0]->id, 'user_id' => $this->actor->id, 'role_in_case' => 'Plaintiff']);
+        $payload = fn ($id) => ['title' => 'Client record', 'file' => UploadedFile::fake()->create('client.pdf', 1, 'application/pdf'), 'metadata' => ['case_id' => $id]];
+        $this->postJson('/api/client/documents', $payload($cases[1]->id))->assertNotFound();
+        $this->postJson('/api/client/documents', $payload('none'))->assertUnprocessable();
+        $id = $this->postJson('/api/client/documents', $payload($cases[0]->id))->assertCreated()->json('data.id');
+        $this->getJson('/api/client/documents/'.$id.'/preview')->assertOk();
+        $this->getJson('/api/client/cases/'.$cases[0]->id)->assertOk()->assertJsonMissingPath('metadata')->assertJsonPath('timeline.0.title', 'Document Uploaded')->assertJsonMissingPath('timeline.0.metadata')->assertJsonMissingPath('timeline.0.user');
+        $this->getJson('/api/client/cases/'.$cases[1]->id)->assertNotFound();
+        $this->postJson('/api/client/documents', $payload(null))->assertCreated();
+    }
+
     public function test_archiving_retains_original_bytes_and_removes_api_access(): void
     {
         $this->signIn('firm_admin');
