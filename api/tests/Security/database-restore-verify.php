@@ -51,6 +51,7 @@ try {
             $original = (array) DB::connection()->selectOne('SHOW CREATE TABLE '.$quoted);
             $restored = (array) $connection->selectOne('SHOW CREATE TABLE '.$quoted);
             if (array_values($original)[1] !== array_values($restored)[1]) {
+                fwrite(STDERR, 'Original: '.array_values($original)[1]."\nRestored: ".array_values($restored)[1]."\n");
                 throw new RuntimeException('Restored schema differs: '.$name);
             }
         }
