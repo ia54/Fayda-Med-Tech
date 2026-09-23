@@ -50,8 +50,16 @@ try {
             $quoted = '`'.str_replace('`', '``', $name).'`';
             $original = (array) DB::connection()->selectOne('SHOW CREATE TABLE '.$quoted);
             $restored = (array) $connection->selectOne('SHOW CREATE TABLE '.$quoted);
-            if (array_values($original)[1] !== array_values($restored)[1]) {
-                fwrite(STDERR, 'Original: '.array_values($original)[1]."\nRestored: ".array_values($restored)[1]."\n");
+            // MySQL's dump may render the charset explicitly on columns whose
+            // utf8mb4_unicode_ci collation already implies that same charset.
+            // Normalize only that redundant spelling; preserve all constraints,
+            // defaults, expressions, indexes, collations and table options.
+            $normalize = static fn (string $sql): string => str_replace(
+                ' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+                ' COLLATE utf8mb4_unicode_ci',
+                $sql
+            );
+            if ($normalize(array_values($original)[1]) !== $normalize(array_values($restored)[1])) {
                 throw new RuntimeException('Restored schema differs: '.$name);
             }
         }
