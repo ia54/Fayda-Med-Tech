@@ -50,7 +50,10 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
     try {
       await createSettlement({
         case_id: caseId,
-        settlement_amount: gross,
+        settlement_amount: gross.toFixed(2),
+        attorney_fees: fees.toFixed(2),
+        costs: costs.toFixed(2),
+        other_deductions: other.toFixed(2),
         settlement_date: new Date().toISOString().split('T')[0],
         status: "pending",
         notes: `Breakdown: Fees(${feePercent}%) = $${fees.toFixed(2)}, Costs = $${costs.toFixed(2)}, Other deductions = $${other.toFixed(2)}, Net = $${netToClient.toFixed(2)}`
@@ -76,7 +79,7 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
         {settlement && <Badge className="bg-emerald-600">Latest record ({settlement.status}): ${parseFloat(settlement.settlement_amount).toLocaleString()}</Badge>}
       </div>
 
-      {settlement && <p className="text-sm break-words">Latest saved breakdown: {settlement.notes || "No breakdown recorded"}</p>}
+      {settlement && <p className="text-sm break-words">Latest saved breakdown: {settlement.net_to_client != null ? `Fees $${settlement.attorney_fees}; costs $${settlement.costs}; other deductions $${settlement.other_deductions}; estimated net $${settlement.net_to_client}` : `Structured breakdown unavailable. ${settlement.notes || "No notes recorded"}`}</p>}
       <p className="text-sm text-muted-foreground">Planning calculation only. Enter the agreed fee and all deductions. Saving creates a pending record and does not authorize or transfer funds.</p>
       {error && <p role="alert" className="text-destructive">{error}</p>}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

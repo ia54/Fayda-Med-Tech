@@ -23,6 +23,15 @@ class CaseSettlementController extends Controller
             });
     }
 
+    private function validateAllocations(array $values): void
+    {
+        if (!isset($values['other_deductions'])) return;
+        $deductions = CaseSettlement::cents($values['attorney_fees']) + CaseSettlement::cents($values['costs']) + CaseSettlement::cents($values['other_deductions']);
+        if ($deductions > CaseSettlement::cents($values['settlement_amount'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['other_deductions' => 'Fees, costs and other deductions cannot exceed the settlement amount.']);
+        }
+    }
+
     /**
      * List all settlements for the organization.
      */
@@ -67,6 +76,9 @@ class CaseSettlementController extends Controller
             'settlement_date' => 'required|date',
             'status' => 'required|in:pending,completed,in-negotiation',
             'notes' => 'nullable|string',
+            'attorney_fees' => 'required_with:costs,other_deductions|numeric|min:0|max:9999999999999.99|decimal:0,2',
+            'costs' => 'required_with:attorney_fees,other_deductions|numeric|min:0|max:9999999999999.99|decimal:0,2',
+            'other_deductions' => 'required_with:attorney_fees,costs|numeric|min:0|max:9999999999999.99|decimal:0,2',
         ]);
 
         if ($validator->fails()) {
@@ -83,10 +95,11 @@ class CaseSettlementController extends Controller
         $caseQuery->findOrFail($request->case_id);
 
         $settlement = \Illuminate\Support\Facades\DB::transaction(function () use ($request) {
+            $this->validateAllocations($request->all());
             $settlement = CaseSettlement::create([
                 'organization_id' => $request->user()->organization_id,
                 'created_by' => $request->user()->id,
-                ...$request->only(['case_id', 'settlement_amount', 'settlement_date', 'status', 'notes'])
+                ...$request->only(['case_id', 'settlement_amount', 'settlement_date', 'status', 'notes', 'attorney_fees', 'costs', 'other_deductions'])
             ]);
 
             // If status is completed, update the case total_case_value
@@ -137,6 +150,9 @@ class CaseSettlementController extends Controller
             'settlement_date' => 'sometimes|required|date',
             'status' => 'sometimes|required|in:pending,completed,in-negotiation',
             'notes' => 'nullable|string',
+            'attorney_fees' => 'required_with:costs,other_deductions|numeric|min:0|max:9999999999999.99|decimal:0,2',
+            'costs' => 'required_with:attorney_fees,other_deductions|numeric|min:0|max:9999999999999.99|decimal:0,2',
+            'other_deductions' => 'required_with:attorney_fees,costs|numeric|min:0|max:9999999999999.99|decimal:0,2',
         ]);
 
         if ($validator->fails()) {
@@ -147,9 +163,11 @@ class CaseSettlementController extends Controller
             ], 422);
         }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($request, $settlement) {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($request, &$settlement) {
+            $settlement = $this->visibleSettlements($request)->lockForUpdate()->findOrFail($settlement->id);
             abort_if($settlement->status === 'completed', 409, 'Completed settlements require an auditable correction workflow.');
-            $settlement->update($request->only(['settlement_amount', 'settlement_date', 'status', 'notes']));
+            $this->validateAllocations(array_replace($settlement->getAttributes(), $request->only(['settlement_amount', 'attorney_fees', 'costs', 'other_deductions'])));
+            $settlement->update($request->only(['settlement_amount', 'settlement_date', 'status', 'notes', 'attorney_fees', 'costs', 'other_deductions']));
 
             if ($settlement->status === 'completed') {
                 CaseModel::where('id', $settlement->case_id)->update([
