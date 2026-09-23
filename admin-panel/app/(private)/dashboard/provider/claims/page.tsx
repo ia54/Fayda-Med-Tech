@@ -30,11 +30,11 @@ export default function ClaimsPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
 
   // Fetch real data
-  const { data: claimsData, isLoading: isClaimsLoading } = useGetInvoicesQuery({
+  const { data: claimsData, isLoading: isClaimsLoading, isError: claimsFailed, refetch: retryClaims } = useGetInvoicesQuery({
     search: searchTerm,
     status: statusFilter === "all" ? undefined : statusFilter
   })
-  const { data: statsData, isLoading: isStatsLoading } = useGetProviderStatsQuery()
+  const { data: statsData, isLoading: isStatsLoading, isError: statsFailed, refetch: retryStats } = useGetProviderStatsQuery()
 
   const claims = claimsData?.data?.data || []
   const stats = statsData?.data?.stats || {
@@ -62,19 +62,20 @@ export default function ClaimsPage() {
               <FileText className="h-8 w-8 text-primary" />
               Claims Management
             </h1>
-            <p className="text-muted-foreground">Submit medical invoices and track insurance reimbursement status</p>
+            <p className="text-muted-foreground">Track internal medical billing records and recorded payment status</p>
           </div>
           <Button 
             className="bg-primary hover:bg-primary/90 shadow-md"
             onClick={() => router.push("/dashboard/provider/claims/create")}
           >
             <Plus className="h-4 w-4 mr-2" />
-            New Claim Submission
+            New Billing Record
           </Button>
         </div>
 
+        {statsFailed && <p role="alert">Could not load billing totals. <button className="underline" onClick={() => retryStats()}>Try again</button></p>}
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className={statsFailed ? "hidden" : "grid gap-4 md:grid-cols-2 lg:grid-cols-4"}>
           <Card className="hover:shadow-lg transition-all duration-300 bg-card/50 backdrop-blur-sm border-border/50">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Inventory</CardTitle>
@@ -82,7 +83,7 @@ export default function ClaimsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{isStatsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : stats.total_claims}</div>
-              <p className="text-xs text-muted-foreground mt-1">All processed claims</p>
+              <p className="text-xs text-muted-foreground mt-1">All billing records</p>
             </CardContent>
           </Card>
           <Card className="hover:shadow-lg transition-all duration-300 bg-card/50 backdrop-blur-sm border-border/50">
@@ -123,7 +124,7 @@ export default function ClaimsPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>Clinical Claims Inventory</CardTitle>
-                <CardDescription>Comprehensive list of all submitted and pending medical claims</CardDescription>
+                <CardDescription>Internal billing records; saving does not submit a claim to an insurer</CardDescription>
               </div>
               <div className="flex gap-2">
                 <div className="relative">
@@ -143,7 +144,7 @@ export default function ClaimsPage() {
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="sent">Submitted</SelectItem>
+                    <SelectItem value="sent">Billing Review</SelectItem>
                     <SelectItem value="paid">Paid</SelectItem>
                     <SelectItem value="denied">Denied</SelectItem>
                   </SelectContent>
@@ -152,7 +153,7 @@ export default function ClaimsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {isClaimsLoading ? (
+            {claimsFailed ? <p role="alert">Could not load billing records. <button className="underline" onClick={() => retryClaims()}>Try again</button></p> : isClaimsLoading ? (
               <div className="space-y-4">
                 {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
               </div>
@@ -179,7 +180,7 @@ export default function ClaimsPage() {
                         </TableCell>
                         <TableCell className="font-bold text-slate-900 dark:text-slate-100">${Number(claim.amount).toLocaleString()}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={getStatusColor(claim.status)}>{claim.status.toUpperCase()}</Badge>
+                          <Badge variant="outline" className={getStatusColor(claim.status)}>{claim.status === 'sent' ? 'BILLING REVIEW' : claim.status.toUpperCase()}</Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{new Date(claim.created_at).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">

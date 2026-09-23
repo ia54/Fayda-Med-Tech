@@ -37,6 +37,7 @@ export interface Invoice {
   status: 'draft' | 'sent' | 'paid' | 'denied' | 'voided';
   due_date: string;
   paid_at?: string;
+  metadata?: { payer?: string; cpt_codes?: string; diagnosis_codes?: string; patient_name?: string; service_date?: string; notes?: string };
   case_id?: number;
   case?: {
     id: number;

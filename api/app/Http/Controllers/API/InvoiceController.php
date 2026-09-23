@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Models\CaseModel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -46,11 +47,22 @@ class InvoiceController extends Controller
      */
     public function store(Request $request)
     {
+        $user = $request->user();
+        abort_if($user->role !== 'admin' && !$user->organization_id, 403);
+        $caseQuery = CaseModel::query();
+        if ($user->role !== 'admin') {
+            $caseQuery->where('organization_id', $user->organization_id);
+        }
+        $case = is_scalar($request->input('case_id')) ? $caseQuery->find($request->input('case_id')) : null;
         $validator = Validator::make($request->all(), [
-            'case_id' => 'required|exists:cases,id',
+            'case_id' => ['required', 'integer', function ($attribute, $value, $fail) use ($case) {
+                if (!$case || !$case->organization_id) {
+                    $fail('Select an available case in your organization.');
+                }
+            }],
             'amount' => 'required|numeric|min:0',
             'due_date' => 'nullable|date',
-            'status' => 'nullable|in:draft,sent,paid,denied,voided',
+            'status' => $user->role === 'provider_staff' ? 'nullable|in:draft,sent' : 'nullable|in:draft,sent,paid,denied,voided',
             'notes' => 'nullable|string',
             'metadata' => 'nullable|array',
         ]);
@@ -64,7 +76,7 @@ class InvoiceController extends Controller
         }
 
         $invoice = Invoice::create([
-            'organization_id' => $request->user()->organization_id,
+            'organization_id' => $case->organization_id,
             'case_id' => $request->case_id,
             'invoice_number' => 'INV-' . strtoupper(bin2hex(random_bytes(4))),
             'amount' => $request->amount,
