@@ -18,7 +18,7 @@ class InvoiceController extends Controller
         $user = $request->user();
         abort_if($user->role !== 'admin' && !$user->organization_id, 403);
         $request->validate(['search' => 'nullable|string|max:200', 'page' => 'nullable|integer|min:1', 'per_page' => 'nullable|integer|min:1|max:100']);
-        $query = Invoice::with(['case']);
+        $query = Invoice::with(['case'])->withSum('payments as total_paid', 'amount');
 
         // Filter for Client Role
         if ($user->role === 'client') {
@@ -28,7 +28,8 @@ class InvoiceController extends Controller
         }
 
         if ($request->has('status')) {
-            $query->where('status', $request->status);
+            $request->validate(['status' => ['string', 'regex:/^(draft|sent|paid|denied|voided)(,(draft|sent|paid|denied|voided))*$/']]);
+            $query->whereIn('status', explode(',', $request->status));
         }
 
         if ($request->has('case_id')) {
@@ -114,7 +115,7 @@ class InvoiceController extends Controller
     {
         $user = $request->user();
         abort_if($user->role !== 'admin' && !$user->organization_id, 403);
-        $query = Invoice::with(['case', 'payments']);
+        $query = Invoice::with(['case', 'payments'])->withSum('payments as total_paid', 'amount');
 
         if ($user->role === 'client') {
             $query->whereHas('case.parties', function($q) use ($user) {
@@ -136,38 +137,44 @@ class InvoiceController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $invoice = Invoice::findOrFail($id);
+        abort_if($request->user()->role !== 'admin' && !$request->user()->organization_id, 403);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id) {
+            $invoice = Invoice::lockForUpdate()->findOrFail($id);
 
-        $validator = Validator::make($request->all(), [
-            'amount' => 'sometimes|required|numeric|min:0',
-            'status' => 'sometimes|required|in:draft,sent,paid,denied,voided',
-            'due_date' => 'nullable|date',
-            'paid_at' => 'nullable|date',
-            'notes' => 'nullable|string',
-            'metadata' => 'nullable|array',
-            'metadata.billing_review' => 'missing',
-            'metadata.billing_review_history' => 'missing',
-        ]);
+            $validator = Validator::make($request->all(), [
+                'amount' => 'sometimes|required|numeric|min:0',
+                'status' => 'sometimes|required|in:draft,sent,paid,denied,voided',
+                'due_date' => 'nullable|date',
+                'paid_at' => 'nullable|date',
+                'notes' => 'nullable|string',
+                'metadata' => 'nullable|array',
+                'metadata.billing_review' => 'missing',
+                'metadata.billing_review_history' => 'missing',
+            ]);
 
-        if ($validator->fails()) {
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $data = $validator->validated();
+            if ($invoice->payments()->exists()) {
+                abort_if((isset($data['amount']) && (int) round((float) $data['amount'] * 100) !== (int) round((float) $invoice->amount * 100)) || (isset($data['status']) && $data['status'] !== $invoice->status) || array_key_exists('paid_at', $data), 409, 'Recorded payments require a reconciliation workflow before changing financial fields.');
+            }
+            if (array_key_exists('metadata', $data)) {
+                $data['metadata'] = array_merge($invoice->metadata ?? [], $data['metadata'] ?? []);
+            }
+            $invoice->update($data);
+
             return response()->json([
-                'status' => false,
-                'message' => 'Validation error',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $data = $validator->validated();
-        if (array_key_exists('metadata', $data)) {
-            $data['metadata'] = array_merge($invoice->metadata ?? [], $data['metadata'] ?? []);
-        }
-        $invoice->update($data);
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Invoice updated successfully',
-            'data' => $invoice
-        ]);
+                'status' => true,
+                'message' => 'Invoice updated successfully',
+                'data' => $invoice
+            ]);
+        });
     }
 
     /** Providers can edit their organization's drafts, or send them for internal review. */
@@ -221,14 +228,18 @@ class InvoiceController extends Controller
     /**
      * Remove the specified invoice from storage.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
-        $invoice = Invoice::findOrFail($id);
-        $invoice->delete();
+        abort_if($request->user()->role !== 'admin' && !$request->user()->organization_id, 403);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($id) {
+            $invoice = Invoice::lockForUpdate()->findOrFail($id);
+            abort_if($invoice->payments()->exists(), 409, 'Invoices with recorded payments cannot be archived.');
+            $invoice->delete();
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Invoice deleted successfully'
-        ]);
+            return response()->json([
+                'status' => true,
+                'message' => 'Invoice deleted successfully'
+            ]);
+        });
     }
 }

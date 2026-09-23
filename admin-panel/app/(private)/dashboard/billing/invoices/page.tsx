@@ -171,6 +171,8 @@ export default function InvoicesPage() {
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Legal Case</TableHead>
                     <TableHead>Amount</TableHead>
+                    <TableHead>Recorded Paid</TableHead>
+                    <TableHead>Balance</TableHead>
                     <TableHead>Due Date</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -182,6 +184,8 @@ export default function InvoicesPage() {
                       <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{invoice.case?.title || "N/A"}</TableCell>
                       <TableCell>${Number(invoice.amount).toLocaleString()}</TableCell>
+                      <TableCell>${Number(invoice.total_paid || 0).toFixed(2)}</TableCell>
+                      <TableCell>${(Number(invoice.amount) - Number(invoice.total_paid || 0)).toFixed(2)}</TableCell>
                       <TableCell>{invoice.due_date?.slice(0, 10) || 'Not set'}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={getStatusColor(invoice.status)}>
@@ -190,7 +194,7 @@ export default function InvoicesPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" onClick={() => setSelected(invoice)} aria-label={`Review ${invoice.invoice_number}`}>View / Review</Button>
-                        {canReview && (
+                        {canReview && Number(invoice.total_paid || 0) === 0 && (
                           <Button aria-label={`Archive ${invoice.invoice_number}`} variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 ml-2" onClick={() => handleDelete(invoice.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -200,7 +204,7 @@ export default function InvoicesPage() {
                   ))}
                   {invoicesData?.data?.data?.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center">No invoices found.</TableCell>
+                      <TableCell colSpan={8} className="h-24 text-center">No invoices found.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>

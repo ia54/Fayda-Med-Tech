@@ -33,6 +33,7 @@ export interface BillingDashboardResponse {
 export interface Invoice {
   id: number;
   invoice_number: string;
+  total_paid?: number | string | null;
   amount: number;
   status: 'draft' | 'sent' | 'paid' | 'denied' | 'voided';
   due_date: string;
@@ -91,7 +92,7 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: ['Invoice'],
     }),
-    getPayments: builder.query<{ data: { data: Payment[] } }, any>({
+    getPayments: builder.query<{ data: { data: Payment[]; current_page: number; last_page: number; total: number } }, any>({
       query: (params) => ({
         url: '/payments',
         params,
