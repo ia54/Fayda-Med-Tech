@@ -4,6 +4,7 @@ require __DIR__.'/../../vendor/autoload.php';
 $app = require __DIR__.'/../../bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 use Illuminate\Support\Facades\{Artisan, DB, Schema};
+try {
 if (getenv('GITHUB_ACTIONS') !== 'true' || !app()->environment('testing') || config('database.default') !== 'mysql'
     || config('database.connections.mysql.database') !== 'faydamed_ci' || config('database.connections.mysql.host') !== '127.0.0.1') {
     throw new RuntimeException('Disposable CI MySQL only; refusing migration rehearsal.');
@@ -36,3 +37,8 @@ foreach (['other_deductions','request_id','request_hash','supersedes_id','correc
 foreach (['reversal_of_id','recorded_by'] as $key) if ($afterPayment[$key] !== null) throw new RuntimeException('Legacy payment default changed: '.$key);
 if (Artisan::call('migrate', ['--force'=>true,'--no-interaction'=>true]) !== 0) throw new RuntimeException('Repeated migration failed.');
 echo "PASS: four additive migrations preserve legacy payment and settlement values; unknown fields remain null; repeat migration succeeds.\n";
+
+} catch (Throwable $error) {
+    fwrite(STDERR, "FAIL: ".$error->getMessage()."\n");
+    exit(1);
+}
