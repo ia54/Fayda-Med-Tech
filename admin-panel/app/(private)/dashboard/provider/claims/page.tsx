@@ -7,31 +7,22 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { FileText, Plus, Search, MoreHorizontal, Edit, Eye, Send, Download, Filter, Loader2, Clock, CheckCircle, DollarSign } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useGetInvoicesQuery, useGetProviderStatsQuery } from "@/store/api/billingApiSlice"
+import { FileText, Plus, Search, Eye, Filter, Loader2, Clock, CheckCircle, DollarSign } from "lucide-react"
+import { Invoice, useGetInvoicesQuery, useGetProviderStatsQuery } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ClaimsPage() {
   const router = useRouter()
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<Invoice | null>(null)
 
   // Fetch real data
-  const { data: claimsData, isLoading: isClaimsLoading, isError: claimsFailed, refetch: retryClaims } = useGetInvoicesQuery({
-    search: searchTerm,
+  const { currentData: claimsData, isFetching: isClaimsLoading, isError: claimsFailed, refetch: retryClaims } = useGetInvoicesQuery({
+    search: searchTerm, page, per_page: 15,
     status: statusFilter === "all" ? undefined : statusFilter
   })
   const { data: statsData, isLoading: isStatsLoading, isError: statsFailed, refetch: retryStats } = useGetProviderStatsQuery()
@@ -132,11 +123,11 @@ export default function ClaimsPage() {
                   <Input
                     placeholder="Search by claim ID or patient..."
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
                     className="pl-10 w-full md:w-80 bg-white/50"
                   />
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <Select value={statusFilter} onValueChange={value => { setStatusFilter(value); setPage(1) }}>
                   <SelectTrigger className="w-32 bg-white/50">
                     <Filter className="h-4 w-4 mr-2" />
                     <SelectValue placeholder="Filter" />
@@ -175,36 +166,16 @@ export default function ClaimsPage() {
                       <TableRow key={claim.id} className="hover:bg-muted/30 transition-colors">
                         <TableCell className="font-semibold text-primary">#{claim.invoice_number}</TableCell>
                         <TableCell>
-                          <div className="font-medium text-emerald-950 dark:text-white">{claim.case?.title || 'General Service'}</div>
+                          <div className="font-medium text-emerald-950 dark:text-white">{claim.metadata?.patient_name || claim.case?.title || 'Not recorded'}</div>
                           <div className="text-xs text-muted-foreground">#{claim.case?.case_number || 'N/A'}</div>
                         </TableCell>
-                        <TableCell className="font-bold text-slate-900 dark:text-slate-100">${Number(claim.amount).toLocaleString()}</TableCell>
+                        <TableCell className="font-bold text-slate-900 dark:text-slate-100">${Number(claim.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={getStatusColor(claim.status)}>{claim.status === 'sent' ? 'BILLING REVIEW' : claim.status.toUpperCase()}</Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{new Date(claim.created_at).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                              <DropdownMenuItem className="cursor-pointer">
-                                <Eye className="mr-2 h-4 w-4" /> View Detail
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="cursor-pointer">
-                                <Edit className="mr-2 h-4 w-4" /> Edit Record
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="cursor-pointer text-emerald-600">
-                                <Send className="mr-2 h-4 w-4" /> Push to Billing
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="cursor-pointer">
-                                <Download className="mr-2 h-4 w-4" /> Export PDF
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <Button variant="outline" size="sm" onClick={() => setSelected(claim)} aria-label={`View ${claim.invoice_number}`}><Eye className="mr-2 h-4 w-4" />View details</Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -221,6 +192,18 @@ export default function ClaimsPage() {
             )}
           </CardContent>
         </Card>
+        <div className="flex items-center justify-between gap-3">
+          <Button variant="outline" disabled={page <= 1 || isClaimsLoading} onClick={() => setPage(p => p - 1)}>Previous</Button>
+          <span role="status">Page {page} of {claimsData?.data.last_page || 1} · {claimsData?.data.total ?? 0} records</span>
+          <Button variant="outline" disabled={isClaimsLoading || claimsFailed || !claimsData || page >= claimsData.data.last_page} onClick={() => setPage(p => p + 1)}>Next</Button>
+        </div>
+        <Dialog open={!!selected} onOpenChange={open => { if (!open) setSelected(null) }}>
+          <DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{selected?.invoice_number}</DialogTitle><DialogDescription>Saved internal billing record. Changes are managed by authorized billing staff.</DialogDescription></DialogHeader>
+            {selected && <dl className="space-y-3 break-words">
+              {Object.entries({Patient: selected.metadata?.patient_name, Case: selected.case?.title, Amount: `$${Number(selected.amount).toFixed(2)}`, Status: selected.status === 'sent' ? 'Billing review' : selected.status, 'Service date': selected.metadata?.service_date, Payer: selected.metadata?.payer, 'CPT codes': selected.metadata?.cpt_codes, 'Diagnosis codes': selected.metadata?.diagnosis_codes, Notes: selected.metadata?.notes || selected.notes}).map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="whitespace-pre-wrap">{value || 'Not recorded'}</dd></div>)}
+            </dl>}
+          </DialogContent>
+        </Dialog>
       </div>
   )
 }

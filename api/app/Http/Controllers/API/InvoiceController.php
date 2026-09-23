@@ -16,6 +16,8 @@ class InvoiceController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
+        abort_if($user->role !== 'admin' && !$user->organization_id, 403);
+        $request->validate(['search' => 'nullable|string|max:200', 'page' => 'nullable|integer|min:1', 'per_page' => 'nullable|integer|min:1|max:100']);
         $query = Invoice::with(['case']);
 
         // Filter for Client Role
@@ -33,7 +35,17 @@ class InvoiceController extends Controller
             $query->where('case_id', $request->case_id);
         }
 
-        $invoices = $query->latest()->paginate($request->get('per_page', 15));
+        if ($request->filled('search')) {
+            $term = '%' . $request->string('search')->trim() . '%';
+            $query->where(function ($q) use ($term) {
+                $q->where('invoice_number', 'like', $term)
+                    ->orWhere('metadata->patient_name', 'like', $term)
+                    ->orWhereHas('case', function ($cases) use ($term) {
+                        $cases->where('title', 'like', $term)->orWhere('case_number', 'like', $term);
+                    });
+            });
+        }
+        $invoices = $query->latest()->orderByDesc('id')->paginate($request->get('per_page', 15));
 
         return response()->json([
             'status' => true,
@@ -99,6 +111,7 @@ class InvoiceController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
+        abort_if($user->role !== 'admin' && !$user->organization_id, 403);
         $query = Invoice::with(['case', 'payments']);
 
         if ($user->role === 'client') {

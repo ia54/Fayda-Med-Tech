@@ -36,12 +36,15 @@ export interface Invoice {
   amount: number;
   status: 'draft' | 'sent' | 'paid' | 'denied' | 'voided';
   due_date: string;
+  created_at?: string;
+  notes?: string;
   paid_at?: string;
   metadata?: { payer?: string; cpt_codes?: string; diagnosis_codes?: string; patient_name?: string; service_date?: string; notes?: string };
   case_id?: number;
   case?: {
     id: number;
     title: string;
+    case_number?: string;
   };
 }
 
@@ -81,7 +84,7 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       query: () => '/billing/stats',
       providesTags: ['Invoice'],
     }),
-    getInvoices: builder.query<{ data: { data: Invoice[] } }, any>({
+    getInvoices: builder.query<{ data: { data: Invoice[]; current_page: number; last_page: number; total: number } }, any>({
       query: (params) => ({
         url: '/invoices',
         params,

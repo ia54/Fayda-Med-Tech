@@ -49,6 +49,22 @@ class InvoiceCaseBoundaryTest extends TestCase
             ->assertJsonPath('data.recent_claims.0.payer', 'Not recorded');
     }
 
+    public function test_search_pagination_and_details_preserve_organization_boundaries(): void
+    {
+        $first = $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 10, 'metadata' => ['patient_name' => 'Unique Patient']])->assertCreated()->json('data.id');
+        $this->postJson('/api/invoices', ['case_id' => $this->cases[1]->id, 'amount' => 20])->assertCreated();
+        $foreign = \App\Models\Invoice::withoutEvents(fn () => \App\Models\Invoice::create(['organization_id' => 2, 'case_id' => $this->cases[2]->id, 'invoice_number' => 'FOREIGN', 'amount' => 90, 'status' => 'draft', 'metadata' => ['patient_name' => 'Unique Patient']]));
+        $this->getJson('/api/invoices?search=Unique')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.id', $first);
+        $this->getJson('/api/invoices?search=SYN-1')->assertOk()->assertJsonPath('data.total', 2);
+        $this->getJson('/api/invoices?search=FOREIGN')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/invoices?per_page=1&page=2')->assertOk()->assertJsonPath('data.current_page', 2)->assertJsonPath('data.total', 2)->assertJsonCount(1, 'data.data');
+        $this->getJson('/api/invoices?per_page=1000')->assertUnprocessable();
+        $this->getJson('/api/invoices/'.$foreign->id)->assertNotFound();
+        $this->actor->organization_id = null;
+        $this->getJson('/api/invoices')->assertForbidden();
+        $this->getJson('/api/invoices/'.$first)->assertForbidden();
+    }
+
     public function test_other_organization_missing_and_archived_cases_are_rejected(): void
     {
         $this->cases[1]->delete();
