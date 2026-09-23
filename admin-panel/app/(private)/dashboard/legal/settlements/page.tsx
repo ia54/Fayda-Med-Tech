@@ -148,6 +148,15 @@ export default function SettlementsPage() {
     }
   }
 
+  const recordActions = (settlement: Settlement) => (
+    <div className="flex flex-wrap gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => openRecord(settlement)} aria-label={`${settlement.status === "completed" ? "View" : "Edit"} settlement ${settlement.id}`}>
+                            <Edit className="w-4 h-4 mr-2" />{settlement.status === "completed" ? "View" : "Edit"}
+                          </Button>
+                          {canCorrect && settlement.status === "completed" && !settlement.correction && <Button size="sm" variant="outline" onClick={() => setCorrectionTarget(settlement)} aria-label={`Correct settlement ${settlement.id}`}>Correct</Button>}
+    </div>
+  )
+
   const totalSettlementValue = settlements.reduce((acc: number, s: Settlement) => acc + parseFloat(s.settlement_amount), 0)
 
   return (
@@ -337,6 +346,7 @@ export default function SettlementsPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
+                  aria-label="Search settlements"
                   placeholder="Search settlements..."
                   className="pl-10"
                   value={searchTerm}
@@ -357,7 +367,32 @@ export default function SettlementsPage() {
             </div>
 
             <label className="flex items-center gap-2 mb-4 text-sm"><input type="checkbox" checked={includeHistory} onChange={e => { setIncludeHistory(e.target.checked); setPage(1) }} />Show replaced records</label>
-            <div className="overflow-x-auto">
+            <div className="space-y-4 md:hidden">
+              {isError ? (
+                <div><p role="alert">Could not load settlements.</p><Button onClick={() => refetch()}>Try again</Button></div>
+              ) : isSettlementsLoading ? (
+                <p role="status" className="py-6 text-center">Loading settlements…</p>
+              ) : settlements.length === 0 ? (
+                <p className="py-6 text-muted-foreground">No settlement records found.</p>
+              ) : settlements.map(settlement => (
+                <article key={settlement.id} aria-label={`Settlement ${settlement.id}`} className="rounded-lg border p-4 space-y-3 min-w-0">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="font-medium break-all">{settlement.case?.case_number || "N/A"}</p>
+                    {getStatusBadge(settlement.status)}
+                  </div>
+                  <p className="text-sm break-words">{settlement.case?.title || "N/A"}</p>
+                  <dl className="space-y-2 text-sm">
+                    <div><dt className="text-muted-foreground">Settlement amount</dt><dd className="font-medium">${Number(settlement.settlement_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</dd></div>
+                    <div><dt className="text-muted-foreground">Settlement date</dt><dd>{format(new Date(`${settlement.settlement_date.slice(0, 10)}T12:00:00`), "MMM dd, yyyy")}</dd></div>
+                  </dl>
+                  {settlement.correction && <p className="text-xs">Replaced by #{settlement.correction.id}</p>}
+                  {settlement.supersedes_id && <p className="text-xs">Corrects #{settlement.supersedes_id}</p>}
+                  {settlement.notes && <p className="text-sm line-clamp-3 break-words">{settlement.notes}</p>}
+                  {recordActions(settlement)}
+                </article>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -401,10 +436,7 @@ export default function SettlementsPage() {
                         </TableCell>
                         <TableCell className="max-w-xs truncate">{settlement.notes}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="sm" onClick={() => openRecord(settlement)} aria-label={`${settlement.status === "completed" ? "View" : "Edit"} settlement ${settlement.id}`}>
-                            <Edit className="w-4 h-4 mr-2" />{settlement.status === "completed" ? "View" : "Edit"}
-                          </Button>
-                          {canCorrect && settlement.status === "completed" && !settlement.correction && <Button size="sm" variant="outline" onClick={() => setCorrectionTarget(settlement)} aria-label={`Correct settlement ${settlement.id}`}>Correct</Button>}
+                          {recordActions(settlement)}
                         </TableCell>
                       </TableRow>
                     ))
