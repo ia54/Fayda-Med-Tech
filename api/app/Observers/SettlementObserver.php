@@ -32,7 +32,7 @@ class SettlementObserver
      */
     public function updated(CaseSettlement $settlement): void
     {
-        if ($settlement->isDirty(['status', 'settlement_amount', 'attorney_fees', 'costs', 'other_deductions'])) {
+        if ($settlement->isDirty(['status', 'settlement_amount', 'attorney_fees', 'costs', 'other_deductions', 'notes', 'settlement_date'])) {
             $this->notifyParties($settlement, "Settlement Updated");
             
             if ($settlement->case_id) {
@@ -40,8 +40,8 @@ class SettlementObserver
                     $settlement->case_id,
                     'legal',
                     'Settlement Updated',
-                    "Settlement status changed to '{$settlement->status}' with amount \${$settlement->settlement_amount}.",
-                    ['settlement_id' => $settlement->id, 'status' => $settlement->status, 'allocations' => $settlement->only(['settlement_amount', 'attorney_fees', 'costs', 'other_deductions']), 'previous_allocations' => array_intersect_key($settlement->getOriginal(), array_flip(['settlement_amount', 'attorney_fees', 'costs', 'other_deductions']))]
+                    "Settlement details updated with status '{$settlement->status}' with amount \${$settlement->settlement_amount}.",
+                    ['settlement_id' => $settlement->id, 'status' => $settlement->status, 'allocations' => $settlement->only(['settlement_amount', 'attorney_fees', 'costs', 'other_deductions']), 'details' => $settlement->only(['notes', 'settlement_date']), 'previous_details' => array_intersect_key($settlement->getOriginal(), array_flip(['notes', 'settlement_date'])), 'previous_allocations' => array_intersect_key($settlement->getOriginal(), array_flip(['settlement_amount', 'attorney_fees', 'costs', 'other_deductions']))]
                 );
             }
         }

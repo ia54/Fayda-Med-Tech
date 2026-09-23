@@ -37,6 +37,7 @@ class CaseSettlementController extends Controller
      */
     public function index(Request $request)
     {
+        $request->validate(['per_page' => 'sometimes|integer|min:1|max:100', 'page' => 'sometimes|integer|min:1', 'status' => 'sometimes|in:pending,completed,in-negotiation']);
         $query = $this->visibleSettlements($request)->with(['case:id,case_number,title', 'creator:id,first_name,last_name']);
 
         if ($request->case_id) {
@@ -215,8 +216,12 @@ class CaseSettlementController extends Controller
         $settlement = $this->visibleSettlements(request())
             ->findOrFail($id);
 
-        abort_if($settlement->status === 'completed', 409, 'Completed settlements cannot be archived.');
-        $settlement->delete();
+        \Illuminate\Support\Facades\DB::transaction(function () use ($settlement) {
+            // Re-read after acquiring the same lock used by completion updates.
+            $current = $this->visibleSettlements(request())->lockForUpdate()->findOrFail($settlement->id);
+            abort_if($current->status === 'completed', 409, 'Completed settlements cannot be archived.');
+            $current->delete();
+        });
 
         return response()->json([
             'status' => true,

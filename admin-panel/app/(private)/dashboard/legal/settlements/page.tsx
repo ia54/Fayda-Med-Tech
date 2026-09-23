@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -18,11 +18,11 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { DollarSign, Calendar, FileText, Search, Filter, Edit, CheckCircle, Loader2 } from "lucide-react"
-import { 
-  useGetSettlementsQuery, 
-  useCreateSettlementMutation, 
-  useUpdateSettlementMutation 
+import { DollarSign, Calendar, FileText, Search, Edit, CheckCircle, Loader2 } from "lucide-react"
+import {
+  useGetSettlementsQuery,
+  useCreateSettlementMutation,
+  useUpdateSettlementMutation
 } from "@/store/api/apiSlice"
 import { useGetCasesQuery } from "@/store/api/casesApiSlice"
 import { useToast } from "@/hooks/use-toast"
@@ -42,6 +42,10 @@ interface Settlement {
   status: string;
   notes: string;
   case?: Case;
+  attorney_fees?: string | null;
+  costs?: string | null;
+  other_deductions?: string | null;
+  net_to_client?: string | null;
 }
 
 export default function SettlementsPage() {
@@ -49,16 +53,23 @@ export default function SettlementsPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const { toast } = useToast()
+  const [page, setPage] = useState(1)
+  const [caseSearch, setCaseSearch] = useState("")
+  const [selected, setSelected] = useState<Settlement | null>(null)
+  const [saveError, setSaveError] = useState("")
+  const saveReference = useRef<{ body: string; id: string } | null>(null)
+  const saving = useRef(false)
+  const readOnly = selected?.status === "completed"
 
   // Queries
-  const { data: settlementsData, isLoading: isSettlementsLoading } = useGetSettlementsQuery({ 
-    search: searchTerm,
-    status: statusFilter === "all" ? undefined : statusFilter 
+  const { currentData: settlementsData, isFetching: isSettlementsLoading, isError, refetch } = useGetSettlementsQuery({
+    page, per_page: 15, search: searchTerm,
+    status: statusFilter === "all" ? undefined : statusFilter
   })
-  const { data: casesData } = useGetCasesQuery({ per_page: 100 })
-  
+  const { data: casesData, isError: casesError } = useGetCasesQuery({ per_page: 100, search: caseSearch })
+
   const [createSettlement, { isLoading: isCreating }] = useCreateSettlementMutation()
-  const [updateSettlement] = useUpdateSettlementMutation()
+  const [updateSettlement, { isLoading: isUpdating }] = useUpdateSettlementMutation()
 
   const settlements = (settlementsData?.data?.data || []) as Settlement[]
   const cases = (casesData?.data || []) as Case[]
@@ -67,48 +78,53 @@ export default function SettlementsPage() {
   const [formData, setFormData] = useState({
     case_id: "",
     settlement_amount: "",
-    settlement_date: new Date().toISOString().split('T')[0],
-    status: "completed",
+    settlement_date: format(new Date(), "yyyy-MM-dd"),
+    status: "pending",
     notes: ""
   })
 
-  const handleMarkSettlement = async () => {
-    try {
-      if (!formData.case_id || !formData.settlement_amount || !formData.settlement_date) {
-        toast({
-          title: "Missing fields",
-          description: "Please fill in all required fields.",
-          variant: "destructive"
-        })
-        return
-      }
+  const openRecord = (record: Settlement | null) => {
+    setSelected(record)
+    setSaveError("")
+    saveReference.current = null
+    setFormData({
+      case_id: record ? String(record.case_id) : "",
+      settlement_amount: record?.settlement_amount || "",
+      settlement_date: record?.settlement_date.slice(0, 10) || format(new Date(), "yyyy-MM-dd"),
+      status: record?.status || "pending",
+      notes: record?.notes || "",
+    })
+    setIsDialogOpen(true)
+  }
 
-      await createSettlement({
-        case_id: parseInt(formData.case_id),
-        settlement_amount: parseFloat(formData.settlement_amount),
+  const handleMarkSettlement = async () => {
+    if (saving.current || readOnly) return
+    setSaveError("")
+    if (!formData.case_id || !/^\d+(\.\d{1,2})?$/.test(formData.settlement_amount) || !formData.settlement_date) {
+      setSaveError("Choose a case, date and a non-negative amount with at most two decimal places.")
+      return
+    }
+    saving.current = true
+    try {
+      const payload = {
+        settlement_amount: formData.settlement_amount,
         settlement_date: formData.settlement_date,
         status: formData.status,
-        notes: formData.notes
-      }).unwrap()
-
-      toast({
-        title: "Success",
-        description: "Settlement recorded successfully.",
-      })
+        notes: formData.notes,
+      }
+      if (selected) {
+        await updateSettlement({ id: selected.id, ...payload }).unwrap()
+      } else {
+        const body = JSON.stringify({ case_id: Number(formData.case_id), ...payload })
+        if (saveReference.current?.body !== body) saveReference.current = { body, id: crypto.randomUUID() }
+        await createSettlement({ case_id: Number(formData.case_id), ...payload, request_id: saveReference.current.id }).unwrap()
+      }
+      toast({ title: "Saved", description: "Settlement record saved. No funds have been transferred." })
       setIsDialogOpen(false)
-      setFormData({
-        case_id: "",
-        settlement_amount: "",
-        settlement_date: new Date().toISOString().split('T')[0],
-        status: "completed",
-        notes: ""
-      })
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to record settlement.",
-        variant: "destructive"
-      })
+    } catch (error: any) {
+      setSaveError(Object.values(error.data?.errors || {}).flat().join(" ") || error.data?.message || "Could not save this record. Review the details and try again.")
+    } finally {
+      saving.current = false
     }
   }
 
@@ -130,37 +146,38 @@ export default function SettlementsPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white text-balance">Settlement Notes</h1>
-            <p className="text-gray-600 dark:text-slate-300 mt-2">Mark settled dates and amounts with detailed notes</p>
+            <p className="text-gray-600 dark:text-slate-300 mt-2">Record settlement status, amounts and notes. These records do not confirm payment.</p>
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" className="border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/50 bg-transparent text-emerald-700 dark:text-white">
-              <Filter className="w-4 h-4 mr-2" />
-              Filter
-            </Button>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!saving.current) setIsDialogOpen(open) }}>
               <DialogTrigger asChild>
-                <Button className="bg-emerald-600 dark:bg-emerald-500 hover:bg-emerald-700 dark:hover:bg-emerald-600 text-white dark:text-slate-950 font-medium">
+                <Button onClick={() => openRecord(null)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  Mark Settlement
+                  Record Settlement
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl">
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Mark Case Settlement</DialogTitle>
-                  <DialogDescription>Record settlement details and final notes for the case</DialogDescription>
+                  <DialogTitle>{readOnly ? "Completed Settlement" : selected ? "Edit Settlement" : "Record Settlement"}</DialogTitle>
+                  <DialogDescription>{readOnly ? "Completed records are read-only. An auditable financial correction workflow is not yet available." : "Save a pending or negotiated record. Mark completed only after the settlement has been finalized; completed records cannot be edited here."}</DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                {saveError && <p role="alert" className="text-destructive">{saveError}</p>}
+                {selected && <p className="text-sm">{selected.other_deductions != null ? `Saved allocations: fees $${selected.attorney_fees}; costs $${selected.costs}; other deductions $${selected.other_deductions}; net $${selected.net_to_client}. Amount edits must cover these deductions.` : "Allocation breakdown has not been recorded."} Use the case settlement calculator for new detailed allocations.</p>}
+                <fieldset disabled={readOnly || isCreating || isUpdating} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="case-number">Case *</Label>
-                      <Select 
-                        value={formData.case_id} 
+                      {!selected && <Input aria-label="Search cases" placeholder="Search by case number or title" value={caseSearch} onChange={e => setCaseSearch(e.target.value)} />}
+                      {casesError && <p role="alert">Cases could not be loaded. Try reopening this form.</p>}
+                      <Select disabled={!!selected || readOnly || isCreating || isUpdating}
+                        value={formData.case_id}
                         onValueChange={(value) => setFormData({...formData, case_id: value})}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger id="case-number">
                           <SelectValue placeholder="Select case" />
                         </SelectTrigger>
                         <SelectContent>
+                          {selected && !cases.some(c => c.id === selected.case_id) && <SelectItem value={String(selected.case_id)}>{selected.case?.case_number || `Case ${selected.case_id}`}</SelectItem>}
                           {cases.map((c: Case) => (
                             <SelectItem key={c.id} value={c.id.toString()}>{c.case_number} - {c.title}</SelectItem>
                           ))}
@@ -169,32 +186,32 @@ export default function SettlementsPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="settlement-date">Settlement Date *</Label>
-                      <Input 
-                        id="settlement-date" 
-                        type="date" 
+                      <Input
+                        id="settlement-date"
+                        type="date"
                         value={formData.settlement_date}
                         onChange={(e) => setFormData({...formData, settlement_date: e.target.value})}
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="settlement-amount">Settlement Amount ($) *</Label>
-                      <Input 
-                        id="settlement-amount" 
-                        type="number"
-                        placeholder="0.00" 
+                      <Input
+                        id="settlement-amount"
+                        type="number" min="0" step="0.01"
+                        placeholder="0.00"
                         value={formData.settlement_amount}
                         onChange={(e) => setFormData({...formData, settlement_amount: e.target.value})}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="status">Status *</Label>
-                      <Select 
-                        value={formData.status} 
+                      <Select disabled={readOnly || isCreating || isUpdating}
+                        value={formData.status}
                         onValueChange={(value) => setFormData({...formData, status: value})}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger id="status">
                           <SelectValue placeholder="Select status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -215,18 +232,18 @@ export default function SettlementsPage() {
                       onChange={(e) => setFormData({...formData, notes: e.target.value})}
                     />
                   </div>
+                </fieldset>
                   <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                    <Button 
-                      className="bg-emerald-600 hover:bg-emerald-700" 
+                    <Button disabled={isCreating || isUpdating} variant="outline" onClick={() => setIsDialogOpen(false)}>{readOnly ? "Close" : "Cancel"}</Button>
+                    {!readOnly && <Button
+                      className="bg-emerald-600 hover:bg-emerald-700"
                       onClick={handleMarkSettlement}
-                      disabled={isCreating}
+                      disabled={isCreating || isUpdating}
                     >
-                      {isCreating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      {(isCreating || isUpdating) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                       Save Settlement
-                    </Button>
+                    </Button>}
                   </DialogFooter>
-                </div>
               </DialogContent>
             </Dialog>
           </div>
@@ -238,14 +255,14 @@ export default function SettlementsPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-gray-600 dark:text-white flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-emerald-600 dark:text-white" />
-                Total Settlements
+                Gross Amount on This Page
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                ${totalSettlementValue.toLocaleString()}
+                {isError || isSettlementsLoading ? "—" : totalSettlementValue.toLocaleString(undefined, { style: "currency", currency: "USD" })}
               </div>
-              <p className="text-xs text-emerald-600 dark:text-white mt-1">Life-to-date</p>
+              <p className="text-xs text-emerald-600 dark:text-white mt-1">Current filtered page</p>
             </CardContent>
           </Card>
 
@@ -258,9 +275,9 @@ export default function SettlementsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {settlements.filter(s => s.status === 'completed').length}
+                {isError || isSettlementsLoading ? '—' : settlements.filter(s => s.status === 'completed').length}
               </div>
-              <p className="text-xs text-green-600 dark:text-green-400 mt-1">Cases closed</p>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">Records on this page; not case closures</p>
             </CardContent>
           </Card>
 
@@ -273,9 +290,9 @@ export default function SettlementsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {settlements.filter(s => s.status === 'pending').length}
+                {isError || isSettlementsLoading ? '—' : settlements.filter(s => s.status === 'pending').length}
               </div>
-              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">In progress</p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Records on this page</p>
             </CardContent>
           </Card>
 
@@ -288,9 +305,9 @@ export default function SettlementsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {settlements.filter(s => s.status === 'in-negotiation').length}
+                {isError || isSettlementsLoading ? '—' : settlements.filter(s => s.status === 'in-negotiation').length}
               </div>
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Current discussions</p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Records on this page</p>
             </CardContent>
           </Card>
         </div>
@@ -305,14 +322,14 @@ export default function SettlementsPage() {
             <div className="flex flex-col md:flex-row gap-4 mb-6">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input 
-                  placeholder="Search settlements..." 
-                  className="pl-10" 
+                <Input
+                  placeholder="Search settlements..."
+                  className="pl-10"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
                 />
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={value => { setStatusFilter(value); setPage(1) }}>
                 <SelectTrigger className="w-full md:w-48">
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
@@ -339,7 +356,9 @@ export default function SettlementsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isSettlementsLoading ? (
+                  {isError ? (
+                    <TableRow><TableCell colSpan={7}><p role="alert">Could not load settlements.</p><Button onClick={() => refetch()}>Try again</Button></TableCell></TableRow>
+                  ) : isSettlementsLoading ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-10">
                         <Loader2 className="w-8 h-8 animate-spin mx-auto text-emerald-600" />
@@ -357,16 +376,16 @@ export default function SettlementsPage() {
                         <TableCell className="font-medium">{settlement.case?.case_number || "N/A"}</TableCell>
                         <TableCell>{settlement.case?.title || "N/A"}</TableCell>
                         <TableCell className="font-medium text-green-600">
-                          ${parseFloat(settlement.settlement_amount).toLocaleString()}
+                          ${parseFloat(settlement.settlement_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
-                        <TableCell>{format(new Date(settlement.settlement_date), "MMM dd, yyyy")}</TableCell>
+                        <TableCell>{format(new Date(`${settlement.settlement_date.slice(0, 10)}T12:00:00`), "MMM dd, yyyy")}</TableCell>
                         <TableCell>
                           {getStatusBadge(settlement.status)}
                         </TableCell>
                         <TableCell className="max-w-xs truncate">{settlement.notes}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="sm">
-                            <Edit className="w-4 h-4" />
+                          <Button variant="ghost" size="sm" onClick={() => openRecord(settlement)} aria-label={`${settlement.status === "completed" ? "View" : "Edit"} settlement ${settlement.id}`}>
+                            <Edit className="w-4 h-4 mr-2" />{settlement.status === "completed" ? "View" : "Edit"}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -374,6 +393,11 @@ export default function SettlementsPage() {
                   )}
                 </TableBody>
               </Table>
+            </div>
+            <div className="flex items-center justify-between gap-3 mt-4">
+              <Button variant="outline" disabled={page <= 1 || isSettlementsLoading} onClick={() => setPage(p => p - 1)}>Previous</Button>
+              <span className="text-sm">Page {page} of {settlementsData?.data?.last_page || 1}</span>
+              <Button variant="outline" disabled={isSettlementsLoading || !settlementsData?.data?.next_page_url} onClick={() => setPage(p => p + 1)}>Next</Button>
             </div>
           </CardContent>
         </Card>

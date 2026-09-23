@@ -36,6 +36,12 @@ class CaseUpdateTest extends TestCase
         $this->assertDatabaseCount('case_timeline',2);
         $other=\App\Models\CaseSettlement::withoutEvents(fn()=>\App\Models\CaseSettlement::create(array_replace($settlementBody,['case_id'=>$cases[1]->id,'organization_id'=>1,'created_by'=>$actor->id])));
         $this->getJson('/api/settlements')->assertOk()->assertJsonPath('data.total',1);
+        $this->getJson('/api/settlements?per_page=0')->assertUnprocessable();
+        $this->getJson('/api/settlements?per_page=101')->assertUnprocessable();
+        $this->getJson('/api/settlements?page=0')->assertUnprocessable();
+        $this->getJson('/api/settlements?status=unknown')->assertUnprocessable();
+        $this->getJson('/api/settlements?per_page=1&page=1&status=pending&search=Updated')->assertOk()->assertJsonPath('data.total',1);
+
         $this->getJson('/api/settlements/'.$other->id)->assertNotFound();
         $this->putJson('/api/settlements/'.$other->id,['status'=>'completed'])->assertNotFound();
         $this->deleteJson('/api/settlements/'.$other->id)->assertNotFound();
@@ -52,9 +58,18 @@ class CaseUpdateTest extends TestCase
         $this->postJson('/api/settlements',array_merge($settlementBody,['attorney_fees'=>'5.00']))->assertUnprocessable();
         $this->postJson('/api/settlements',array_merge($settlementBody,$allocation,['costs'=>'1.001']))->assertUnprocessable();
         $this->assertDatabaseCount('case_settlements',2);
+        $this->putJson('/api/settlements/'.$settlementId,['notes'=>'Synthetic reviewed note'])->assertOk();
+        $noteChange=\App\Models\CaseTimeline::where('case_id',$cases[0]->id)->where('title','Settlement Updated')->latest('id')->firstOrFail();
+        $this->assertSame('Synthetic reviewed note',$noteChange->metadata['details']['notes']);
+        $this->assertNull($noteChange->metadata['previous_details']['notes']);
         $this->putJson('/api/settlements/'.$settlementId,['status'=>'completed'])->assertOk();
         $this->putJson('/api/settlements/'.$settlementId,['settlement_amount'=>1])->assertStatus(409);
         $this->deleteJson('/api/settlements/'.$settlementId)->assertStatus(409);
+        $draft=$this->postJson('/api/settlements',array_replace($settlementBody,['request_id'=>'8b1cbddb-4414-49ed-b6ca-51c1599d76e2']))->assertCreated()->json('data.id');
+        $this->deleteJson('/api/settlements/'.$draft)->assertOk();
+        $this->getJson('/api/settlements/'.$draft)->assertNotFound();
+        $this->assertSoftDeleted('case_settlements',['id'=>$draft]);
+        $this->postJson('/api/settlements',array_replace($settlementBody,['request_id'=>'8b1cbddb-4414-49ed-b6ca-51c1599d76e2']))->assertStatus(409);
         $actor->organization_id=null;
         $this->putJson($url,['title'=>'Denied'])->assertForbidden();
         $actor->organization_id=1;
