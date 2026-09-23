@@ -43,19 +43,26 @@ jobs:
           php tests/Security/cors-config-smoke.php
 
   mysql-schema:
-    name: MySQL 8 schema and financial workflows
+    name: ${{ matrix.database.name }} schema, finance and recovery
+    strategy:
+      fail-fast: false
+      matrix:
+        database:
+          - { name: MySQL 8, image: 'mysql:8.0' }
+          - { name: MariaDB 10.11, image: 'mariadb:10.11' }
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
       mysql:
-        image: mysql:8.0
+        image: ${{ matrix.database.image }}
         env:
           MYSQL_DATABASE: faydamed_ci
           MYSQL_ROOT_PASSWORD: ci-only-disposable
+          MARIADB_ROOT_PASSWORD: ci-only-disposable
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h127.0.0.1 -pci-only-disposable"
+          --health-cmd="if command -v mariadb-admin >/dev/null 2>&1; then mariadb-admin ping -h127.0.0.1 -pci-only-disposable; else mysqladmin ping -h127.0.0.1 -pci-only-disposable; fi"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -90,5 +97,9 @@ jobs:
       - run: php artisan migrate:status --no-interaction
       - name: Legacy data upgrade rehearsal
         run: php tests/Security/mysql-upgrade-smoke.php
+      - name: Synthetic database and private-file restore rehearsal
+        env:
+          FAYDAMED_CI_DB_CONTAINER: ${{ job.services.mysql.id }}
+        run: bash tests/Security/database-restore-smoke.sh
       - name: MySQL financial workflow regression
         run: php vendor/bin/phpunit -c phpunit.mysql.xml --colors=never --testdox
