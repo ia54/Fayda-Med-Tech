@@ -289,10 +289,6 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::middleware(['role:admin,firm_admin,attorney'])->group(function () {
             Route::get('/letters-of-protection', [\App\Http\Controllers\API\LetterOfProtectionController::class, 'index']);
             Route::post('/letters-of-protection', [\App\Http\Controllers\API\LetterOfProtectionController::class, 'store']);
-            Route::get('/liens', [\App\Http\Controllers\API\LienController::class, 'index']);
-            Route::post('/liens', [\App\Http\Controllers\API\LienController::class, 'store']);
-            Route::put('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'update']);
-            Route::delete('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'destroy']);
         });
 
         Route::get('/treatment-records', [\App\Http\Controllers\API\TreatmentRecordController::class, 'index']);
@@ -359,6 +355,15 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/stripe/payment-intent', [StripeController::class, 'createPaymentIntent'])->middleware('role:admin,firm_admin,client');
         Route::post('/stripe/webhook', [StripeController::class, 'webhook']); // No auth for webhook
 
+    });
+
+    Route::middleware(['role:admin,firm_admin,attorney'])->group(function () {
+        Route::get('/liens/provider-options', [\App\Http\Controllers\API\LienController::class, 'providerOptions']);
+            Route::get('/liens', [\App\Http\Controllers\API\LienController::class, 'index']);
+            Route::get('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'show']);
+            Route::post('/liens', [\App\Http\Controllers\API\LienController::class, 'store']);
+            Route::put('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'update']);
+            Route::delete('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'destroy']);
     });
 
         // Notifications — accessible by ALL authenticated roles (PDF Section 14)

@@ -3,9 +3,9 @@ import { apiSlice } from './apiSlice';
 export interface Lien {
   id: number;
   case_id: number;
-  provider_id?: number;
+  provider_id?: number | null;
   lien_type: 'medical' | 'attorney' | 'government_medicare' | 'government_medicaid' | 'health_insurance';
-  amount: number;
+  amount: number | string;
   status: 'pending' | 'negotiated' | 'settled' | 'released';
   negotiated_amount?: number;
   reduction_amount?: number;
@@ -20,13 +20,18 @@ export interface Lien {
 }
 
 export const liensApiSlice = apiSlice.injectEndpoints({
+  overrideExisting: true,
   endpoints: (builder) => ({
-    getLiens: builder.query<{ data: { data: Lien[] } }, any>({
+    getLienProviderOptions: builder.query<{ data: { id: number; name: string }[] }, { search: string }>({
+      query: params => ({ url: '/liens/provider-options', params }),
+      providesTags: ['Provider'],
+    }),
+    getLiens: builder.query<{ data: { data: Lien[]; total: number; last_page: number; next_page_url: string | null } }, any>({
       query: (params) => ({
         url: '/liens',
         params,
       }),
-      providesTags: ['Case'],
+      providesTags: ['Lien', 'Case'],
     }),
     createLien: builder.mutation<any, Partial<Lien>>({
       query: (body) => ({
@@ -34,7 +39,7 @@ export const liensApiSlice = apiSlice.injectEndpoints({
         method: 'POST',
         body,
       }),
-      invalidatesTags: ['Case'],
+      invalidatesTags: ['Lien', 'Case'],
     }),
     updateLien: builder.mutation<any, { id: number } & Partial<Lien>>({
       query: ({ id, ...body }) => ({
@@ -42,19 +47,20 @@ export const liensApiSlice = apiSlice.injectEndpoints({
         method: 'PUT',
         body,
       }),
-      invalidatesTags: ['Case'],
+      invalidatesTags: ['Lien', 'Case'],
     }),
     deleteLien: builder.mutation<any, number>({
       query: (id) => ({
         url: `/liens/${id}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['Case'],
+      invalidatesTags: ['Lien', 'Case'],
     }),
   }),
 });
 
 export const {
+  useGetLienProviderOptionsQuery,
   useGetLiensQuery,
   useCreateLienMutation,
   useUpdateLienMutation,
