@@ -216,7 +216,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/client/invoices', [InvoiceController::class, 'index']);
         Route::get('/client/invoices/{id}', [InvoiceController::class, 'show']);
 
-        // Payments — View + Create (PDF: Client can make payments)
+        // Clients can view recorded receipts; only billing roles may create them.
         Route::get('/client/payments', [PaymentController::class, 'index']);
         Route::post('/client/payments', [PaymentController::class, 'store']);
 
@@ -354,9 +354,6 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::delete('/gdpr/delete/{userId}', [GdprController::class, 'deleteUserData'])->middleware('role:admin,firm_admin');
         Route::get('/gdpr/audit-trail/{userId}', [GdprController::class, 'userAuditTrail'])->middleware('role:admin,firm_admin');
 
-        // 15. Integrations & API - Stripe (PDF Section 15)
-        Route::post('/stripe/payment-intent', [StripeController::class, 'createPaymentIntent'])->middleware('role:admin,firm_admin,client');
-        Route::post('/stripe/webhook', [StripeController::class, 'webhook']); // No auth for webhook
 
     });
 

@@ -71,6 +71,7 @@ class OcrController extends Controller
 
         $ocrResult = OcrResult::create([
             'document_id' => $document->id,
+            'organization_id' => $document->organization_id,
             'processed_by' => optional($request->user())->id,
             'provider' => 'google_vision',
             'status' => 'processing',
@@ -93,63 +94,58 @@ class OcrController extends Controller
             ], 500);
         }
 
-        $pdfContent = file_get_contents($absolutePath);
-        $pdfBase64 = base64_encode($pdfContent);
-        
-        // Estimate page count for chunking (since synchronous limit is 5 pages)
-        $pageCount = preg_match_all("/\/Page\W/s", $pdfContent, $dummy) ?: 1;
-        $maxPagesPerRequest = 5;
-        $chunks = ceil($pageCount / $maxPagesPerRequest);
-        
         $fullAnnotation = '';
         $fullResponse = [];
+        $pageCount = null;
+        $nextPage = 1;
 
         try {
-            $endpoint = "https://vision.googleapis.com/v1/files:annotate";
-
-            for ($i = 0; $i < $chunks; $i++) {
-                $startPage = ($i * $maxPagesPerRequest) + 1;
-                $endPage = min(($i + 1) * $maxPagesPerRequest, $pageCount);
-                
-                $pages = range($startPage, $endPage);
-
-                $payload = [
-                    'requests' => [
-                        [
-                            'inputConfig' => [
-                                'content' => $pdfBase64,
-                                'mimeType' => 'application/pdf',
-                            ],
-                            'features' => [
-                                ['type' => $featureType],
-                            ],
-                            'pages' => $pages,
-                        ]
-                    ]
-                ];
-
+            $pdfContent = file_get_contents($absolutePath);
+            if ($pdfContent === false || $pdfContent === '') {
+                throw new \RuntimeException('Document could not be read.');
+            }
+            $pdfBase64 = base64_encode($pdfContent);
+            // The provider reports totalPages. PDF object scanning misses compressed pages.
+            do {
+                $pages = $pageCount === null ? [1] : range($nextPage, min($nextPage + 4, $pageCount));
                 $response = Http::withHeaders([
                     'X-Goog-Api-Key' => $apiKey,
                     'Content-Type' => 'application/json',
-                ])
-                ->timeout(120)
-                ->post($endpoint, $payload);
-
-                if (!$response->successful()) {
-                    // If one chunk fails, we still try to return what we have or fail
-                    break; 
+                ])->connectTimeout(10)->timeout(120)->post('https://vision.googleapis.com/v1/files:annotate', [
+                    'requests' => [[
+                        'inputConfig' => ['content' => $pdfBase64, 'mimeType' => 'application/pdf'],
+                        'features' => [['type' => $featureType]],
+                        'imageContext' => ['languageHints' => $languageHints],
+                        'pages' => $pages,
+                    ]],
+                ]);
+                if (! $response->successful()) {
+                    throw new \RuntimeException('OCR provider request failed.');
                 }
-
-                $responseBody = $response->json();
-                $fullResponse[] = $responseBody;
-
-                $fileResponses = data_get($responseBody, 'responses.0.responses', []);
-                foreach ($fileResponses as $res) {
-                    $text = data_get($res, 'fullTextAnnotation.text') 
-                        ?: data_get($res, 'textAnnotations.0.description', '');
+                $body = $response->json();
+                $file = data_get($body, 'responses.0');
+                $reportedPages = data_get($file, 'totalPages');
+                if (! is_int($reportedPages) || $reportedPages < 1 || $reportedPages > 100
+                    || ($pageCount !== null && $pageCount !== $reportedPages)
+                    || data_get($body, 'error') || data_get($file, 'error')) {
+                    throw new \RuntimeException('OCR provider did not return a supported complete document.');
+                }
+                $pageCount = $reportedPages;
+                $responses = data_get($file, 'responses');
+                if (! is_array($responses) || count($responses) !== count($pages)) {
+                    throw new \RuntimeException('OCR provider omitted pages.');
+                }
+                foreach ($responses as $index => $page) {
+                    if (data_get($page, 'error') || data_get($page, 'context.pageNumber') !== $pages[$index]) {
+                        throw new \RuntimeException('OCR page failed or was returned out of order.');
+                    }
+                    $text = data_get($page, 'fullTextAnnotation.text') ?: data_get($page, 'textAnnotations.0.description', '');
+                    if (! is_string($text)) throw new \RuntimeException('Invalid OCR text response.');
                     $fullAnnotation .= $text . "\n";
                 }
-            }
+                $fullResponse[] = $body;
+                $nextPage = end($pages) + 1;
+            } while ($nextPage <= $pageCount);
 
             $fullAnnotation = trim($fullAnnotation);
             
@@ -186,7 +182,7 @@ class OcrController extends Controller
         } catch (Throwable $exception) {
             $ocrResult->update([
                 'status' => 'failed',
-                'metadata' => ['error' => $exception->getMessage()],
+                'metadata' => ['error' => 'OCR did not complete all pages. Retry or contact support.'],
             ]);
 
             $document->update(['ocr_status' => 'failed']);
@@ -194,7 +190,7 @@ class OcrController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'OCR processing failed',
-                'error' => $exception->getMessage(),
+                'error' => 'OCR did not complete all pages. Documents over 100 pages require a separate processing workflow.',
             ], 500);
         }
 

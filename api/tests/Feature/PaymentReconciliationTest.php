@@ -136,4 +136,16 @@ class PaymentReconciliationTest extends TestCase
         $this->getJson('/api/client/stats')->assertOk()->assertJsonPath('data.stats.billing_summary.paid', '$2.00');
     }
 
+    public function test_online_collection_endpoints_are_absent_for_every_role(): void
+    {
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        foreach (User::getAvailableRoles() as $role) {
+            $this->actor->role = $role;
+            $this->postJson('/api/stripe/payment-intent', ['amount' => 1, 'invoice_id' => 1])->assertNotFound();
+            $this->postJson('/api/stripe/webhook', ['type' => 'payment_intent.succeeded'])->assertNotFound();
+        }
+        $this->assertDatabaseCount('payments', 0);
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+    }
+
 }

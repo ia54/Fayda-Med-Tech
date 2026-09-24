@@ -19,7 +19,6 @@
         "laravel/ui": "^4.6",
         "openai-php/client": "^0.19.2",
         "predis/predis": "^3.0",
-        "stripe/stripe-php": "^20.1",
         "pragmarx/google2fa": "^9.0"
     },
     "require-dev": {
