@@ -46,3 +46,9 @@ References: [Next 15 upgrade guide](https://nextjs.org/docs/app/guides/upgrading
 Commits 3f8b5b9, a4080c9 and aeea271 implement record-only payments, complete-or-failed OCR, non-secret configuration status and rich-text sanitization. GitHub run 35990886721 at aeea271 passes 71 PHP tests / 813 assertions, plus MySQL 8 and MariaDB 10.11 with 10 tests / 347 assertions each and 64-table synthetic restore verification. Website and admin production builds pass (109 admin pages); changed admin file lint passes. Website dependency audit remains zero; admin retains the one low Quill advisory.
 
 Sanitizer guidance: https://github.com/cure53/DOMPurify . Provider page-count contract: https://docs.cloud.google.com/nodejs/docs/reference/vision/latest/vision/protos.google.cloud.vision.v1.iannotatefileresponse .
+
+## Signing recovery and component browser acceptance
+
+Backend commit 0c4068e passes 111 local PHP tests / 1,125 assertions. GitHub run 35999512415 passes PHP 8.3, MySQL 8 and MariaDB 10.11, including recovery, migration, legacy-upgrade and synthetic restore checks. Recovery defaults to read-only provider lookup; explicit linking requires an exact envelope ID, an authorized actor, a reason, and matching saved dispatch evidence. No automatic resend or guard reset is provided.
+
+Chrome component acceptance used the actual shared preview with mocked responses and synthetic PDFs at 390x667 and 1280x900. It verified signed/certificate selection, protected download links, unavailable-file errors and retry controls. The preview now overrides the generic dialog width and limits PDF height so mobile headings, close buttons and download controls remain visible. These checks do not establish downloaded-file persistence, full-app six-role acceptance or real DocuSign delivery. No external provider request or patient data was used.

@@ -546,3 +546,15 @@ body > * {
     border: 2px solid hsl(var(--muted) / 0.2);
   }
 }
+/* Protected document preview: override the generic shrink-to-content modal rule. */
+[data-slot="dialog-content"][data-document-preview="true"] {
+  width: min(90vw, 900px) !important;
+  max-width: 90vw !important;
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+
+[data-slot="dialog-content"][data-document-preview="true"] iframe {
+  height: min(60vh, calc(90dvh - 280px));
+  min-height: 100px;
+}
