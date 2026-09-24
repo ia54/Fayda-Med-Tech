@@ -136,6 +136,7 @@ class ReportsController extends Controller
      */
     public function settlementSummary(Request $request)
     {
+        $this->captureCaseScope($request);
         abort_unless($request->user()->organization_id && in_array($request->user()->role, ['admin', 'firm_admin', 'attorney'], true), 403);
         $query = CaseSettlement::where('organization_id', $request->user()->organization_id)->current()->where('status', 'completed');
         if ($request->user()->role === 'attorney') $query->whereHas('case', fn ($q) => $q->assignedToAttorney($request->user()->id));
@@ -160,6 +161,7 @@ class ReportsController extends Controller
      */
     public function attorneyProduction(Request $request)
     {
+        $this->captureCaseScope($request);
         abort_unless($request->user()->organization_id && in_array($request->user()->role, ['admin', 'firm_admin', 'attorney'], true), 403);
         $attorneyQuery = User::where('organization_id', $request->user()->organization_id)->where('role', 'attorney');
         if ($request->user()->role === 'attorney') $attorneyQuery->whereKey($request->user()->id);
@@ -224,9 +226,11 @@ class ReportsController extends Controller
      */
     public function lienSummary(Request $request)
     {
-        $totalLiensCount = $this->forOrganization(Lien::class, $request)->count();
-        $totalLiensAmount = $this->forOrganization(Lien::class, $request)->sum('amount');
-        $totalReductions = $this->forOrganization(Lien::class, $request)->sum('reduction_amount');
+        $liens = $this->forOrganization(Lien::class, $request)
+            ->whereIn('case_id', $this->casesForReport($request)->select('id'));
+        $totalLiensCount = (clone $liens)->count();
+        $totalLiensAmount = (clone $liens)->sum('amount');
+        $totalReductions = (clone $liens)->sum('reduction_amount');
         $totalOutstanding = $totalLiensAmount - $totalReductions;
 
         $report = $this->storeReport($request, 'lien_summary', [
@@ -386,6 +390,7 @@ class ReportsController extends Controller
     private function forOrganization(string $model, Request $request): \Illuminate\Database\Eloquent\Builder
     {
         abort_unless($request->user()->organization_id, 403);
+        $this->captureCaseScope($request);
         $query = $model::query();
         return $query->where($query->getModel()->qualifyColumn('organization_id'), $request->user()->organization_id);
     }
@@ -397,6 +402,21 @@ class ReportsController extends Controller
         return $query;
     }
 
+    private function currentCaseScope(Request $request): string
+    {
+        $ids = CaseModel::where('organization_id', $request->user()->organization_id)
+            ->assignedToAttorney($request->user()->id)->orderBy('id')->pluck('id');
+        return hash('sha256', $ids->implode(','));
+    }
+
+    private function captureCaseScope(Request $request): void
+    {
+        if ($request->user()->role === 'attorney' && !$request->attributes->has('report_case_scope')) {
+            // Capture before reading report data, not after assignments may change.
+            $request->attributes->set('report_case_scope', $this->currentCaseScope($request));
+        }
+    }
+
     /** Saved snapshots must not bypass the scope used to generate them. */
     private function visibleSavedReports(Request $request): \Illuminate\Database\Eloquent\Builder
     {
@@ -406,6 +426,9 @@ class ReportsController extends Controller
         if ($user->role === 'firm_admin') {
             // Platform-admin and legacy snapshots may contain a wider scope.
             $query->whereIn('parameters->_generated_role', ['firm_admin', 'attorney', 'medical_biller', 'provider_staff']);
+        }
+        if ($user->role === 'attorney') {
+            $query->where('parameters->_case_scope', $this->currentCaseScope($request));
         }
         if (!in_array($user->role, ['admin', 'firm_admin'], true)) {
             $types = ['case_status', 'revenue', 'insurance_aging', 'provider_billing', 'lien_summary', 'ocr_log', 'signature_activity', 'collection_rate', 'referral_source'];
@@ -424,12 +447,14 @@ class ReportsController extends Controller
      */
     private function storeReport(Request $request, string $type, array $summary): ReportGeneration
     {
+        $this->captureCaseScope($request);
+        $scope = $request->user()->role === 'attorney' ? ['_case_scope' => $request->attributes->get('report_case_scope')] : [];
         return ReportGeneration::create([
             'organization_id' => $request->user()->organization_id,
             'generated_by' => $request->user()->id,
             'report_name' => ucwords(str_replace('_', ' ', $type)) . ' Report',
             'report_type' => $type,
-            'parameters' => array_merge($request->except(['per_page', '_generated_role']), ['_generated_role' => $request->user()->role]),
+            'parameters' => array_merge($request->except(['per_page', '_generated_role', '_case_scope']), ['_generated_role' => $request->user()->role], $scope),
             'format' => $request->get('format', 'json'),
             'status' => 'completed',
             'completed_at' => now(),

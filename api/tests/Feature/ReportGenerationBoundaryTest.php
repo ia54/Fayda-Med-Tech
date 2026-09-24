@@ -1,7 +1,7 @@
 <?php
 namespace Tests\Feature;
 
-use App\Models\{User, CaseModel, CaseParty, Provider, Invoice, Payment, AuditLog};
+use App\Models\{User, CaseModel, CaseParty, Provider, Invoice, Payment, AuditLog, Lien};
 use Illuminate\Support\Facades\{Artisan, DB};
 use Laravel\Passport\Token;
 use Tests\TestCase;
@@ -104,6 +104,21 @@ class ReportGenerationBoundaryTest extends TestCase
             $this->getJson('/api/reports/revenue-by-period?'.$query)->assertUnprocessable();
         }
         $this->assertSame($before,DB::table('report_generations')->count());
+    }
+
+    public function test_lien_summary_matches_assigned_case_access(): void
+    {
+        $unassigned=CaseModel::withoutEvents(fn()=>CaseModel::create(['organization_id'=>1,'case_number'=>'LIEN-UNASSIGNED','title'=>'Synthetic unassigned','created_by'=>$this->actor->id]));
+        foreach ([[$this->cases[1],1,100.25],[$unassigned,1,200],[$this->cases[2],2,900]] as [$case,$org,$amount]) {
+            Lien::withoutEvents(fn()=>Lien::create(['organization_id'=>$org,'case_id'=>$case->id,'lien_type'=>'medical','amount'=>$amount,'reduction_amount'=>10,'status'=>'pending']));
+        }
+        $this->actor->role='attorney';
+        CaseParty::create(['case_id'=>$this->cases[1]->id,'user_id'=>$this->actor->id,'role_in_case'=>'attorney']);
+        $result=$this->getJson('/api/reports/lien-summary')->assertOk()->assertJsonPath('data.result_summary.total_liens',1)->json('data.result_summary');
+        $this->assertEquals(100.25,$result['total_lien_amount']);
+        $this->assertEquals(90.25,$result['total_outstanding']);
+        $this->actor->role='firm_admin';
+        $this->getJson('/api/reports/lien-summary')->assertOk()->assertJsonPath('data.result_summary.total_liens',2);
     }
 
 }

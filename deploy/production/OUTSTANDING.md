@@ -97,4 +97,12 @@ Revenue range totals now include the entire end date and use payment_date for re
 
 Two synthetic request tests cover late data entry, end-of-day invoices, older-invoice receipts, post-cutoff receipts, reversals and invalid ranges. Historical saved reports remain unchanged; regenerate to use corrected calculations.
 
-Local PHP regression: 120 tests / 1,242 assertions pass. Six report-generation tests / 73 assertions pass and are included in the database workflow suite. Hosted CI pending this commit.
+Local PHP regression: 120 tests / 1,242 assertions pass. Six report-generation tests / 73 assertions pass and are included in the database workflow suite. Commit 43cb195 passes GitHub branch run 36020342080: PHP 8.3, MySQL 8 and MariaDB 10.11, including each 48-case database workflow suite.
+
+## Attorney report case permissions — 2026-09-24
+
+Lien summary generation now uses the same assigned-case boundary as the attorney lien workflow. Attorney saved reports carry a server-owned fingerprint of assigned case IDs captured before report data is read; history/detail require the current assignment fingerprint. Assignment changes, including additions, require regeneration. Older attorney snapshots without that evidence are preserved but hidden from attorneys. Organization administrators retain their existing organization-wide access. Caller-supplied scope markers cannot override the server marker. This controls future retrieval, not copies already downloaded.
+
+Synthetic tests reproduce overbroad lien totals and cover unchanged-access retrieval, forged markers, legacy snapshots, assignment removal, history filtering, record preservation, regenerated empty reports and firm-administrator scope. The two test files already run in the MySQL/MariaDB suite.
+
+Local regression passes 122 tests / 1,259 assertions; targeted report-access/generation tests pass 11 tests / 134 assertions. Hosted CI pending this batch.

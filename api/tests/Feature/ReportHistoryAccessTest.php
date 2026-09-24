@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{User, ReportGeneration};
+use App\Models\{User, ReportGeneration, CaseModel, CaseParty};
 use Illuminate\Support\Facades\{Artisan, DB};
 use Laravel\Passport\Token;
 use Tests\TestCase;
@@ -68,4 +68,22 @@ class ReportHistoryAccessTest extends TestCase
         $this->getJson('/api/reports/history')->assertForbidden();
         $this->getJson('/api/reports/'.$this->reports['own']->id)->assertForbidden();
     }
+    public function test_attorney_saved_reports_expire_when_case_assignment_changes(): void
+    {
+        $this->actor->role='attorney';
+        $case=CaseModel::withoutEvents(fn()=>CaseModel::create(['organization_id'=>1,'case_number'=>'SAVED-SCOPE','title'=>'Synthetic assigned','created_by'=>$this->actor->id]));
+        $party=CaseParty::create(['case_id'=>$case->id,'user_id'=>$this->actor->id,'role_in_case'=>'attorney']);
+        $fresh=$this->getJson('/api/reports/case-status?_case_scope=caller-controlled')->assertOk()->json('data');
+        $this->assertNotSame('caller-controlled',$fresh['parameters']['_case_scope'] ?? null);
+        $this->getJson('/api/reports/'.$fresh['id'])->assertOk();
+        $legacy=ReportGeneration::create(['organization_id'=>1,'generated_by'=>$this->actor->id,'report_name'=>'Pre-scope synthetic','report_type'=>'case_status','format'=>'json','status'=>'completed','parameters'=>['_generated_role'=>'attorney'],'result_summary'=>['sensitive'=>'synthetic']]);
+        $this->getJson('/api/reports/'.$legacy->id)->assertNotFound();
+        $party->delete();
+        $this->getJson('/api/reports/'.$fresh['id'])->assertNotFound();
+        $this->getJson('/api/reports/history')->assertOk()->assertJsonPath('data.total',0);
+        $this->assertTrue(ReportGeneration::whereKey($fresh['id'])->exists());
+        $new=$this->getJson('/api/reports/case-status')->assertOk()->assertJsonPath('data.result_summary.total_cases',0)->json('data.id');
+        $this->getJson('/api/reports/'.$new)->assertOk();
+    }
+
 }
