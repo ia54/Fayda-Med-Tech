@@ -49,6 +49,7 @@
     "cmdk": "1.0.4",
     "date-fns": "4.1.0",
     "dayjs": "^1.11.23",
+    "dompurify": "^3.4.15",
     "embla-carousel-react": "8.5.1",
     "geist": "^1.7.2",
     "input-otp": "1.4.1",
