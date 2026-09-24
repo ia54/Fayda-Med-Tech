@@ -103,4 +103,11 @@ jobs:
           FAYDAMED_CI_DB_CONTAINER: ${{ job.services.mysql.id }}
         run: bash tests/Security/database-restore-smoke.sh
       - name: MySQL financial workflow regression
-        run: php vendor/bin/phpunit -c phpunit.mysql.xml --colors=never --testdox
+        run: timeout --signal=TERM --kill-after=15s 8m php vendor/bin/phpunit -c phpunit.mysql.xml --colors=never --debug
+      - name: Disposable database diagnostics on failure
+        if: failure()
+        env:
+          FAYDAMED_CI_DB_CONTAINER: ${{ job.services.mysql.id }}
+        run: |
+          client=$(docker exec "$FAYDAMED_CI_DB_CONTAINER" sh -c 'if command -v mariadb >/dev/null 2>&1; then echo mariadb; else echo mysql; fi')
+          printf 'SHOW FULL PROCESSLIST; SHOW ENGINE INNODB STATUS;\n' | docker exec -i -e MYSQL_PWD="$DB_PASSWORD" "$FAYDAMED_CI_DB_CONTAINER" "$client" -uroot
