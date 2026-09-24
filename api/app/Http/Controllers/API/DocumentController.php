@@ -211,7 +211,7 @@ class DocumentController extends Controller
             ], 404);
         }
 
-        abort_unless($document->signature_status === 'not_sent', 409, 'Signer assignments are locked after signing begins.');
+        abort_unless($document->signature_status === 'not_sent' && !$document->docusign_dispatch_id && !$document->docusign_envelope_id, 409, 'Signer assignments are locked after signing begins.');
         foreach ($request->signers as $signer) {
             if (!empty($signer['user_id'])) {
                 $user = \App\Models\User::where('organization_id', $document->organization_id)->find($signer['user_id']);
@@ -221,6 +221,8 @@ class DocumentController extends Controller
 
         try {
             DB::transaction(function () use ($document, $request) {
+                $document = Document::visibleTo($request->user())->lockForUpdate()->findOrFail($document->id);
+                abort_unless($document->signature_status === 'not_sent' && !$document->docusign_dispatch_id && !$document->docusign_envelope_id, 409, 'Signer assignments are locked after signing begins.');
                 foreach ($request->signers as $index => $signer) {
                     DocumentSigner::updateOrCreate(
                         [
@@ -242,6 +244,8 @@ class DocumentController extends Controller
                 'message' => 'Signers assigned successfully',
                 'data' => $document->load('signers'),
             ], 200);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $exception) {
+            throw $exception;
         } catch (Throwable $exception) {
             return response()->json([
                 'status' => false,
@@ -262,6 +266,10 @@ class DocumentController extends Controller
             ], 404);
         }
 
+        if ($document->docusign_envelope_id || $document->docusign_dispatch_id || $document->signature_status !== 'not_sent') {
+            return response()->json(['status' => false, 'message' => 'A signing request already exists or needs reconciliation. Contact your administrator before retrying.'], 409);
+        }
+
         if ($document->signers->isEmpty()) {
             return response()->json([
                 'status' => false,
@@ -277,9 +285,9 @@ class DocumentController extends Controller
         }
 
         try {
-            $token = $docuSignService->getAccessToken();
+            $token = $docuSignService->getAccessToken($document->organization_id);
             $accountId = $docuSignService->getAccountId();
-            $baseUri = $docuSignService->getBaseUri();
+            $baseUri = DocuSignService::validateBaseUri($docuSignService->getBaseUri());
 
             if (!$baseUri || !$accountId || !$token) {
                 return response()->json([
@@ -290,10 +298,17 @@ class DocumentController extends Controller
         } catch (Throwable $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'DocuSign authentication failed: ' . $e->getMessage(),
+                'message' => 'Signing authentication failed. Ask your administrator to verify the account and consent.',
             ], 500);
         }
 
+        // Commit the claim BEFORE contacting the provider. An ambiguous result must
+        // be reconciled, never blindly retried. Atomic update also excludes concurrent sends.
+        $dispatchId = (string) \Illuminate\Support\Str::uuid();
+        $claimed = Document::whereKey($document->id)->whereNull('docusign_dispatch_id')->whereNull('docusign_envelope_id')->where('signature_status', 'not_sent')
+            ->update(['docusign_dispatch_id' => $dispatchId]);
+        if (!$claimed) return response()->json(['status'=>false, 'message'=>'A signing request already exists or needs reconciliation.'], 409);
+        $document->load('signers');
         $recipients = [];
         foreach ($document->signers->sortBy('signing_order')->values() as $index => $signer) {
             $recipients[] = [
@@ -304,7 +319,8 @@ class DocumentController extends Controller
                 'tabs' => [
                     'signHereTabs' => [
                         [
-                            'anchorString' => '/sn1/',
+                            'anchorString' => '/sn' . ($index + 1) . '/',
+                            'anchorIgnoreIfNotPresent' => 'false',
                             'anchorUnits' => 'pixels',
                             'anchorXOffset' => '20',
                             'anchorYOffset' => '10',
@@ -331,26 +347,28 @@ class DocumentController extends Controller
             'status' => 'sent',
         ];
 
+        $payload['transactionId'] = $dispatchId;
+
         try {
-            $endpoint = $baseUri . '/restapi/v2.1/accounts/' . $accountId . '/envelopes';
+            $endpoint = $baseUri . '/restapi/v2.1/accounts/' . rawurlencode((string) $accountId) . '/envelopes';
 
             $response = Http::withToken($token)
-                ->acceptJson()
+                ->acceptJson()->connectTimeout(10)->timeout(60)->withoutRedirecting()
                 ->post($endpoint, $payload);
 
-            $this->storeApiLog($document->id, 'docusign', $endpoint, 'POST', $payload, $response->json(), $response->status(), $response->successful() ? 'success' : 'failed');
-
             if (!$response->successful()) {
+                $this->storeApiLog($document->id, 'docusign', $endpoint, 'POST', null, null, $response->status(), 'failed');
                 return response()->json([
                     'status' => false,
                     'message' => 'Failed to send document to DocuSign',
-                    'error' => $response->json(),
+                    'error' => 'The signing request needs administrator reconciliation before retrying.',
                 ], 500);
             }
 
             $envelopeId = data_get($response->json(), 'envelopeId');
+            if (!is_string($envelopeId) || $envelopeId === '' || strlen($envelopeId) > 128) throw new \RuntimeException('Missing envelope identifier.');
 
-            DB::transaction(function () use ($document, $envelopeId) {
+            DB::transaction(function () use ($document, $envelopeId, $dispatchId) {
                 $document->update([
                     'docusign_envelope_id' => $envelopeId,
                     'document_status' => 'sent_for_signature',
@@ -366,10 +384,13 @@ class DocumentController extends Controller
                     'provider_envelope_id' => $envelopeId,
                     'provider_event' => 'envelope_sent',
                     'status' => 'pending',
-                    'provider_payload' => ['response' => $document->fresh()],
+                    'organization_id' => $document->organization_id,
+                    'provider_payload' => ['dispatch_id' => $dispatchId],
                     'processed_at' => now(),
                 ]);
             });
+
+            $this->storeApiLog($document->id, 'docusign', $endpoint, 'POST', null, null, $response->status(), 'success');
 
             return response()->json([
                 'status' => true,
@@ -381,12 +402,12 @@ class DocumentController extends Controller
                 ],
             ], 200);
         } catch (Throwable $exception) {
-            $this->storeApiLog($document->id, 'docusign', 'envelopes', 'POST', $payload, null, 500, 'failed', $exception->getMessage());
+            $this->storeApiLog($document->id, 'docusign', 'envelopes', 'POST', $payload, null, 500, 'failed', 'Signing dispatch failed; reconcile before retrying.');
 
             return response()->json([
                 'status' => false,
                 'message' => 'DocuSign integration failed',
-                'error' => $exception->getMessage(),
+                'error' => 'The signing request needs administrator reconciliation before retrying.',
             ], 500);
         }
     }
@@ -408,11 +429,12 @@ class DocumentController extends Controller
         ]);
         // The caller cannot select another person's signing identity.
         abort_if($request->filled('signer_email') && strcasecmp($request->signer_email, $request->user()->email) !== 0, 403);
-        abort_if($document->docusign_envelope_id, 409, 'Complete this request through DocuSign.');
+        abort_if($document->docusign_envelope_id || $document->docusign_dispatch_id, 409, 'Complete or reconcile this request through DocuSign.');
         $path = null;
         try {
             DB::transaction(function () use ($document, $request, &$path) {
                 $document = Document::visibleTo($request->user())->lockForUpdate()->findOrFail($document->id);
+                abort_if($document->docusign_envelope_id || $document->docusign_dispatch_id, 409, 'Complete or reconcile this request through DocuSign.');
                 $signer = $document->signers()->where('user_id', $request->user()->id)->lockForUpdate()->first();
                 abort_unless($signer, 403, 'Your account is not an assigned signer.');
                 abort_unless(in_array($signer->status, ['pending', 'sent'], true), 409, 'This signature has already been processed.');

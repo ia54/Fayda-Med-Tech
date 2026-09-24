@@ -11,6 +11,7 @@
             <file>tests/Feature/LienWorkflowTest.php</file>
             <file>tests/Feature/InsuranceClaimWorkflowTest.php</file>
             <file>tests/Feature/PaymentReconciliationTest.php</file>
+            <file>tests/Feature/SigningWorkflowTest.php</file>
         </testsuite>
     </testsuites>
     <source>
