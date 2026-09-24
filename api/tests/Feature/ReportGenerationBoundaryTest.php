@@ -1,7 +1,7 @@
 <?php
 namespace Tests\Feature;
 
-use App\Models\{User, CaseModel, CaseParty, Provider, Invoice, Payment, AuditLog, Lien};
+use App\Models\{User, CaseModel, CaseParty, Provider, Invoice, Payment, AuditLog, Lien, Document, OcrResult, Signature};
 use Illuminate\Support\Facades\{Artisan, DB};
 use Laravel\Passport\Token;
 use Tests\TestCase;
@@ -144,6 +144,40 @@ class ReportGenerationBoundaryTest extends TestCase
         $unknown->delete(); $conflict->delete();
         Lien::query()->delete();
         $this->getJson('/api/reports/lien-summary')->assertOk()->assertJsonPath('data.result_summary.total_outstanding',0);
+    }
+
+    public function test_document_reports_respect_visibility_and_do_not_expose_extracted_content(): void
+    {
+        $this->actor->role='attorney';
+        $docs=[];
+        foreach (['own','hidden','foreign','deleted'] as $label) {
+            $docs[$label]=Document::create(['organization_id'=>$label==='foreign'?2:1,'uploaded_by'=>$label==='own'?$this->actor->id:null,'title'=>$label,'original_name'=>'synthetic.pdf','filename'=>'synthetic.pdf','path'=>'synthetic/private.pdf','metadata'=>['private'=>'DOCUMENT-SECRET']]);
+            OcrResult::create(['organization_id'=>1,'document_id'=>$docs[$label]->id,'status'=>'processed','extracted_text'=>'EXTRACTED-SECRET','full_response'=>['secret'=>'PROVIDER-SECRET'],'metadata'=>['secret'=>'METADATA-SECRET']]);
+            Signature::create(['organization_id'=>1,'document_id'=>$docs[$label]->id,'provider'=>'docusign','status'=>'completed']);
+        }
+        $docs['deleted']->delete();
+        foreach (['failed','processing'] as $status) OcrResult::create(['organization_id'=>1,'document_id'=>$docs['own']->id,'status'=>$status]);
+        $response=$this->getJson('/api/reports/ocr-processing-log?_document_scope=caller-controlled')->assertOk();
+        $r=$response->json('data');
+        $this->assertSame(3,$r['result_summary']['total_processed']);
+        $this->assertSame(1,$r['result_summary']['successful']);
+        $this->assertSame(1,$r['result_summary']['failed']);
+        $this->assertSame(1,$r['result_summary']['processing']);
+        $this->assertSame('33.3%',$r['result_summary']['processing_success_rate']);
+        $this->assertNull($r['result_summary']['accuracy_rate']);
+        foreach (['EXTRACTED-SECRET','PROVIDER-SECRET','METADATA-SECRET','DOCUMENT-SECRET','private.pdf'] as $secret) $this->assertStringNotContainsString($secret,$response->getContent());
+        $this->assertNotSame('caller-controlled',$r['parameters']['_document_scope']);
+        $signature=$this->getJson('/api/reports/signature-activity')->assertOk()->assertJsonPath('data.result_summary.total',1)->json('data.id');
+        $this->getJson('/api/reports/'.$r['id'])->assertOk();
+        $docs['own']->update(['uploaded_by'=>null]);
+        foreach ([$r['id'],$signature] as $id) $this->getJson('/api/reports/'.$id)->assertNotFound();
+        $this->getJson('/api/reports/history')->assertOk()->assertJsonPath('data.total',0);
+        $this->actor->role='admin';
+        $adminReport=$this->getJson('/api/reports/ocr-processing-log')->assertOk()->assertJsonPath('data.result_summary.total_processed',4)->json('data');
+        $this->getJson('/api/reports/'.$adminReport['id'])->assertOk();
+        $saved=\App\Models\ReportGeneration::findOrFail($adminReport['id']);
+        $saved->update(['parameters'=>['_generated_role'=>'admin']]);
+        $this->getJson('/api/reports/'.$adminReport['id'])->assertNotFound();
     }
 
 }

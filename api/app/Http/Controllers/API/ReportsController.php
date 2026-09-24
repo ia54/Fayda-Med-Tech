@@ -268,20 +268,26 @@ class ReportsController extends Controller
     }
 
     /**
-     * 8. OCR Processing Log - Documents processed, extraction accuracy, errors
+     * 8. OCR Processing Log - Processing outcomes; accuracy is not measured
      */
     public function ocrProcessingLog(Request $request)
     {
-        $ocrResults = $this->forOrganization(OcrResult::class, $request)->with(['document'])->get();
+        $query = $this->forOrganization(OcrResult::class, $request);
+        $documentIds = $this->captureDocumentScope($request);
+        $ocrResults = $query->whereIn('document_id', $documentIds)
+            ->select(['id', 'document_id', 'provider', 'status', 'processed_at'])->latest('id')->get();
         $total = $ocrResults->count();
-        $successful = $ocrResults->where('status', 'completed')->count();
+        $successful = $ocrResults->where('status', 'processed')->count();
         $failed = $ocrResults->where('status', 'failed')->count();
 
         $report = $this->storeReport($request, 'ocr_log', [
             'total_processed' => $total,
             'successful' => $successful,
             'failed' => $failed,
-            'accuracy_rate' => $total > 0 ? round(($successful / $total) * 100, 1) . '%' : '0%',
+            'basis' => 'Processing attempts for currently accessible documents. Successful processing does not establish extraction accuracy. Results list shows the latest 50 attempts.',
+            'processing' => $ocrResults->where('status', 'processing')->count(),
+            'processing_success_rate' => $total > 0 ? round(($successful / $total) * 100, 1) . '%' : null,
+            'accuracy_rate' => null,
             'results' => $ocrResults->take(50),
         ]);
         return response()->json(['status' => true, 'data' => $report]);
@@ -292,10 +298,13 @@ class ReportsController extends Controller
      */
     public function signatureActivity(Request $request)
     {
-        $signatures = $this->forOrganization(Signature::class, $request)->with(['document'])
+        $query = $this->forOrganization(Signature::class, $request);
+        $documentIds = $this->captureDocumentScope($request);
+        $signatures = $query->whereIn('document_id', $documentIds)
             ->where(fn ($query) => $query->whereNull('provider_event')->orWhere('provider_event', '!=', 'documents_archived'))
             ->get();
         $report = $this->storeReport($request, 'signature_activity', [
+            'basis' => 'Signature activity records for currently accessible documents; excludes archive events. Counts are not unique envelopes or current document states.',
             'total' => $signatures->count(),
             'completed' => $signatures->where('status', 'completed')->count(),
             'pending' => $signatures->where('status', 'pending')->count(),
@@ -427,6 +436,19 @@ class ReportsController extends Controller
         return $query;
     }
 
+    private function visibleDocumentIds(Request $request): \Illuminate\Support\Collection
+    {
+        return Document::where('organization_id', $request->user()->organization_id)
+            ->visibleTo($request->user())->orderBy('id')->pluck('id');
+    }
+
+    private function captureDocumentScope(Request $request): \Illuminate\Support\Collection
+    {
+        $ids = $this->visibleDocumentIds($request);
+        $request->attributes->set('report_document_scope', hash('sha256', $ids->implode(',')));
+        return $ids;
+    }
+
     private function currentCaseScope(Request $request): string
     {
         $ids = CaseModel::where('organization_id', $request->user()->organization_id)
@@ -448,6 +470,9 @@ class ReportsController extends Controller
         $user = $request->user();
         abort_unless($user->organization_id, 403);
         $query = ReportGeneration::query()->where('organization_id', $user->organization_id);
+        $documentScope = hash('sha256', $this->visibleDocumentIds($request)->implode(','));
+        $query->where(fn ($q) => $q->whereNotIn('report_type', ['ocr_log', 'signature_activity'])
+            ->orWhere('parameters->_document_scope', $documentScope));
         if ($user->role === 'firm_admin') {
             // Platform-admin and legacy snapshots may contain a wider scope.
             $query->whereIn('parameters->_generated_role', ['firm_admin', 'attorney', 'medical_biller', 'provider_staff']);
@@ -474,12 +499,15 @@ class ReportsController extends Controller
     {
         $this->captureCaseScope($request);
         $scope = $request->user()->role === 'attorney' ? ['_case_scope' => $request->attributes->get('report_case_scope')] : [];
+        if (in_array($type, ['ocr_log', 'signature_activity'], true)) {
+            $scope['_document_scope'] = $request->attributes->get('report_document_scope');
+        }
         return ReportGeneration::create([
             'organization_id' => $request->user()->organization_id,
             'generated_by' => $request->user()->id,
             'report_name' => ucwords(str_replace('_', ' ', $type)) . ' Report',
             'report_type' => $type,
-            'parameters' => array_merge($request->except(['per_page', '_generated_role', '_case_scope']), ['_generated_role' => $request->user()->role], $scope),
+            'parameters' => array_merge($request->except(['per_page', '_generated_role', '_case_scope', '_document_scope']), ['_generated_role' => $request->user()->role], $scope),
             'format' => $request->get('format', 'json'),
             'status' => 'completed',
             'completed_at' => now(),

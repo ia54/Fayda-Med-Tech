@@ -113,4 +113,12 @@ Lien reports now exclude records marked settled/released from recorded open tota
 
 A synthetic regression reproduced $660.35 reported outstanding where recorded open amounts were $90.20. Coverage includes pending/negotiated/settled/released states, derived reductions, explicit zeros, missing/conflicting values and empty results.
 
-Local regression passes 123 tests / 1,271 assertions. Report-generation coverage passes eight tests / 91 assertions and is included in the database workflow suite. Hosted CI pending this batch.
+Local regression passes 123 tests / 1,271 assertions. Report-generation coverage passes eight tests / 91 assertions and is included in the database workflow suite. Commit 5d3dde0 passes GitHub branch run 36023341649: PHP 8.3, MySQL 8 and MariaDB 10.11, including each 51-case database workflow suite.
+
+## OCR and signature report document boundaries — 2026-09-24
+
+OCR and signature reports now use the existing Document.visibleTo permission rules plus explicit organization scope. Deleted/inaccessible documents and mismatched foreign document links are excluded. OCR report rows contain only processing identifiers, provider, status and processed timestamp; extracted text, provider responses and document metadata are not copied into report snapshots. Successful jobs use the actual processed status. Processing success rate is labeled as such, extraction accuracy remains unknown, and in-progress jobs are counted separately. Signature totals are explicitly activity-record counts rather than unique envelopes or current document states.
+
+Saved OCR/signature reports require a server-owned document-visibility fingerprint matching current access. Changes to the visible document set require regeneration; unmarked legacy snapshots remain stored but inaccessible through report retrieval, including to administrators. This does not revoke already downloaded copies or prove external-provider delivery. Synthetic request tests cover attorney uploader access, hidden/deleted/foreign documents, sanitized report content, status counts, caller spoofing, saved-report revocation, administrator organization boundaries and legacy snapshots.
+
+Final local regression: 124 tests / 1,295 assertions pass. The new request regression is included in the MySQL/MariaDB workflow suite. Hosted CI pending this batch.
