@@ -47,11 +47,9 @@ Route::post('refresh', [AuthController::class, 'refreshToken'])->middleware('thr
 Route::post('refresh-token', [AuthController::class, 'refreshToken'])->middleware('throttle:token-refresh');
 
 // Password reset routes
-Route::post('forgot-password', [PasswordResetController::class, 'forgotPassword']);
-Route::post('reset-password', [PasswordResetController::class, 'resetPassword']);
+Route::post('forgot-password', [PasswordResetController::class, 'forgotPassword'])->middleware('throttle:password-recovery');
+Route::post('reset-password', [PasswordResetController::class, 'resetPassword'])->middleware('throttle:password-reset');
 
-// Test route for password reset (remove in production)
-Route::get('test-password-reset/{email}', [PasswordResetController::class, 'testResetEmail']);
 Route::get('get-setting-values', [AppSettingController::class, 'getSettingValues']);
 Route::get('faqs', [FaqController::class, 'index']);
 Route::get('testimonials', [TestimonialController::class, 'index']);

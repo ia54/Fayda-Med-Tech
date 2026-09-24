@@ -39,7 +39,7 @@ class PasswordResetController extends Controller
     public function forgotPassword(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email',
+            'email' => 'required|string|email|max:254',
         ]);
 
         if ($validator->fails()) {
@@ -50,23 +50,17 @@ class PasswordResetController extends Controller
             ], 422);
         }
 
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message
-        // we need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        try {
+            Password::sendResetLink($request->only('email'));
+        } catch (\Throwable $exception) {
+            // Do not disclose accounts, tokens, addresses or provider diagnostics.
+            \Illuminate\Support\Facades\Log::warning('Password reset delivery failed', ['exception_type' => get_class($exception)]);
+        }
+        return response()->json([
+            'status' => true,
+            'message' => 'If this email matches an account, reset instructions will be sent. If they do not arrive, contact your administrator.',
+        ])->header('Cache-Control', 'no-store');
 
-        return $status === Password::RESET_LINK_SENT
-            ? response()->json([
-                'status' => true,
-                'message' => 'Password reset link sent successfully to your email'
-            ])
-            : response()->json([
-                'status' => false,
-                'message' => 'Unable to send password reset link',
-                'error' => __($status)
-            ], 400);
     }
 
     /**
@@ -98,9 +92,9 @@ class PasswordResetController extends Controller
     public function resetPassword(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'token' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed',
+            'token' => 'required|string|max:256',
+            'email' => 'required|string|email|max:254',
+            'password' => 'required|string|min:8|max:72|confirmed',
         ]);
 
         if ($validator->fails()) {
@@ -111,7 +105,7 @@ class PasswordResetController extends Controller
             ], 422);
         }
 
-        $status = Password::reset(
+        $status = \Illuminate\Support\Facades\DB::transaction(fn () => Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) {
                 $user->forceFill([
@@ -124,7 +118,7 @@ class PasswordResetController extends Controller
 
                 event(new PasswordReset($user));
             }
-        );
+        ));
 
         return $status === Password::PASSWORD_RESET
             ? response()->json([
@@ -134,7 +128,7 @@ class PasswordResetController extends Controller
             : response()->json([
                 'status' => false,
                 'message' => 'Unable to reset password',
-                'error' => __($status)
+                'error' => 'This reset link is invalid or expired. Request a new link.'
             ], 400);
     }
 }

@@ -1,7 +1,9 @@
 "use client"
 
+import { postPasswordRecovery } from "@/lib/passwordRecovery"
+
 import type React from "react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -28,11 +30,27 @@ export default function ResetPasswordPage() {
     }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [link, setLink] = useState<{ token: string; email: string } | null>(null)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState("")
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    setLink({ token: params.get("token") || "", email: params.get("email") || "" })
+  }, [])
+  const validLink = Boolean(link?.token && link?.email)
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Implement reset password functionality
-    console.log("Reset password with:", formData)
-    setIsSubmitted(true)
+    if (pending || !validLink || !link) return
+    setError("")
+    if (formData.password !== formData.password_confirmation) { setError("The passwords do not match."); return }
+    setPending(true)
+    try {
+      await postPasswordRecovery("reset-password", { ...link, ...formData })
+      setFormData({ password: "", password_confirmation: "" }); setLink(null)
+      window.history.replaceState(null, "", window.location.pathname)
+      setIsSubmitted(true)
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Request failed. Please try again.") }
+    finally { setPending(false) }
   }
 
   return (
@@ -69,6 +87,9 @@ export default function ResetPasswordPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+              {link && !validLink && <p role="alert">This reset link is missing or incomplete. <Link className="underline" href="/auth/forgot-password">Request a new link</Link>.</p>}
+              {error && <p role="alert" className="text-sm text-destructive">{error} <Link className="underline" href="/auth/forgot-password">Request a new link</Link>.</p>}
+              <p className="text-sm text-muted-foreground">Use 8–72 characters. All existing sessions will be signed out.</p>
               <div className="space-y-2">
                 <Label htmlFor="password">New Password</Label>
                 <div className="relative">
@@ -80,6 +101,10 @@ export default function ResetPasswordPage() {
                     value={formData.password}
                     onChange={handleChange}
                     className="bg-background/50 backdrop-blur-sm pr-10"
+                    autoComplete="new-password"
+                    minLength={8}
+                    maxLength={72}
+                    disabled={pending || !validLink}
                     required
                   />
                   <Button
@@ -87,6 +112,7 @@ export default function ResetPasswordPage() {
                     variant="ghost"
                     size="sm"
                     className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                     onClick={() => setShowPassword(!showPassword)}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -105,6 +131,10 @@ export default function ResetPasswordPage() {
                     value={formData.password_confirmation}
                     onChange={handleChange}
                     className="bg-background/50 backdrop-blur-sm pr-10"
+                    autoComplete="new-password"
+                    minLength={8}
+                    maxLength={72}
+                    disabled={pending || !validLink}
                     required
                   />
                   <Button
@@ -112,6 +142,7 @@ export default function ResetPasswordPage() {
                     variant="ghost"
                     size="sm"
                     className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    aria-label={showConfirmPassword ? "Hide confirmation" : "Show confirmation"}
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   >
                     {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -119,8 +150,8 @@ export default function ResetPasswordPage() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
-                Reset Password
+              <Button disabled={pending || !validLink} type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
+                {pending ? "Resetting…" : "Reset Password"}
               </Button>
 
               <Separator />

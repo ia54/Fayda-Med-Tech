@@ -1,5 +1,7 @@
 "use client"
 
+import { postPasswordRecovery } from "@/lib/passwordRecovery"
+
 import type React from "react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -14,11 +16,15 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
   const [isSubmitted, setIsSubmitted] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState("")
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Implement forgot password functionality
-    console.log("Forgot password for:", email)
-    setIsSubmitted(true)
+    if (pending) return
+    setError(""); setPending(true)
+    try { await postPasswordRecovery("forgot-password", { email: email.trim() }); setIsSubmitted(true) }
+    catch (failure) { setError(failure instanceof Error ? failure.message : "Request failed. Please try again.") }
+    finally { setPending(false) }
   }
 
   return (
@@ -47,10 +53,10 @@ export default function ForgotPasswordPage() {
           {isSubmitted ? (
             <div className="text-center space-y-4">
               <p className="text-muted-foreground">
-                We've sent password reset instructions to <strong>{email}</strong>
+                If <strong>{email}</strong> matches an account, reset instructions will be sent.
               </p>
               <p className="text-sm text-muted-foreground">
-                Didn't receive the email? Check your spam folder or{" "}
+                Didn&apos;t receive the email? Check your spam folder or{" "}
                 <button
                   onClick={() => setIsSubmitted(false)}
                   className="text-primary hover:underline"
@@ -64,11 +70,15 @@ export default function ForgotPasswordPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+              {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="email"
+                  maxLength={254}
+                  disabled={pending}
                   placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -77,8 +87,8 @@ export default function ForgotPasswordPage() {
                 />
               </div>
 
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
-                Send Reset Link
+              <Button disabled={pending} type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
+                {pending ? "Sending request…" : "Send Reset Link"}
               </Button>
 
               <Separator />
