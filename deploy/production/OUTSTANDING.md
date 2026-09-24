@@ -84,3 +84,9 @@ Request-level tests exposed stored reports bypassing generation permissions: sta
 ## Report generation boundaries and provider billing — 2026-09-24
 
 Provider billing now obtains net recorded receipts through invoice IDs instead of querying a nonexistent payment metadata column. Provider lists and report model queries explicitly enforce organization context, including platform admins; attorney case/referral reports honor assignment. Audit reports are organization-scoped and the PHI filter uses the actual event column. This does not certify PHI logging completeness or compliance. Three new synthetic regression tests reproduced the original failures and now pass; full local suite passes 117 tests / 1,227 assertions. The new tests are included in MySQL/MariaDB CI. Provider attribution uses existing invoice provider_id metadata; unknown attribution is not invented. Insurance-aging calculation semantics remain to be reviewed.
+
+## Insurance aging balance correction — 2026-09-24
+
+Aging now subtracts recorded receipts, including signed reversal entries, from sent invoices using integer cents. It excludes zero/credit balances and foreign-organization receipts, and defines age as calendar days since invoice creation. The report includes this basis explicitly. A synthetic request-level regression covers partial payments, reversals, a fully paid invoice retaining sent status, cross-organization records and the 30/31/60/61/90/91-day boundaries. Real insurer remittance processing is not established by this test.
+
+Final local PHP regression passes 118 tests / 1,230 assertions, including four report-generation tests / 61 assertions. The database workflow suite includes all four cases; hosted CI is pending publication of this batch.

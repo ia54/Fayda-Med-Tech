@@ -80,26 +80,40 @@ class ReportsController extends Controller
     }
 
     /**
-     * 3. Insurance Aging - Outstanding balances by insurer, 30/60/90/120+ days
+     * 3. Insurance Aging - Outstanding balances by insurer and invoice age
      */
     public function insuranceAging(Request $request)
     {
-        $invoices = $this->forOrganization(Invoice::class, $request)->with(['case'])->where('status', 'sent')->get();
+        $invoices = $this->forOrganization(Invoice::class, $request)
+            ->with(['payments' => fn ($query) => $query->where('organization_id', $request->user()->organization_id)])
+            ->where('status', 'sent')->get();
         $aging = [];
 
         foreach ($invoices as $invoice) {
-            $days = $invoice->created_at->diffInDays(now());
+            // Signed receipt entries include reversals. Accumulate integer cents.
+            $received = $invoice->payments->sum(fn ($payment) => (int) round((float) $payment->amount * 100));
+            $balance = (int) round((float) $invoice->amount * 100) - $received;
+            if ($balance <= 0) continue;
+            $days = $invoice->created_at->copy()->startOfDay()->diffInDays(now()->startOfDay());
             $bucket = $days <= 30 ? '0-30' : ($days <= 60 ? '31-60' : ($days <= 90 ? '61-90' : '90+'));
             $insurer = $invoice->metadata['payer'] ?? 'Unknown';
 
             if (!isset($aging[$insurer])) {
                 $aging[$insurer] = ['0-30' => 0, '31-60' => 0, '61-90' => 0, '90+' => 0, 'total' => 0];
             }
-            $aging[$insurer][$bucket] += $invoice->amount;
-            $aging[$insurer]['total'] += $invoice->amount;
+            $aging[$insurer][$bucket] += $balance;
+            $aging[$insurer]['total'] += $balance;
         }
 
-        $report = $this->storeReport($request, 'insurance_aging', ['aging' => $aging]);
+        foreach ($aging as &$buckets) {
+            foreach ($buckets as &$cents) $cents = $cents / 100;
+            unset($cents);
+        }
+        unset($buckets);
+        $report = $this->storeReport($request, 'insurance_aging', [
+            'basis' => 'Sent invoices with a positive balance after recorded receipts and reversals; calendar days since invoice creation.',
+            'aging' => $aging,
+        ]);
         return response()->json(['status' => true, 'data' => $report]);
     }
 

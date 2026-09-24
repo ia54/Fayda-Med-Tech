@@ -60,4 +60,22 @@ class ReportGenerationBoundaryTest extends TestCase
         $this->getJson('/api/reports/case-status?attorney_id=999')->assertOk()->assertJsonPath('data.result_summary.total_cases',0);
         $this->getJson('/api/reports/referral-source')->assertOk()->assertJsonPath('data.result_summary.total_cases',1);
     }
+    public function test_insurance_aging_uses_net_balances_and_calendar_day_buckets(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-09-24 15:00:00'));
+        Invoice::withoutGlobalScopes()->whereKey(1)->update(['created_at'=>now()->subDays(30)->startOfDay()]);
+        foreach ([31,60,61,90,91] as $days) {
+            $invoice=Invoice::withoutEvents(fn()=>Invoice::create(['organization_id'=>1,'case_id'=>$this->cases[1]->id,'invoice_number'=>'AGE-'.$days,'amount'=>10.01,'status'=>'sent']));
+            DB::table('invoices')->where('id',$invoice->id)->update(['created_at'=>now()->subDays($days)->startOfDay()]);
+        }
+        $paid=Invoice::withoutEvents(fn()=>Invoice::create(['organization_id'=>1,'case_id'=>$this->cases[1]->id,'invoice_number'=>'AGE-ZERO','amount'=>25,'status'=>'sent','metadata'=>['payer'=>'Fully paid']]));
+        Payment::create(['organization_id'=>1,'invoice_id'=>$paid->id,'amount'=>25,'payment_method'=>'check','payment_date'=>'2026-09-24','transaction_id'=>'AGE-ZERO']);
+        // A mismatched foreign receipt must not reduce this organization's balance.
+        Payment::create(['organization_id'=>2,'invoice_id'=>1,'amount'=>50,'payment_method'=>'check','payment_date'=>'2026-09-24','transaction_id'=>'AGE-FOREIGN']);
+        $aging=$this->getJson('/api/reports/insurance-aging')->assertOk()->json('data.result_summary.aging');
+        $this->assertCount(1,$aging);
+        $this->assertEquals(['0-30'=>65.10,'31-60'=>20.02,'61-90'=>20.02,'90+'=>10.01,'total'=>115.15],$aging['Unknown']);
+        $this->travelBack();
+    }
+
 }
