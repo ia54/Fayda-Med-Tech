@@ -27,7 +27,7 @@ class ReportsController extends Controller
      */
     public function caseStatus(Request $request)
     {
-        $query = CaseModel::with(['creator', 'parties']);
+        $query = $this->casesForReport($request)->with(['creator', 'parties']);
 
         if ($request->filled('status')) $query->where('status', $request->status);
         if ($request->filled('attorney_id')) {
@@ -61,8 +61,8 @@ class ReportsController extends Controller
         $dateFrom = $request->get('date_from', now()->subYear());
         $dateTo = $request->get('date_to', now());
 
-        $totalInvoiced = Invoice::whereBetween('created_at', [$dateFrom, $dateTo])->sum('amount');
-        $totalCollected = Payment::whereBetween('created_at', [$dateFrom, $dateTo])->sum('amount');
+        $totalInvoiced = $this->forOrganization(Invoice::class, $request)->whereBetween('created_at', [$dateFrom, $dateTo])->sum('amount');
+        $totalCollected = $this->forOrganization(Payment::class, $request)->whereBetween('created_at', [$dateFrom, $dateTo])->sum('amount');
         $totalOutstanding = $totalInvoiced - $totalCollected;
 
         $report = $this->storeReport($request, 'revenue', [
@@ -72,8 +72,8 @@ class ReportsController extends Controller
             'total_invoiced' => $totalInvoiced,
             'total_collected' => $totalCollected,
             'total_outstanding' => $totalOutstanding,
-            'invoice_count' => Invoice::whereBetween('created_at', [$dateFrom, $dateTo])->count(),
-            'payment_count' => Payment::whereBetween('created_at', [$dateFrom, $dateTo])->count(),
+            'invoice_count' => $this->forOrganization(Invoice::class, $request)->whereBetween('created_at', [$dateFrom, $dateTo])->count(),
+            'payment_count' => $this->forOrganization(Payment::class, $request)->whereBetween('created_at', [$dateFrom, $dateTo])->count(),
         ]);
 
         return response()->json(['status' => true, 'data' => $report]);
@@ -84,7 +84,7 @@ class ReportsController extends Controller
      */
     public function insuranceAging(Request $request)
     {
-        $invoices = Invoice::with(['case'])->where('status', 'sent')->get();
+        $invoices = $this->forOrganization(Invoice::class, $request)->with(['case'])->where('status', 'sent')->get();
         $aging = [];
 
         foreach ($invoices as $invoice) {
@@ -168,19 +168,21 @@ class ReportsController extends Controller
      */
     public function providerBilling(Request $request)
     {
-        $providers = Provider::all();
+        $providers = $this->forOrganization(Provider::class, $request)->get();
         $billing = [];
 
         foreach ($providers as $provider) {
-            $invoices = Invoice::where('metadata->provider_id', $provider->id)->get();
-            $payments = Payment::where('metadata->provider_id', $provider->id)->get();
+            $invoices = $this->forOrganization(Invoice::class, $request)->where('metadata->provider_id', $provider->id)->get();
+            $payments = $this->forOrganization(Payment::class, $request)->whereIn('invoice_id', $invoices->pluck('id'))->get();
+            $billed = round((float) $invoices->sum('amount'), 2);
+            $received = round((float) $payments->sum('amount'), 2);
 
             $billing[] = [
                 'provider_id' => $provider->id,
                 'provider_name' => $provider->name,
-                'total_billed' => $invoices->sum('amount'),
-                'total_collected' => $payments->sum('amount'),
-                'outstanding' => $invoices->sum('amount') - $payments->sum('amount'),
+                'total_billed' => $billed,
+                'total_collected' => $received,
+                'outstanding' => round($billed - $received, 2),
                 'invoice_count' => $invoices->count(),
             ];
         }
@@ -194,9 +196,9 @@ class ReportsController extends Controller
      */
     public function lienSummary(Request $request)
     {
-        $totalLiensCount = Lien::count();
-        $totalLiensAmount = Lien::sum('amount');
-        $totalReductions = Lien::sum('reduction_amount');
+        $totalLiensCount = $this->forOrganization(Lien::class, $request)->count();
+        $totalLiensAmount = $this->forOrganization(Lien::class, $request)->sum('amount');
+        $totalReductions = $this->forOrganization(Lien::class, $request)->sum('reduction_amount');
         $totalOutstanding = $totalLiensAmount - $totalReductions;
 
         $report = $this->storeReport($request, 'lien_summary', [
@@ -213,7 +215,7 @@ class ReportsController extends Controller
      */
     public function ocrProcessingLog(Request $request)
     {
-        $ocrResults = OcrResult::with(['document'])->get();
+        $ocrResults = $this->forOrganization(OcrResult::class, $request)->with(['document'])->get();
         $total = $ocrResults->count();
         $successful = $ocrResults->where('status', 'completed')->count();
         $failed = $ocrResults->where('status', 'failed')->count();
@@ -233,7 +235,7 @@ class ReportsController extends Controller
      */
     public function signatureActivity(Request $request)
     {
-        $signatures = Signature::with(['document'])
+        $signatures = $this->forOrganization(Signature::class, $request)->with(['document'])
             ->where(fn ($query) => $query->whereNull('provider_event')->orWhere('provider_event', '!=', 'documents_archived'))
             ->get();
         $report = $this->storeReport($request, 'signature_activity', [
@@ -251,7 +253,7 @@ class ReportsController extends Controller
      */
     public function userActivityLog(Request $request)
     {
-        $logs = AuditLog::with(['user'])
+        $logs = $this->forOrganization(AuditLog::class, $request)->with(['user'])
             ->when($request->filled('user_id'), fn($q) => $q->where('user_id', $request->user_id))
             ->latest()
             ->paginate($request->get('per_page', 50));
@@ -264,7 +266,7 @@ class ReportsController extends Controller
      */
     public function documentAuditTrail(Request $request)
     {
-        $logs = AuditLog::where('auditable_type', 'App\Models\Document')
+        $logs = $this->forOrganization(AuditLog::class, $request)->where('auditable_type', 'App\Models\Document')
             ->with(['user'])
             ->when($request->filled('document_id'), fn($q) => $q->where('auditable_id', $request->document_id))
             ->latest()
@@ -278,7 +280,7 @@ class ReportsController extends Controller
      */
     public function hipaaComplianceLog(Request $request)
     {
-        $logs = AuditLog::where('event_type', 'PHI_ACCESS')
+        $logs = $this->forOrganization(AuditLog::class, $request)->where('event', 'PHI_ACCESS')
             ->with(['user'])
             ->when($request->filled('user_id'), fn($q) => $q->where('user_id', $request->user_id))
             ->latest()
@@ -292,8 +294,8 @@ class ReportsController extends Controller
      */
     public function collectionRateReport(Request $request)
     {
-        $totalBilled = Invoice::sum('amount');
-        $totalCollected = Payment::sum('amount');
+        $totalBilled = $this->forOrganization(Invoice::class, $request)->sum('amount');
+        $totalCollected = $this->forOrganization(Payment::class, $request)->sum('amount');
         $collectionRate = $totalBilled > 0 ? round(($totalCollected / $totalBilled) * 100, 1) : 0;
 
         $report = $this->storeReport($request, 'collection_rate', [
@@ -301,8 +303,8 @@ class ReportsController extends Controller
             'total_collected' => $totalCollected,
             'collection_rate' => $collectionRate . '%',
             'outstanding' => $totalBilled - $totalCollected,
-            'invoice_count' => Invoice::count(),
-            'payment_count' => Payment::count(),
+            'invoice_count' => $this->forOrganization(Invoice::class, $request)->count(),
+            'payment_count' => $this->forOrganization(Payment::class, $request)->count(),
         ]);
         return response()->json(['status' => true, 'data' => $report]);
     }
@@ -312,7 +314,7 @@ class ReportsController extends Controller
      */
     public function referralSourceReport(Request $request)
     {
-        $cases = CaseModel::all();
+        $cases = $this->casesForReport($request)->get();
         $sources = [];
 
         foreach ($cases as $case) {
@@ -351,6 +353,20 @@ class ReportsController extends Controller
             'status' => true,
             'data' => $this->visibleSavedReports($request)->with(['generator', 'definition'])->findOrFail($id),
         ]);
+    }
+
+    private function forOrganization(string $model, Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        abort_unless($request->user()->organization_id, 403);
+        $query = $model::query();
+        return $query->where($query->getModel()->qualifyColumn('organization_id'), $request->user()->organization_id);
+    }
+
+    private function casesForReport(Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = $this->forOrganization(CaseModel::class, $request);
+        if ($request->user()->role === 'attorney') $query->assignedToAttorney($request->user()->id);
+        return $query;
     }
 
     /** Saved snapshots must not bypass the scope used to generate them. */
