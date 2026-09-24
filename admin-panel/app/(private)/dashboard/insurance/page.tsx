@@ -7,15 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { ROLES } from "@/lib/roleConstants";
+import Link from "next/link";
+import { ROLES, ROUTE_PERMISSIONS } from "@/lib/roleConstants";
 import { useHasAnyRole } from "@/hooks/usePermissions";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { ErrorMessage } from "@/components/error-message";
 
 export default function InsurancePage() {
+  const canView = useHasAnyRole(ROUTE_PERMISSIONS["/dashboard/insurance"].roles);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const { currentData: data, isFetching: isLoading, error, refetch } = useGetInsuranceCompaniesQuery({ page, per_page: 10, search });
+  const { currentData: data, isFetching: isLoading, error, refetch } = useGetInsuranceCompaniesQuery({ page, per_page: 10, search }, { skip: !canView });
   const [createInsurance, { isLoading: creating }] = useCreateInsuranceCompanyMutation();
   const [updateInsurance, { isLoading: updating }] = useUpdateInsuranceCompanyMutation();
   const [deleteInsurance, { isLoading: deleting }] = useDeleteInsuranceCompanyMutation();
@@ -93,6 +95,8 @@ export default function InsurancePage() {
   };
 
 
+
+  if (!canView) return <div className="p-6 space-y-4"><h1 className="text-2xl font-bold">Insurance access</h1><p>Your role does not have access to insurance company management.</p><Link href="/dashboard" className="underline">Return to your dashboard</Link></div>;
 
   return (
     <div className="p-6">

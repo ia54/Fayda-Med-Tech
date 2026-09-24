@@ -108,7 +108,7 @@ export const ROLE_FEATURES: Record<RoleType, Record<string, string>> = {
     cases: PERMISSION_LEVELS.READ_ONLY,
     clients: PERMISSION_LEVELS.READ_ONLY,
     billing: PERMISSION_LEVELS.FULL_ACCESS,
-    insurance: PERMISSION_LEVELS.FULL_ACCESS,
+    insurance: PERMISSION_LEVELS.NO_ACCESS,
     documents: PERMISSION_LEVELS.FULL_ACCESS,
     signatures: PERMISSION_LEVELS.FULL_ACCESS,
     providers: PERMISSION_LEVELS.READ_ONLY,
@@ -123,7 +123,7 @@ export const ROLE_FEATURES: Record<RoleType, Record<string, string>> = {
     cases: PERMISSION_LEVELS.READ_ONLY,
     clients: PERMISSION_LEVELS.NO_ACCESS,
     billing: PERMISSION_LEVELS.FULL_ACCESS,
-    insurance: PERMISSION_LEVELS.READ_ONLY,
+    insurance: PERMISSION_LEVELS.NO_ACCESS,
     documents: PERMISSION_LEVELS.FULL_ACCESS,
     signatures: PERMISSION_LEVELS.FULL_ACCESS,
     providers: PERMISSION_LEVELS.READ_ONLY,
@@ -371,7 +371,7 @@ export const MENU_CONFIG: MenuItemConfig[] = [
     href: "/dashboard/insurance",
     icon: "Shield",
     feature: "insurance",
-    roles: [ROLES.FIRM_ADMIN, ROLES.ATTORNEY, ROLES.MEDICAL_BILLER, ROLES.PROVIDER_STAFF],
+    roles: [ROLES.FIRM_ADMIN, ROLES.ATTORNEY],
     section: "Work",
   },
 
@@ -728,7 +728,7 @@ export const ROUTE_PERMISSIONS: Record<string, { roles: RoleType[]; level: Permi
   '/dashboard/client/signatures': { roles: [ROLES.CLIENT], level: PERMISSION_LEVELS.FULL_ACCESS },
 
   // Insurance routes
-  '/dashboard/insurance': { roles: [ROLES.FIRM_ADMIN, ROLES.ATTORNEY, ROLES.MEDICAL_BILLER], level: PERMISSION_LEVELS.FULL_ACCESS },
+  '/dashboard/insurance': { roles: [ROLES.ADMIN, ROLES.FIRM_ADMIN, ROLES.ATTORNEY], level: PERMISSION_LEVELS.FULL_ACCESS },
 
 
   // Shared routes
