@@ -68,6 +68,14 @@ class SignedDocumentArchiveTest extends TestCase
         $this->assertSame(hash('sha256',self::PDF),$archive->provider_payload['pdf_sha256']);
         $this->assertSame('UNSIGNED ORIGINAL',Storage::disk('documents')->get('source.pdf'));
     }
+    public function test_archiving_does_not_inflate_signature_activity_reports(): void
+    {
+        $this->fakeProvider(); $this->preview()->assertOk();
+        Signature::create(['organization_id'=>1,'document_id'=>$this->document->id,'provider'=>'docusign','provider_event'=>'webhook:synthetic','status'=>'completed']);
+        $this->acting('firm_admin');
+        $this->getJson('/api/reports/signature-activity')->assertOk()
+            ->assertJsonPath('data.result_summary.total',1)->assertJsonPath('data.result_summary.completed',1);
+    }
     public function test_provider_failure_does_not_return_original_or_publish_partial_archive(): void
     {
         $this->fakeProvider(Http::response('PRIVATE provider detail',503));

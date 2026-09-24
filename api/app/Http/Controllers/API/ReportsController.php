@@ -233,7 +233,9 @@ class ReportsController extends Controller
      */
     public function signatureActivity(Request $request)
     {
-        $signatures = Signature::with(['document'])->get();
+        $signatures = Signature::with(['document'])
+            ->where(fn ($query) => $query->whereNull('provider_event')->orWhere('provider_event', '!=', 'documents_archived'))
+            ->get();
         $report = $this->storeReport($request, 'signature_activity', [
             'total' => $signatures->count(),
             'completed' => $signatures->where('status', 'completed')->count(),
