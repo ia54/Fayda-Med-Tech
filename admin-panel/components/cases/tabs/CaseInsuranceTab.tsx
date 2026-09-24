@@ -163,7 +163,7 @@ export function CaseInsuranceTab({ caseId }: { caseId: number }) {
         </Dialog>
       </div>
 
-      {isError ? <div role="alert">Could not load coverage. <Button variant="outline" onClick={() => refetch()}>Try again</Button></div> : isLoading ? <LoadingSpinner /> : <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {isError ? <div role="alert">Could not load coverage. <Button variant="outline" onClick={() => refetch()}>Try again</Button></div> : isLoading && !claimsResponse ? <LoadingSpinner /> : <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {claims.length > 0 ? claims.map((claim: any) => (
           <Card key={claim.id} className="border-emerald-100 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm shadow-sm overflow-hidden group">
             <div className="h-1 bg-emerald-500" />
