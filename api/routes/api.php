@@ -139,6 +139,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/documents', [DocumentController::class, 'store']);
         Route::get('/documents/{id}', [DocumentController::class, 'show']);
         Route::get('/documents/{id}/preview', [DocumentController::class, 'preview']);
+        Route::get('/documents/{id}/completion-certificate', [DocumentController::class, 'completionCertificate']);
         Route::delete('/documents/{id}', [DocumentController::class, 'destroy'])->middleware('role:admin,firm_admin,attorney');
         
         Route::get('/documents/{id}/eligible-signers', [DocumentController::class, 'eligibleSigners'])->middleware('role:admin,firm_admin,attorney');
@@ -209,6 +210,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/client/documents', [DocumentController::class, 'store']);
         Route::get('/client/documents/{id}', [DocumentController::class, 'show']);
         Route::get('/client/documents/{id}/preview', [DocumentController::class, 'preview']);
+        Route::get('/client/documents/{id}/completion-certificate', [DocumentController::class, 'completionCertificate']);
 
         // Invoices — Read-only (PDF: Client can view invoices)
         Route::get('/client/invoices', [InvoiceController::class, 'index']);

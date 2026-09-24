@@ -19,7 +19,7 @@ return [
     ],
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['Authorization', 'Content-Type', 'X-Requested-With', 'Accept', 'Origin', 'X-CSRF-TOKEN'],
-    'exposed_headers' => [],
+    'exposed_headers' => ['X-Document-Version', 'X-Completion-Certificate'],
     'max_age' => 86400,
     'supports_credentials' => true,
 ];

@@ -508,6 +508,10 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Document not found'], 404);
         }
 
+        if ($document->docusign_envelope_id && $document->signature_status === 'completed') {
+            return $this->signedArtifact($document, false);
+        }
+
         $signed = $document->signatures()->where('provider', 'in-app')->where('status', 'completed')
             ->whereNotNull('signed_file_path')->latest('id')->first();
         $disk = Storage::disk($signed ? 'documents' : $document->disk());
@@ -517,10 +521,35 @@ class DocumentController extends Controller
         $disposition = in_array($mime, ['application/pdf', 'image/png', 'image/jpeg'], true) ? 'inline' : 'attachment';
         return $disk->response($filePath, $document->original_name, [
             'Content-Type' => $mime ?: 'application/octet-stream',
+            'X-Document-Version' => $signed ? 'signed' : 'original',
+            'X-Completion-Certificate' => 'false',
             'Cache-Control' => 'private, no-store',
             'X-Content-Type-Options' => 'nosniff',
             'Content-Security-Policy' => "sandbox; default-src 'none'",
         ], $disposition);
+    }
+
+    public function completionCertificate(int $id)
+    {
+        $document = Document::visibleTo(auth()->user())->findOrFail($id);
+        abort_unless($document->docusign_envelope_id && $document->signature_status === 'completed', 409, 'A completed signing request is required.');
+        return $this->signedArtifact($document, true);
+    }
+
+    private function signedArtifact(Document $document, bool $certificate)
+    {
+        try {
+            $archive = app(\App\Services\SignedDocumentArchive::class)->retrieve($document, app(DocuSignService::class));
+            $path = $certificate ? $archive->provider_payload['certificate_path'] : $archive->signed_file_path;
+            return Storage::disk('documents')->response($path, $certificate ? 'completion-certificate.pdf' : 'signed-document.pdf', [
+                'Content-Type'=>'application/pdf', 'Cache-Control'=>'private, no-store',
+                'X-Content-Type-Options'=>'nosniff', 'Content-Security-Policy'=>"sandbox; default-src 'none'",
+                'X-Document-Version'=>$certificate ? 'certificate' : 'signed', 'X-Completion-Certificate'=>'true',
+            ], 'inline');
+        } catch (Throwable $exception) {
+            // A failed signed-file retrieval must never silently serve the original upload.
+            return response()->json(['status'=>false,'message'=>'Signed documents are temporarily unavailable. Please retry or contact your administrator.'],503)->header('Cache-Control','private, no-store');
+        }
     }
 
     public function destroy(int $id): JsonResponse

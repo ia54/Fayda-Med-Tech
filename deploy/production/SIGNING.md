@@ -8,7 +8,13 @@ The backend now validates the DocuSign account and API origin, uses demo or prod
 - Configure JSON Connect envelope events with an envelope summary and recipients, and HMAC signing using the matching organization/system webhook secret. This implementation verifies `X-Docusign-Signature-1`; rotating multiple simultaneous keys is not yet supported. Recipient-only events are acknowledged without changing envelope state. Unknown-envelope events are rejected, permitting provider retry after the envelope is linked.
 - Templates must have separate `/sn1/`, `/sn2/`, etc. signature anchors in signer order. Missing anchors are an error, not permission to omit a required signature.
 - Test a synthetic envelope end to end: creation, recipient delivery, signer order, completion, decline, duplicate webhook and delayed events. Completed/declined/voided envelope states and signed/declined/failed recipient states cannot be reversed by a late event.
-- **Completed PDF and completion-certificate retrieval/private archival are still outstanding.** The current preview serves the source document for DocuSign envelopes. A completed provider status does not prove that the downloaded local PDF contains those signatures. Do not advertise the signing workflow as release-ready until retrieval and browser acceptance are finished.
+- **Completed PDF and completion-certificate retrieval/private archival are implemented and synthetically tested.** Opening a completed envelope downloads both artifacts from the authenticated account after checking its envelope ID and completion status. Both files must pass MIME, size and basic PDF completeness checks before a single archive record becomes visible. Their SHA-256 digests are checked on reuse; corrupt or missing files are refetched. Preview never falls back to the original upload after signing completes. This is authenticated provider retrieval, not independent cryptographic PDF-signature validation. Actual provider delivery, artifact acceptance and rendered browser acceptance remain required.
+
+## Private artifact retrieval
+
+The existing authenticated preview route returns the signed PDF for a completed DocuSign envelope. The new `GET /api/documents/{id}/completion-certificate` route (also available under `/api/client/documents/`) returns its certificate. Both retain the document tenant and role visibility rules. Files are on the private documents disk, with no public URL; responses use private/no-store, nosniff and restrictive content-security headers. CORS exposes only the artifact type and certificate-availability headers used by the shared preview controls.
+
+Retrieval is on demand and synchronous, with provider timeouts, no redirects, a 25 MiB PDF limit and a 5 MiB certificate limit. Files are streamed with an enforced byte limit before being stored. Artifacts remain cached locally for subsequent authorized downloads, including provider outages. Archiving does not send signature requests or emails. Background archival of unopened completed envelopes and larger-file support are not implemented. Include this private signed-file tree in backup/restore verification. Check PDF/certificate switching and downloads at desktop and mobile widths before launch.
 
 ## Ambiguous dispatch recovery
 
@@ -23,3 +29,5 @@ Back up the database before production migration. Do not roll back this column w
 - [DocuSign authentication and account/base-URI discovery](https://www.docusign.com/blog/developers/demystifying-docusign-authentication)
 - [Transaction ID lookup and seven-day retention](https://www.docusign.com/blog/developers/common-api-tasks-use-transactionid-to-find-the-envelope-you-created)
 - [Anchor configuration](https://docusign.github.io/docusign-esign-node-client/model_InitialHere.js.html)
+
+Artifact API reference: [DocuSign document downloads](https://www.docusign.com/blog/developers/dsdev-common-api-tasks-downloading-documents).
