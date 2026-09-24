@@ -83,10 +83,18 @@ Request-level tests exposed stored reports bypassing generation permissions: sta
 
 ## Report generation boundaries and provider billing — 2026-09-24
 
-Provider billing now obtains net recorded receipts through invoice IDs instead of querying a nonexistent payment metadata column. Provider lists and report model queries explicitly enforce organization context, including platform admins; attorney case/referral reports honor assignment. Audit reports are organization-scoped and the PHI filter uses the actual event column. This does not certify PHI logging completeness or compliance. Three new synthetic regression tests reproduced the original failures and now pass; full local suite passes 117 tests / 1,227 assertions. The new tests are included in MySQL/MariaDB CI. Provider attribution uses existing invoice provider_id metadata; unknown attribution is not invented. Insurance-aging calculation semantics remain to be reviewed.
+Provider billing now obtains net recorded receipts through invoice IDs instead of querying a nonexistent payment metadata column. Provider lists and report model queries explicitly enforce organization context, including platform admins; attorney case/referral reports honor assignment. Audit reports are organization-scoped and the PHI filter uses the actual event column. This does not certify PHI logging completeness or compliance. Three new synthetic regression tests reproduced the original failures and now pass; full local suite passes 117 tests / 1,227 assertions. The new tests are included in MySQL/MariaDB CI. Provider attribution uses existing invoice provider_id metadata; unknown attribution is not invented. Insurance-aging correction is documented below.
 
 ## Insurance aging balance correction — 2026-09-24
 
 Aging now subtracts recorded receipts, including signed reversal entries, from sent invoices using integer cents. It excludes zero/credit balances and foreign-organization receipts, and defines age as calendar days since invoice creation. The report includes this basis explicitly. A synthetic request-level regression covers partial payments, reversals, a fully paid invoice retaining sent status, cross-organization records and the 30/31/60/61/90/91-day boundaries. Real insurer remittance processing is not established by this test.
 
-Final local PHP regression passes 118 tests / 1,230 assertions, including four report-generation tests / 61 assertions. The database workflow suite includes all four cases; hosted CI is pending publication of this batch.
+Final local PHP regression passes 118 tests / 1,230 assertions, including four report-generation tests / 61 assertions. Commit 1bd2623 passes GitHub branch run 36017131690: PHP 8.3, MySQL 8 and MariaDB 10.11, including all four new cases in each 46-case database suite.
+
+## Revenue date range and balance reconciliation — 2026-09-24
+
+Revenue range totals now include the entire end date and use payment_date for receipts instead of data-entry timestamps. Outstanding uses receipts linked to the invoices created in the selected range, dated through the end date; receipts for older invoices no longer reduce the new invoice balance. Net signed receipt amounts are accumulated in cents. Invalid/reversed date ranges and unsupported period values return validation errors without saving misleading snapshots. The response states its calculation basis, that totals are not grouped by month/quarter, and that all invoice statuses are included. This operational report is not recognized accounting revenue or a historical ledger reconstruction.
+
+Two synthetic request tests cover late data entry, end-of-day invoices, older-invoice receipts, post-cutoff receipts, reversals and invalid ranges. Historical saved reports remain unchanged; regenerate to use corrected calculations.
+
+Local PHP regression: 120 tests / 1,242 assertions pass. Six report-generation tests / 73 assertions pass and are included in the database workflow suite. Hosted CI pending this commit.

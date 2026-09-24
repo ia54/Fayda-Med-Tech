@@ -78,4 +78,32 @@ class ReportGenerationBoundaryTest extends TestCase
         $this->travelBack();
     }
 
+    public function test_revenue_separates_period_receipts_from_invoice_cohort_balances(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-09-24 15:00:00'));
+        DB::table('invoices')->where('id',1)->update(['created_at'=>'2026-09-24 23:59:59']);
+        DB::table('payments')->where('organization_id',1)->update(['created_at'=>'2026-10-01 12:00:00']);
+        $old=Invoice::withoutEvents(fn()=>Invoice::create(['organization_id'=>1,'case_id'=>$this->cases[1]->id,'invoice_number'=>'REVENUE-OLD','amount'=>500,'status'=>'sent']));
+        DB::table('invoices')->where('id',$old->id)->update(['created_at'=>'2026-08-01 12:00:00']);
+        Payment::create(['organization_id'=>1,'invoice_id'=>$old->id,'amount'=>200,'payment_method'=>'check','payment_date'=>'2026-09-24','transaction_id'=>'OLD-RECEIPT']);
+        Payment::create(['organization_id'=>1,'invoice_id'=>1,'amount'=>10,'payment_method'=>'check','payment_date'=>'2026-09-25','transaction_id'=>'AFTER-CUTOFF']);
+        $r=$this->getJson('/api/reports/revenue-by-period?date_from=2026-09-01&date_to=2026-09-24')->assertOk();
+        $summary=$r->json('data.result_summary');
+        $this->assertEquals(125.35,$summary['total_invoiced']);
+        $this->assertEquals(260.25,$summary['total_collected']);
+        $this->assertEquals(60.25,$summary['collected_against_period_invoices']);
+        $this->assertEquals(65.10,$summary['total_outstanding']);
+        $this->assertSame(1,$summary['invoice_count']);
+        $this->assertSame(4,$summary['payment_count']);
+        $this->travelBack();
+    }
+    public function test_revenue_rejects_invalid_or_reversed_dates_without_saving_a_report(): void
+    {
+        $before=DB::table('report_generations')->count();
+        foreach (['date_from=invalid','date_to=2026-02-30','date_from=2026-09-24&date_to=2026-09-01','period=arbitrary'] as $query) {
+            $this->getJson('/api/reports/revenue-by-period?'.$query)->assertUnprocessable();
+        }
+        $this->assertSame($before,DB::table('report_generations')->count());
+    }
+
 }

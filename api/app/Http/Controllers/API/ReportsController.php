@@ -57,23 +57,37 @@ class ReportsController extends Controller
      */
     public function revenueByPeriod(Request $request)
     {
-        $period = $request->get('period', 'monthly');
-        $dateFrom = $request->get('date_from', now()->subYear());
-        $dateTo = $request->get('date_to', now());
-
-        $totalInvoiced = $this->forOrganization(Invoice::class, $request)->whereBetween('created_at', [$dateFrom, $dateTo])->sum('amount');
-        $totalCollected = $this->forOrganization(Payment::class, $request)->whereBetween('created_at', [$dateFrom, $dateTo])->sum('amount');
-        $totalOutstanding = $totalInvoiced - $totalCollected;
+        $invoiceQuery = $this->forOrganization(Invoice::class, $request);
+        $data = $request->validate([
+            'period' => 'sometimes|in:monthly,quarterly,yearly',
+            'date_from' => 'sometimes|date_format:Y-m-d',
+            'date_to' => 'sometimes|date_format:Y-m-d',
+        ]);
+        $dateFrom = $data['date_from'] ?? now()->subYear()->toDateString();
+        $dateTo = $data['date_to'] ?? now()->toDateString();
+        if ($dateFrom > $dateTo) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['date_to' => 'The end date must be on or after the start date.']);
+        }
+        $invoices = $invoiceQuery->whereDate('created_at', '>=', $dateFrom)->whereDate('created_at', '<=', $dateTo)->get();
+        $periodPayments = $this->forOrganization(Payment::class, $request)
+            ->whereDate('payment_date', '>=', $dateFrom)->whereDate('payment_date', '<=', $dateTo)->get();
+        $cohortPayments = $this->forOrganization(Payment::class, $request)
+            ->whereIn('invoice_id', $invoices->pluck('id'))->whereDate('payment_date', '<=', $dateTo)->get();
+        $sumCents = fn ($records) => $records->sum(fn ($record) => (int) round((float) $record->amount * 100));
+        $invoiced = $sumCents($invoices);
+        $cohortCollected = $sumCents($cohortPayments);
 
         $report = $this->storeReport($request, 'revenue', [
-            'period' => $period,
+            'basis' => 'Range totals, not grouped periods. Invoices use creation dates; receipts use recorded payment dates and include reversals. Outstanding is the balance of invoices created in this range after receipts dated through the end date. Includes all invoice statuses; this is not recognized accounting revenue.',
+            'period' => $data['period'] ?? 'monthly',
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
-            'total_invoiced' => $totalInvoiced,
-            'total_collected' => $totalCollected,
-            'total_outstanding' => $totalOutstanding,
-            'invoice_count' => $this->forOrganization(Invoice::class, $request)->whereBetween('created_at', [$dateFrom, $dateTo])->count(),
-            'payment_count' => $this->forOrganization(Payment::class, $request)->whereBetween('created_at', [$dateFrom, $dateTo])->count(),
+            'total_invoiced' => $invoiced / 100,
+            'total_collected' => $sumCents($periodPayments) / 100,
+            'collected_against_period_invoices' => $cohortCollected / 100,
+            'total_outstanding' => ($invoiced - $cohortCollected) / 100,
+            'invoice_count' => $invoices->count(),
+            'payment_count' => $periodPayments->count(),
         ]);
 
         return response()->json(['status' => true, 'data' => $report]);
