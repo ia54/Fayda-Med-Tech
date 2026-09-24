@@ -9,7 +9,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test:recovery": "node --test tests/password-recovery.test.mjs",
-    "test:documents": "node --test tests/protected-document.test.mjs"
+    "test:documents": "node --test tests/protected-document.test.mjs",
+    "test:reports": "node --test tests/report-export.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
