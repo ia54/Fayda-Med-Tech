@@ -6,6 +6,7 @@
 >
     <testsuites>
         <testsuite name="MySQL financial workflows">
+            <file>tests/Database/CiFixtureIsolationTest.php</file>
             <file>tests/Feature/ReportHistoryAccessTest.php</file>
             <file>tests/Feature/ReportGenerationBoundaryTest.php</file>
             <file>tests/Feature/SettlementCorrectionTest.php</file>
