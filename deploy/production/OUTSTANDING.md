@@ -76,3 +76,7 @@ All six report types, saved-result retrieval and history page 2 returned actual 
 Mobile report acceptance remains open: the browser ignored the requested 390x667 override and stayed at a measured 960x830. Final visual results must be interpreted at that actual size.
 
 Final report UI build passes type checks and generates 110 pages. Chrome at measured 960x830 verifies unclipped field/value results, wrapped actions and corrected numeric display. The local-origin artifact must not be deployed.
+
+## Saved-report access repair — 2026-09-24
+
+Request-level tests exposed stored reports bypassing generation permissions: staff could retrieve colleagues' settlement snapshots and platform administrators bypassed the global organization scope. History/detail now require explicit organization context. Staff see only their own reports with a server-stamped generation role matching their current role and allowed report type; firm administrators cannot reopen platform-admin or unmarked legacy snapshots. Older reports are preserved and can be regenerated through currently authorized endpoints. No permissions are broadened. Three new tests exercise all six roles, cross-organization and role-change boundaries, legacy snapshots and caller attempts to spoof the generation role. Full local PHP regression passes 114 tests / 1,169 assertions; MySQL/MariaDB CI includes these tests. Browser download persistence and mobile report acceptance remain open.

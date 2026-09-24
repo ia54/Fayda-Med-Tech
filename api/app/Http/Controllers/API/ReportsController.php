@@ -333,9 +333,10 @@ class ReportsController extends Controller
      */
     public function reportHistory(Request $request)
     {
+        $request->validate(['per_page' => 'sometimes|integer|min:1|max:100']);
         return response()->json([
             'status' => true,
-            'data' => ReportGeneration::with(['generator'])
+            'data' => $this->visibleSavedReports($request)->with(['generator'])
                 ->latest()
                 ->paginate($request->get('per_page', 20)),
         ]);
@@ -344,12 +345,34 @@ class ReportsController extends Controller
     /**
      * Show a specific generated report
      */
-    public function showReport($id)
+    public function showReport(Request $request, $id)
     {
         return response()->json([
             'status' => true,
-            'data' => ReportGeneration::with(['generator', 'definition'])->findOrFail($id),
+            'data' => $this->visibleSavedReports($request)->with(['generator', 'definition'])->findOrFail($id),
         ]);
+    }
+
+    /** Saved snapshots must not bypass the scope used to generate them. */
+    private function visibleSavedReports(Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        $user = $request->user();
+        abort_unless($user->organization_id, 403);
+        $query = ReportGeneration::query()->where('organization_id', $user->organization_id);
+        if ($user->role === 'firm_admin') {
+            // Platform-admin and legacy snapshots may contain a wider scope.
+            $query->whereIn('parameters->_generated_role', ['firm_admin', 'attorney', 'medical_biller', 'provider_staff']);
+        }
+        if (!in_array($user->role, ['admin', 'firm_admin'], true)) {
+            $types = ['case_status', 'revenue', 'insurance_aging', 'provider_billing', 'lien_summary', 'ocr_log', 'signature_activity', 'collection_rate', 'referral_source'];
+            if ($user->role === 'attorney') $types = array_merge($types, ['settlement', 'attorney_production']);
+            // Legacy snapshots lack trustworthy generation-role evidence. Staff
+            // can regenerate them through the currently authorized endpoint.
+            $query->where('generated_by', $user->id)
+                ->where('parameters->_generated_role', $user->role)
+                ->whereIn('report_type', $types);
+        }
+        return $query;
     }
 
     /**
@@ -362,7 +385,7 @@ class ReportsController extends Controller
             'generated_by' => $request->user()->id,
             'report_name' => ucwords(str_replace('_', ' ', $type)) . ' Report',
             'report_type' => $type,
-            'parameters' => $request->except('per_page'),
+            'parameters' => array_merge($request->except(['per_page', '_generated_role']), ['_generated_role' => $request->user()->role]),
             'format' => $request->get('format', 'json'),
             'status' => 'completed',
             'completed_at' => now(),
