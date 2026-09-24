@@ -20,7 +20,7 @@ class InsuranceClaimController extends Controller
         return $query;
     }
 
-    private function scoped(Request $request)
+    protected function scoped(Request $request)
     {
         return InsuranceClaim::where('organization_id', $request->user()->organization_id)
             ->whereIn('case_id', $this->cases($request)->select('id'))
@@ -52,7 +52,7 @@ class InsuranceClaimController extends Controller
         $data = $request->validate($rules);
         $this->cases($request)->findOrFail($claim?->case_id ?? $data['case_id']);
         $companyId = $data['insurance_company_id'] ?? $claim?->insurance_company_id;
-        InsuranceCompany::where('organization_id', $request->user()->organization_id)->findOrFail($companyId);
+        InsuranceCompany::where('organization_id', $request->user()->organization_id)->lockForUpdate()->findOrFail($companyId);
         $adjusterId = array_key_exists('adjuster_id', $data) ? $data['adjuster_id'] : $claim?->adjuster_id;
         if ($adjusterId) InsuranceAdjuster::where('insurance_company_id', $companyId)->findOrFail($adjusterId);
         return $data;
@@ -60,8 +60,8 @@ class InsuranceClaimController extends Controller
 
     public function store(Request $request)
     {
-        $data = $this->payload($request);
-        $claim = DB::transaction(function () use ($request, $data) {
+        $claim = DB::transaction(function () use ($request) {
+            $data = $this->payload($request);
             $claim = InsuranceClaim::create(array_merge(['claim_status'=>'open'], $data, ['organization_id'=>$request->user()->organization_id]));
             $this->logTimeline((int)$claim->case_id, 'legal', 'Insurance Claim Added', 'Coverage information recorded; insurer acceptance is not confirmed.', ['claim_id'=>$claim->id,'details'=>$claim->getAttributes()]);
             return $claim;

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\InsuranceCompany;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class InsuranceController extends Controller
 {
@@ -48,6 +49,7 @@ class InsuranceController extends Controller
      */
     public function store(Request $request)
     {
+        abort_unless($request->user()->organization_id, 403);
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'phone' => 'nullable|string|max:20',
@@ -86,6 +88,7 @@ class InsuranceController extends Controller
      */
     public function show($id)
     {
+        abort_unless(request()->user()->organization_id, 403);
         $company = InsuranceCompany::where('organization_id', request()->user()->organization_id)
             ->findOrFail($id);
 
@@ -101,6 +104,7 @@ class InsuranceController extends Controller
      */
     public function update(Request $request, $id)
     {
+        abort_unless($request->user()->organization_id, 403);
         $company = InsuranceCompany::where('organization_id', $request->user()->organization_id)
             ->findOrFail($id);
 
@@ -139,10 +143,12 @@ class InsuranceController extends Controller
      */
     public function destroy($id)
     {
-        $company = InsuranceCompany::where('organization_id', request()->user()->organization_id)
-            ->findOrFail($id);
-
-        $company->delete();
+        abort_unless(request()->user()->organization_id, 403);
+        DB::transaction(function () use ($id) {
+            $company = InsuranceCompany::where('organization_id', request()->user()->organization_id)->lockForUpdate()->findOrFail($id);
+            abort_if($company->claims()->exists() || $company->adjusters()->exists(), 409, 'This carrier has linked claims or adjusters and must be retained.');
+            $company->delete();
+        });
 
         return response()->json([
             'status' => true,

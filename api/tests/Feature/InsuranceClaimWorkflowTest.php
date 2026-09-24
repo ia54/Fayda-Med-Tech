@@ -47,8 +47,28 @@ class InsuranceClaimWorkflowTest extends TestCase
         }
         $this->getJson('/api/insurance/claims')->assertOk()->assertJsonPath('data.total',1);
         foreach (['per_page=101','page=0','status=invalid'] as $params) $this->getJson('/api/insurance/claims?'.$params)->assertUnprocessable();
+        $contact=['claim_id'=>$id,'request_id'=>'6a20e683-08ae-4db2-bbec-dc8f054db1ee','channel'=>'phone','occurred_on'=>now()->toDateString(),'note'=>'Synthetic contact only'];
+        $entry=$this->postJson('/api/insurance/correspondence',$contact)->assertCreated()->json('data.id');
+        $this->postJson('/api/insurance/correspondence',$contact)->assertOk()->assertJsonPath('data.id',$entry);
+        $this->postJson('/api/insurance/correspondence',array_replace($contact,['note'=>'Changed']))->assertStatus(409);
+        $this->getJson('/api/insurance/correspondence?claim_id='.$id)->assertOk()->assertJsonPath('data.total',1)->assertJsonPath('data.data.0.note','Synthetic contact only');
+        $this->postJson('/api/insurance/correspondence',array_replace($contact,['occurred_on'=>now()->addDay()->toDateString()]))->assertUnprocessable();
+        $this->getJson('/api/insurance/correspondence?claim_id='.$hidden->id)->assertNotFound();
+        $this->postJson('/api/insurance/correspondence',array_replace($contact,['claim_id'=>$hidden->id]))->assertNotFound();
+        $this->assertDatabaseHas('case_timeline',['title'=>'Insurance Correspondence Recorded','case_id'=>$cases[0]->id]);
+        $claim=InsuranceClaim::findOrFail($id);
+        $claim->update(['correspondence_log'=>['legacy'=>'retained']]);
+        $this->postJson('/api/insurance/correspondence',$contact)->assertStatus(409);
+        $this->assertSame(['legacy'=>'retained'],$claim->fresh()->correspondence_log);
+        $this->postJson('/api/insurance/companies',['name'=>'Attorney cannot manage carriers'])->assertForbidden();
         $actor->role='firm_admin';
         $this->getJson('/api/insurance/claims')->assertOk()->assertJsonPath('data.total',2);
+        $this->deleteJson('/api/insurance/companies/'.$company->id)->assertStatus(409);
+        $this->assertDatabaseHas('insurance_claims',['id'=>$id]);
+        $this->deleteJson('/api/insurance/companies/'.$other->id)->assertNotFound();
+        $empty=$this->postJson('/api/insurance/companies',['name'=>'Unused synthetic','organization_id'=>2])->assertCreated()->assertJsonPath('data.organization_id',1)->json('data.id');
+        $this->putJson('/api/insurance/companies/'.$empty,['name'=>'Updated synthetic'])->assertOk();
+        $this->deleteJson('/api/insurance/companies/'.$empty)->assertOk();
         $actor->organization_id=null;
         $this->getJson('/api/insurance/claims')->assertForbidden();
         $actor->organization_id=1;

@@ -256,6 +256,8 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
             Route::post('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'store']);
             Route::get('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'show']);
             Route::put('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'update']);
+            Route::get('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'index']);
+            Route::post('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'store']);
     });
 
     // EOB Processing (PDF Section 6)
@@ -278,8 +280,6 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
             Route::get('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'show']);
             Route::put('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'update']);
             Route::delete('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'destroy']);
-            Route::get('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'index']);
-            Route::post('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'store']);
         });
 
         // 10. Provider & Lien Management (PDF Section 10)

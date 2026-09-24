@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { InsuranceCorrespondence } from "@/components/cases/InsuranceCorrespondence"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,6 +29,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export function CaseInsuranceTab({ caseId }: { caseId: number }) {
+  const [openLog, setOpenLog] = useState<number | null>(null)
   const [page, setPage] = useState(1)
   const [carrierSearch, setCarrierSearch] = useState("")
   const { currentData: claimsResponse, isFetching: isLoading, isError, refetch } = useGetInsuranceClaimsQuery({ case_id: caseId, page, per_page: 10 })
@@ -193,6 +195,8 @@ export function CaseInsuranceTab({ caseId }: { caseId: number }) {
                 </div>
               </div>
 
+              <Button variant="outline" onClick={() => setOpenLog(openLog === claim.id ? null : claim.id)}>{openLog === claim.id ? "Close correspondence" : "View correspondence"}</Button>
+              {openLog === claim.id && <InsuranceCorrespondence key={claim.id} claimId={claim.id} />}
             </CardContent>
           </Card>
         )) : (

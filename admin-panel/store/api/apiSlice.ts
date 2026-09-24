@@ -235,6 +235,14 @@ export const apiSlice = createApi({
       }),
       invalidatesTags: ["InsuranceCompany"],
     }),
+    getInsuranceCorrespondence: builder.query({
+      query: (params) => ({ url: "/insurance/correspondence", params }),
+      providesTags: ["InsuranceClaim"],
+    }),
+    createInsuranceCorrespondence: builder.mutation({
+      query: (body) => ({ url: "/insurance/correspondence", method: "POST", body }),
+      invalidatesTags: ["InsuranceClaim"],
+    }),
     getInsuranceClaims: builder.query({
       query: (params = {}) => ({
         url: "/insurance/claims",
@@ -518,6 +526,8 @@ export const {
   useCreateInsuranceCompanyMutation,
   useUpdateInsuranceCompanyMutation,
   useDeleteInsuranceCompanyMutation,
+  useGetInsuranceCorrespondenceQuery,
+  useCreateInsuranceCorrespondenceMutation,
   useGetInsuranceClaimsQuery,
   useCreateInsuranceClaimMutation,
   // Providers
