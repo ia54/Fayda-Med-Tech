@@ -22,14 +22,13 @@ class InsuranceController extends Controller
      */
     public function index(Request $request)
     {
+        abort_unless($request->user()->organization_id, 403);
+        $data = $request->validate(['search'=>'nullable|string|max:200', 'page'=>'nullable|integer|min:1', 'per_page'=>'nullable|integer|min:1|max:100']);
         $query = InsuranceCompany::where('organization_id', $request->user()->organization_id);
-
-        if ($request->search) {
-            $query->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('email', 'like', "%{$request->search}%");
+        if (!empty($data['search'])) {
+            $query->where(fn ($q) => $q->where('name', 'like', '%'.$data['search'].'%')->orWhere('email', 'like', '%'.$data['search'].'%'));
         }
-
-        $companies = $query->paginate($request->get('per_page', 15));
+        $companies = $query->orderBy('name')->paginate($data['per_page'] ?? 15);
 
         return response()->json([
             'status' => true,

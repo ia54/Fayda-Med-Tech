@@ -9,6 +9,7 @@
             <file>tests/Feature/SettlementCorrectionTest.php</file>
             <file>tests/Feature/CaseUpdateTest.php</file>
             <file>tests/Feature/LienWorkflowTest.php</file>
+            <file>tests/Feature/InsuranceClaimWorkflowTest.php</file>
             <file>tests/Feature/PaymentReconciliationTest.php</file>
         </testsuite>
     </testsuites>

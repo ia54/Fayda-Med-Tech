@@ -250,6 +250,14 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::delete('/settlements/{id}', [\App\Http\Controllers\API\CaseSettlementController::class, 'destroy']);
     });
 
+    Route::middleware(['role:admin,firm_admin,attorney'])->group(function () {
+            Route::get('/insurance/companies', [\App\Http\Controllers\API\InsuranceController::class, 'index']);
+            Route::get('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'index']);
+            Route::post('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'store']);
+            Route::get('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'show']);
+            Route::put('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'update']);
+    });
+
     // EOB Processing (PDF Section 6)
     Route::middleware(['role:admin,firm_admin,medical_biller'])->group(function () {
         Route::get('/eobs', [\App\Http\Controllers\API\EobController::class, 'index']);
@@ -266,15 +274,10 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         
         // 7. Insurance Management (PDF Section 7)
         Route::middleware(['role:admin,firm_admin,attorney'])->group(function () {
-            Route::get('/insurance/companies', [\App\Http\Controllers\API\InsuranceController::class, 'index']);
             Route::post('/insurance/companies', [\App\Http\Controllers\API\InsuranceController::class, 'store']);
             Route::get('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'show']);
             Route::put('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'update']);
             Route::delete('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'destroy']);
-            Route::get('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'index']);
-            Route::post('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'store']);
-            Route::get('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'show']);
-            Route::put('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'update']);
             Route::get('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'index']);
             Route::post('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'store']);
         });
