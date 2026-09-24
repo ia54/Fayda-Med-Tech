@@ -302,13 +302,21 @@ class DocumentController extends Controller
             ], 500);
         }
 
-        // Commit the claim BEFORE contacting the provider. An ambiguous result must
-        // be reconciled, never blindly retried. Atomic update also excludes concurrent sends.
+        // Persist identity evidence with the claim before any provider send.
+        // Signer edits use this same row lock, so the snapshot and payload agree.
         $dispatchId = (string) \Illuminate\Support\Str::uuid();
-        $claimed = Document::whereKey($document->id)->whereNull('docusign_dispatch_id')->whereNull('docusign_envelope_id')->where('signature_status', 'not_sent')
-            ->update(['docusign_dispatch_id' => $dispatchId]);
-        if (!$claimed) return response()->json(['status'=>false, 'message'=>'A signing request already exists or needs reconciliation.'], 409);
-        $document->load('signers');
+        $claim = DB::transaction(function () use ($document, $dispatchId, $accountId, $baseUri) {
+            $locked = Document::visibleTo(auth()->user())->lockForUpdate()->findOrFail($document->id);
+            if ($locked->organization_id !== $document->organization_id || $locked->docusign_dispatch_id || $locked->docusign_envelope_id || $locked->signature_status !== 'not_sent') return null;
+            $locked->load(['signers'=>fn ($query)=>$query->orderBy('signing_order')->orderBy('id')]);
+            if ($locked->signers->isEmpty()) return null;
+            $bytes = Storage::disk($locked->disk())->get($locked->path);
+            $snapshot = \App\Services\SigningRecovery::snapshot($locked, (string)$accountId, $baseUri, $bytes);
+            $locked->forceFill(['docusign_dispatch_id'=>$dispatchId, 'docusign_dispatch_snapshot'=>$snapshot])->save();
+            return [$locked, $bytes];
+        });
+        if (!$claim) return response()->json(['status'=>false, 'message'=>'A signing request already exists or needs reconciliation.'], 409);
+        [$document, $documentBytes] = $claim;
         $recipients = [];
         foreach ($document->signers->sortBy('signing_order')->values() as $index => $signer) {
             $recipients[] = [
@@ -335,7 +343,7 @@ class DocumentController extends Controller
             'emailBlurb' => $request->email_message ?: 'A document requires your signature.',
             'documents' => [
                 [
-                    'documentBase64' => base64_encode(Storage::disk($document->disk())->get($document->path)),
+                    'documentBase64' => base64_encode($documentBytes),
                     'name' => $document->original_name,
                     'fileExtension' => pathinfo($document->original_name, PATHINFO_EXTENSION) ?: 'pdf',
                     'documentId' => '1',

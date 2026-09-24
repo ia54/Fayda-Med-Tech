@@ -57,6 +57,9 @@ class SigningWorkflowTest extends TestCase
         DocumentSigner::create(['document_id'=>$this->document->id,'organization_id'=>1,'name'=>'Second','email'=>'second@example.invalid','signing_order'=>2]);
         Http::fake(['demo.docusign.net/*'=>Http::response(['envelopeId'=>'synthetic-envelope'],201)]);
         $this->send()->assertOk();
+        $snapshot=$this->document->fresh()->docusign_dispatch_snapshot;
+        $this->assertSame('synthetic-account',$snapshot['account_id']);
+        $this->assertSame(hash('sha256',Storage::disk('documents')->get('synthetic.pdf')),$snapshot['source_sha256']);
         $this->send()->assertStatus(409);
         Http::assertSentCount(1);
         Http::assertSent(fn ($r)=>$r['transactionId'] === $this->document->fresh()->docusign_dispatch_id && $r['recipients']['signers'][1]['tabs']['signHereTabs'][0]['anchorString'] === '/sn2/' && $r['recipients']['signers'][0]['tabs']['signHereTabs'][0]['anchorIgnoreIfNotPresent'] === 'false');

@@ -34,7 +34,7 @@ class Document extends Model
         'metadata',
     ];
 
-    protected $hidden = ['path'];
+    protected $hidden = ['path', 'docusign_dispatch_snapshot'];
 
     // Never serialize a legacy public storage URL. Download requires API authentication.
     public function getUrlAttribute(): string
@@ -75,6 +75,7 @@ class Document extends Model
     protected $casts = [
         'size' => 'integer',
         'metadata' => 'array',
+        'docusign_dispatch_snapshot' => 'array',
         'sent_at' => 'datetime',
         'signed_at' => 'datetime',
     ];

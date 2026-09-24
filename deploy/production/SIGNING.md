@@ -20,7 +20,27 @@ Retrieval is on demand and synchronous, with provider timeouts, no redirects, a 
 
 Migration `2026_09_24_000001_add_signing_dispatch_guard` adds a persistent per-document dispatch ID. The claim is saved before the external request and included as the DocuSign `transactionId`. Concurrent/repeated sends, signer edits and in-app signing are blocked once that claim exists. A timeout, malformed success, provider error or failure to save the response leaves the claim in place. There is deliberately no automatic clearing/retry endpoint.
 
-An operator must first preserve the local record and inspect the **same account and environment** at DocuSign using the transaction ID. The provider's transaction lookup retention is seven days; an empty result after expiry is not proof that no envelope exists. Confirm document and recipient identity before linking a found envelope and applying its authenticated state in a reviewed database transaction. If non-creation is conclusively established, correct the cause before a reviewed reset of the claim. Do not clear the guard simply because the UI reports a failure. Recovery tooling and its acceptance test remain outstanding; this is an operator gate, not a completed automated workflow.
+Migration `2026_09_24_000002_add_signing_dispatch_snapshot` adds private dispatch evidence: organization, account, API origin, creation time, source/name hashes and a recipient fingerprint. The evidence and guard are saved under the document lock before sending; the actual payload uses those same bytes and signers. Evidence is excluded from API serialization. Existing claims are not retroactively certified.
+
+A trusted server operator can run:
+
+```sh
+php artisan signing:reconcile DOCUMENT_ID
+```
+
+This is read-only by default. It uses the saved transaction ID to find exactly one envelope in the original account/environment, then verifies its identity, document name/ID and exact signer identities/orders against the saved evidence. It checks that local source bytes and signers have not changed. Output excludes recipients, file content and credentials.
+
+After reviewing the returned envelope ID, explicitly link it:
+
+```sh
+php artisan signing:reconcile DOCUMENT_ID --apply --envelope=EXACT_ENVELOPE_ID --actor=ADMIN_USER_ID --reason='Internal recovery ticket reference'
+```
+
+Apply repeats provider verification, requires an active super-admin or same-organization firm admin, rechecks evidence under a row lock, and atomically links the envelope, updates signing state and records the actor/reason. The actor is attribution for the trusted shell operator, not a substitute for server-access authentication. Repeating the command for the same linked envelope is a no-op. Keep audit reasons free of patient or credential details.
+
+No recovery command creates, resends or voids an envelope, and none clears the dispatch guard. Missing/changed evidence, wrong recipients, uncertain results, account changes or provider errors leave the record unresolved. Legacy claims without snapshots require manual investigation. The provider's transaction lookup retention is seven days; an empty result is not proof of non-delivery, especially after expiry. Conclusively failed sends still require a separately reviewed operational decision; there is no force-reset option.
+
+Configure Connect acknowledgement/retry behavior so a callback that arrives before local linking is retried. Actual provider recovery acceptance remains pending; synthetic tests cover read-only inspection, explicit apply, identity mismatches, actor permissions, changed local state, repeat apply and transaction rollback.
 
 Back up the database before production migration. Do not roll back this column while unresolved claims exist: that would remove duplicate-send protection. The migration is additive and does not send messages or alter existing envelope IDs.
 
