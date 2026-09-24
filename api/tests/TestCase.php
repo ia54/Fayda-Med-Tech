@@ -20,7 +20,6 @@ abstract class TestCase extends BaseTestCase
                 throw new \RuntimeException('Disposable MySQL schema reset failed.');
             }
         }
-        \Illuminate\Support\Facades\Schema::useNativeSchemaOperationsIfPossible();
         // Public-only fixture. Its private key is discarded; no deployment
         // signing keys are read and this fixture cannot mint access tokens.
         config(['passport.public_key' => file_get_contents(__DIR__ . '/Fixtures/passport-public.pem')]);

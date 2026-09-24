@@ -34,6 +34,7 @@ jobs:
           coverage: none
           tools: composer:v2
       - run: composer validate --no-check-publish --no-interaction
+      - run: composer audit --locked --abandoned=report --no-interaction
       - run: composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins
       - run: php vendor/bin/phpunit --colors=never --testdox
       - name: Declaration regression checks

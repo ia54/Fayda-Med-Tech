@@ -65,4 +65,22 @@ class TokenLifecycleTest extends TestCase
         $this->bearer(); $this->postJson('/api/refresh-token', ['refresh_token' => $second->json('refresh_token')])->assertUnauthorized();
         $this->bearer($second->json('access_token')); $this->getJson('/api/profile')->assertUnauthorized();
     }
+    public function test_inactivity_timeout_revokes_old_token_and_allows_recent_activity(): void
+    {
+        config(['session.lifetime' => 120]);
+        \Illuminate\Support\Facades\Route::middleware(['api', 'auth:api', 'session.timeout'])
+            ->get('/synthetic-timeout-check', fn () => response()->json(['ok' => true]));
+        $user = $this->user('client');
+        $login = $this->postJson('/api/login', ['email' => $user->email, 'password' => 'Synthetic-test-only-123!'])->assertOk();
+        $tokenId = DB::table('oauth_access_tokens')->where('user_id', $user->id)->value('id');
+        $cacheKey = 'user_last_activity_'.$tokenId;
+        $this->bearer($login->json('access_token'));
+        \Illuminate\Support\Facades\Cache::put($cacheKey, now()->subMinutes(119)->toIso8601String(), 600);
+        $this->getJson('/synthetic-timeout-check')->assertOk();
+        $this->bearer($login->json('access_token'));
+        \Illuminate\Support\Facades\Cache::put($cacheKey, now()->subMinutes(121)->toIso8601String(), 600);
+        $this->getJson('/synthetic-timeout-check')->assertUnauthorized()->assertJsonPath('session_timeout', true);
+        $this->assertDatabaseHas('oauth_access_tokens', ['id' => $tokenId, 'revoked' => true]);
+    }
+
 }
