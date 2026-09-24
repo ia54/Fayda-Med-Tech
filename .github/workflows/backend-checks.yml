@@ -63,7 +63,9 @@ jobs:
           MARIADB_ROOT_PASSWORD: ci-only-disposable
         ports:
           - 3306:3306
+        # Ephemeral test data only; retain fsync/transaction semantics on tmpfs.
         options: >-
+          --tmpfs /var/lib/mysql:rw,size=1g
           --health-cmd="if command -v mariadb-admin >/dev/null 2>&1; then mariadb-admin ping -h127.0.0.1 -pci-only-disposable; else mysqladmin ping -h127.0.0.1 -pci-only-disposable; fi"
           --health-interval=10s
           --health-timeout=5s
