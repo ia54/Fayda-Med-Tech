@@ -105,4 +105,12 @@ Lien summary generation now uses the same assigned-case boundary as the attorney
 
 Synthetic tests reproduce overbroad lien totals and cover unchanged-access retrieval, forged markers, legacy snapshots, assignment removal, history filtering, record preservation, regenerated empty reports and firm-administrator scope. The two test files already run in the MySQL/MariaDB suite.
 
-Local regression passes 122 tests / 1,259 assertions; targeted report-access/generation tests pass 11 tests / 134 assertions. Hosted CI pending this batch.
+Local regression passes 122 tests / 1,259 assertions; targeted report-access/generation tests pass 11 tests / 134 assertions. Commit 0a9e441 passes GitHub branch run 36021890811: PHP 8.3, MySQL 8 and MariaDB 10.11, including each 50-case database workflow suite.
+
+## Lien summary amount interpretation — 2026-09-24
+
+Lien reports now exclude records marked settled/released from recorded open totals. A recorded negotiated amount can supply the reduction, or an explicit reduction can supply the remaining amount. Zero is preserved. Missing figures, out-of-range legacy figures and inconsistent pairs are flagged as unknown rather than silently counted as zero or chosen arbitrarily. Complete totals become null when affected, while known subtotals and unknown/conflict counts remain available. Amounts accumulate in integer cents. The response explains that these are tracking records and do not verify payment or legal release. Existing records and saved snapshots are unchanged; regenerate reports for corrected calculations.
+
+A synthetic regression reproduced $660.35 reported outstanding where recorded open amounts were $90.20. Coverage includes pending/negotiated/settled/released states, derived reductions, explicit zeros, missing/conflicting values and empty results.
+
+Local regression passes 123 tests / 1,271 assertions. Report-generation coverage passes eight tests / 91 assertions and is included in the database workflow suite. Hosted CI pending this batch.

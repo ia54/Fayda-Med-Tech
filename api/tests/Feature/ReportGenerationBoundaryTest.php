@@ -121,4 +121,29 @@ class ReportGenerationBoundaryTest extends TestCase
         $this->getJson('/api/reports/lien-summary')->assertOk()->assertJsonPath('data.result_summary.total_liens',2);
     }
 
+    public function test_lien_summary_distinguishes_unknown_conflicting_and_closed_records(): void
+    {
+        $make=fn($values)=>Lien::withoutEvents(fn()=>Lien::create(array_merge(['organization_id'=>1,'case_id'=>$this->cases[1]->id,'lien_type'=>'medical','amount'=>100,'status'=>'pending'],$values)));
+        $make(['amount'=>100.25,'negotiated_amount'=>60.10,'status'=>'negotiated']);
+        $make(['amount'=>30.10,'reduction_amount'=>0]);
+        $make(['amount'=>50,'negotiated_amount'=>0,'status'=>'negotiated']);
+        $make(['amount'=>200,'reduction_amount'=>20,'status'=>'settled']);
+        $make(['amount'=>300,'reduction_amount'=>0,'status'=>'released']);
+        $summary=$this->getJson('/api/reports/lien-summary')->assertOk()->json('data.result_summary');
+        $this->assertEquals(90.20,$summary['total_outstanding']);
+        $this->assertEquals(110.15,$summary['total_negotiated_reductions']);
+        $this->assertSame(2,$summary['closed_record_count']);
+        $unknown=$make(['amount'=>10]);
+        $conflict=$make(['amount'=>100,'negotiated_amount'=>80,'reduction_amount'=>30]);
+        $summary=$this->getJson('/api/reports/lien-summary')->assertOk()->json('data.result_summary');
+        $this->assertNull($summary['total_outstanding']);
+        $this->assertNull($summary['total_negotiated_reductions']);
+        $this->assertSame(2,$summary['unknown_open_amount_count']);
+        $this->assertSame(1,$summary['conflicting_amount_count']);
+        $this->assertEquals(90.20,$summary['known_open_amount']);
+        $unknown->delete(); $conflict->delete();
+        Lien::query()->delete();
+        $this->getJson('/api/reports/lien-summary')->assertOk()->assertJsonPath('data.result_summary.total_outstanding',0);
+    }
+
 }

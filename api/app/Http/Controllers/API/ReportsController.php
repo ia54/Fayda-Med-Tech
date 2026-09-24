@@ -228,16 +228,41 @@ class ReportsController extends Controller
     {
         $liens = $this->forOrganization(Lien::class, $request)
             ->whereIn('case_id', $this->casesForReport($request)->select('id'));
-        $totalLiensCount = (clone $liens)->count();
-        $totalLiensAmount = (clone $liens)->sum('amount');
-        $totalReductions = (clone $liens)->sum('reduction_amount');
-        $totalOutstanding = $totalLiensAmount - $totalReductions;
-
+        $records = $liens->get();
+        $gross = $reductions = $open = $unknown = $unknownOpen = $conflicts = $closed = 0;
+        $cents = fn ($value) => (int) round((float) $value * 100);
+        foreach ($records as $lien) {
+            $amount = $cents($lien->amount);
+            $gross += $amount;
+            $negotiated = $lien->negotiated_amount === null ? null : $cents($lien->negotiated_amount);
+            $reduction = $lien->reduction_amount === null ? null : $cents($lien->reduction_amount);
+            $conflict = $amount < 0 || ($negotiated !== null && ($negotiated < 0 || $negotiated > $amount))
+                || ($reduction !== null && ($reduction < 0 || $reduction > $amount))
+                || ($negotiated !== null && $reduction !== null && $negotiated + $reduction !== $amount);
+            $isClosed = in_array($lien->status, ['settled', 'released'], true);
+            if ($isClosed) $closed++;
+            if ($conflict) $conflicts++;
+            if ($conflict || ($negotiated === null && $reduction === null)) {
+                $unknown++;
+                if (!$isClosed) $unknownOpen++;
+                continue;
+            }
+            $recordedReduction = $reduction ?? ($amount - $negotiated);
+            $reductions += $recordedReduction;
+            if (!$isClosed) $open += $amount - $recordedReduction;
+        }
         $report = $this->storeReport($request, 'lien_summary', [
-            'total_liens' => $totalLiensCount,
-            'total_lien_amount' => $totalLiensAmount,
-            'total_negotiated_reductions' => $totalReductions,
-            'total_outstanding' => $totalOutstanding,
+            'basis' => 'Recorded lien amounts, not verified payments or legal releases. Open totals exclude records marked settled or released. Missing or inconsistent negotiated/reduction amounts remain unknown; known subtotals are not complete balances.',
+            'total_liens' => $records->count(),
+            'total_lien_amount' => $gross / 100,
+            'total_negotiated_reductions' => $unknown ? null : $reductions / 100,
+            'known_negotiated_reductions' => $reductions / 100,
+            'unknown_reduction_count' => $unknown,
+            'total_outstanding' => $unknownOpen ? null : $open / 100,
+            'known_open_amount' => $open / 100,
+            'unknown_open_amount_count' => $unknownOpen,
+            'conflicting_amount_count' => $conflicts,
+            'closed_record_count' => $closed,
         ]);
         return response()->json(['status' => true, 'data' => $report]);
     }
