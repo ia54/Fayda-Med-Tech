@@ -13,18 +13,30 @@ final class RouteDeclaration
 }
 final class RouteGroup
 {
+    private string $prefix = '';
     public function __construct(private array $middleware) {}
+    public function prefix(string $prefix): self
+    {
+        $this->prefix = trim($prefix, '/');
+        return $this;
+    }
     public function group(callable $callback): void
     {
         $previous = RouteInventory::$middleware;
+        $previousPrefix = RouteInventory::$prefix;
         RouteInventory::$middleware = array_merge($previous, $this->middleware);
-        try { $callback(); } finally { RouteInventory::$middleware = $previous; }
+        RouteInventory::$prefix = trim($previousPrefix . '/' . $this->prefix, '/');
+        try { $callback(); } finally {
+            RouteInventory::$middleware = $previous;
+            RouteInventory::$prefix = $previousPrefix;
+        }
     }
 }
 final class RouteInventory
 {
     public static array $routes = [];
     public static array $middleware = [];
+    public static string $prefix = '';
     public static function middleware(string|array $middleware): RouteGroup
     {
         return new RouteGroup((array) $middleware);
@@ -32,7 +44,8 @@ final class RouteInventory
     public static function __callStatic(string $method, array $arguments): RouteDeclaration
     {
         if (!in_array($method, ['get', 'post', 'put', 'delete'], true)) throw new \LogicException('Unsupported route declaration: ' . $method);
-        $route = new RouteDeclaration(strtoupper($method), '/' . ltrim($arguments[0], '/'), self::$middleware, $arguments[1]);
+        $path = '/' . ltrim(self::$prefix . '/' . ltrim($arguments[0], '/'), '/');
+        $route = new RouteDeclaration(strtoupper($method), $path, self::$middleware, $arguments[1]);
         self::$routes[] = $route;
         return $route;
     }
