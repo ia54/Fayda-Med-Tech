@@ -24,4 +24,4 @@ foreach ([['admin', 'unknown'], ['role:admin'], ['permission:read'], ['*']] as $
         $checks++;
     }
 }
-echo "PASS: {$checks} role decisions, including all 64 role combinations and fail-closed configurations.\n";
+echo "PASS: {$checks} role decisions, including all supported role combinations and fail-closed configurations.\n";

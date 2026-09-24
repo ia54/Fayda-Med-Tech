@@ -33,6 +33,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8
 // Tag Types for RTK Query Cache Invalidation
 export const TAG_TYPES = {
   AUTH: 'Auth',
+  PHARMACY: 'Pharmacy',
   ORGANIZATION: 'Organization',
   ORGANIZATION_TYPE: 'OrganizationType',
   SUBSCRIPTION_PLAN: 'SubscriptionPlan',

@@ -35,21 +35,29 @@ class TokenLifecycleTest extends TestCase
         $this->app['auth']->forgetGuards();
         $this->withHeader('Authorization', $token ? 'Bearer '.$token : '');
     }
-    public function test_six_roles_complete_password_mfa_profile_and_private_document_journey_with_real_tokens(): void
+    public static function supportedRoles(): array
+    {
+        return array_map(fn ($role) => [$role], User::getAvailableRoles());
+    }
+    #[\PHPUnit\Framework\Attributes\DataProvider('supportedRoles')]
+    public function test_all_roles_complete_password_mfa_profile_with_their_authorized_workspace(string $role): void
     {
         SecuritySetting::create(['enforce_2fa_all' => true]);
-        foreach (User::getAvailableRoles() as $role) {
-            $this->bearer(); $user = $this->user($role); $secret = (new Google2FA)->generateSecretKey();
-            $user->forceFill(['two_factor_enabled' => true, 'two_factor_secret' => Crypt::encryptString($secret), 'two_factor_confirmed_at' => now()])->save();
-            $challenge = $this->postJson('/api/login', ['email' => $user->email, 'password' => 'Synthetic-test-only-123!'])->assertOk()->assertJsonMissingPath('access_token')->json('challenge_token');
-            $result = $this->postJson('/api/auth/mfa/verify', ['challenge_token' => $challenge, 'code' => (new Google2FA)->getCurrentOtp($secret)])->assertOk();
-            $this->assertNotEmpty($result->json('access_token'));
-            $this->bearer($result->json('access_token'));
-            $this->getJson('/api/profile')->assertOk()->assertJsonPath('user.role', $role);
-            $document = $this->postJson('/api/documents', ['title' => 'Synthetic '.$role, 'file' => UploadedFile::fake()->create('record.pdf', 1, 'application/pdf')])->assertCreated()->json('data.id');
-            $this->getJson('/api/documents/'.$document)->assertOk();
-            $this->get('/api/documents/'.$document.'/preview')->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+        $this->bearer(); $user = $this->user($role); $secret = (new Google2FA)->generateSecretKey();
+        $user->forceFill(['two_factor_enabled' => true, 'two_factor_secret' => Crypt::encryptString($secret), 'two_factor_confirmed_at' => now()])->save();
+        $challenge = $this->postJson('/api/login', ['email' => $user->email, 'password' => 'Synthetic-test-only-123!'])->assertOk()->assertJsonMissingPath('access_token')->json('challenge_token');
+        $result = $this->postJson('/api/auth/mfa/verify', ['challenge_token' => $challenge, 'code' => (new Google2FA)->getCurrentOtp($secret)])->assertOk();
+        $this->assertNotEmpty($result->json('access_token'));
+        $this->bearer($result->json('access_token'));
+        $this->getJson('/api/profile')->assertOk()->assertJsonPath('user.role', $role);
+        if (in_array($role, ['pharmacist', 'pharmacy_technician'], true)) {
+            $this->getJson('/api/pharmacy/prescriptions')->assertOk();
+            $this->postJson('/api/documents', ['title'=>'Not authorized'])->assertForbidden();
+            return;
         }
+        $document = $this->postJson('/api/documents', ['title' => 'Synthetic '.$role, 'file' => UploadedFile::fake()->create('record.pdf', 1, 'application/pdf')])->assertCreated()->json('data.id');
+        $this->getJson('/api/documents/'.$document)->assertOk();
+        $this->get('/api/documents/'.$document.'/preview')->assertOk()->assertHeader('Cache-Control', 'no-store, private');
     }
     public function test_refresh_rotation_logout_and_revoked_access_cannot_restore_a_session(): void
     {

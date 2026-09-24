@@ -11,6 +11,8 @@ export const ROLES = {
   ATTORNEY: "attorney",     // Attorney - Lawyer/paralegal (Case-focused)
   MEDICAL_BILLER: "medical_biller", // Medical Biller - Billing specialist (Billing-focused)
   PROVIDER_STAFF: "provider_staff", // Provider Staff - Doctor's office staff (Provider portal)
+  PHARMACIST: "pharmacist",
+  PHARMACY_TECHNICIAN: "pharmacy_technician",
   CLIENT: "client",         // Client (Patient) - Injured patient/claimant (Self-service)
 } as const;
 
@@ -19,6 +21,8 @@ export type RoleType = typeof ROLES[keyof typeof ROLES];
 
 // Role Display Names (PDF Section 2)
 export const ROLE_DISPLAY_NAMES: Record<RoleType, string> = {
+  [ROLES.PHARMACIST]: "Pharmacist",
+  [ROLES.PHARMACY_TECHNICIAN]: "Pharmacy Technician",
   [ROLES.ADMIN]: "Super Admin",
   [ROLES.FIRM_ADMIN]: "Firm Admin",
   [ROLES.ATTORNEY]: "Attorney",
@@ -29,6 +33,8 @@ export const ROLE_DISPLAY_NAMES: Record<RoleType, string> = {
 
 // Role Descriptions (PDF Section 2)
 export const ROLE_DESCRIPTIONS: Record<RoleType, string> = {
+  [ROLES.PHARMACIST]: "Pharmacy clinical review and fulfillment",
+  [ROLES.PHARMACY_TECHNICIAN]: "Pharmacy intake and preparation support",
   [ROLES.ADMIN]: "FaydaTech platform team - Full system access",
   [ROLES.FIRM_ADMIN]: "Law firm owner/office manager - Full tenant access",
   [ROLES.ATTORNEY]: "Lawyer/paralegal - Case-focused access",
@@ -39,6 +45,8 @@ export const ROLE_DESCRIPTIONS: Record<RoleType, string> = {
 
 // Dashboard Paths (PDF Section 3)
 export const DASHBOARD_PATHS: Record<RoleType, string> = {
+  [ROLES.PHARMACIST]: "/dashboard/pharmacy",
+  [ROLES.PHARMACY_TECHNICIAN]: "/dashboard/pharmacy",
   [ROLES.ADMIN]: "/dashboard/admin",
   [ROLES.FIRM_ADMIN]: "/dashboard/legal",
   [ROLES.ATTORNEY]: "/dashboard/legal",
@@ -57,7 +65,10 @@ export const PERMISSION_LEVELS = {
 
 // Features accessible by each role (PDF Section 17 - Complete Role-Based Menu Reference)
 export const ROLE_FEATURES: Record<RoleType, Record<string, string>> = {
+  [ROLES.PHARMACIST]: { dashboard: PERMISSION_LEVELS.FULL_ACCESS, pharmacy: PERMISSION_LEVELS.FULL_ACCESS },
+  [ROLES.PHARMACY_TECHNICIAN]: { dashboard: PERMISSION_LEVELS.FULL_ACCESS, pharmacy: PERMISSION_LEVELS.FULL_ACCESS },
   [ROLES.ADMIN]: {
+    pharmacy: PERMISSION_LEVELS.READ_ONLY,
     dashboard: PERMISSION_LEVELS.FULL_ACCESS,
     cases: PERMISSION_LEVELS.FULL_ACCESS,
     clients: PERMISSION_LEVELS.FULL_ACCESS,
@@ -104,6 +115,7 @@ export const ROLE_FEATURES: Record<RoleType, Record<string, string>> = {
     settings: PERMISSION_LEVELS.NO_ACCESS,
   },
   [ROLES.MEDICAL_BILLER]: {
+    pharmacy: PERMISSION_LEVELS.FULL_ACCESS,
     dashboard: PERMISSION_LEVELS.FULL_ACCESS,
     cases: PERMISSION_LEVELS.READ_ONLY,
     clients: PERMISSION_LEVELS.READ_ONLY,
@@ -173,7 +185,7 @@ export interface MenuItemConfig {
 
 // All 6 roles for convenience
 const ALL_STAFF_ROLES: RoleType[] = [ROLES.ADMIN, ROLES.FIRM_ADMIN, ROLES.ATTORNEY, ROLES.MEDICAL_BILLER, ROLES.PROVIDER_STAFF];
-const ALL_ROLES: RoleType[] = [...ALL_STAFF_ROLES, ROLES.CLIENT];
+const ALL_ROLES: RoleType[] = [...ALL_STAFF_ROLES, ROLES.PHARMACIST, ROLES.PHARMACY_TECHNICIAN, ROLES.CLIENT];
 
 /**
  * Centralized menu configuration — PDF Section 17
@@ -181,6 +193,7 @@ const ALL_ROLES: RoleType[] = [...ALL_STAFF_ROLES, ROLES.CLIENT];
  * IMPORTANT: Each role appears in only ONE entry per concept to prevent duplicates.
  */
 export const MENU_CONFIG: MenuItemConfig[] = [
+  { title: "Pharmacy Operations", href: "/dashboard/pharmacy", icon: "ClipboardList", feature: "pharmacy", roles: [ROLES.PHARMACIST, ROLES.PHARMACY_TECHNICIAN, ROLES.MEDICAL_BILLER, ROLES.ADMIN], section: "Main" },
   // ═══════════════════════════════════════════════
   // DASHBOARD — One per role, no overlap
   // ═══════════════════════════════════════════════
@@ -672,6 +685,7 @@ export const MENU_CONFIG: MenuItemConfig[] = [
  * Maps route patterns to required roles and minimum permission levels
  */
 export const ROUTE_PERMISSIONS: Record<string, { roles: RoleType[]; level: PermissionLevel }> = {
+  '/dashboard/pharmacy': { roles: [ROLES.PHARMACIST, ROLES.PHARMACY_TECHNICIAN, ROLES.MEDICAL_BILLER, ROLES.ADMIN], level: PERMISSION_LEVELS.READ_ONLY },
   // Admin routes
   '/dashboard/admin': { roles: [ROLES.ADMIN, ROLES.FIRM_ADMIN], level: PERMISSION_LEVELS.FULL_ACCESS },
   '/dashboard/admin/organizations': { roles: [ROLES.ADMIN], level: PERMISSION_LEVELS.FULL_ACCESS },

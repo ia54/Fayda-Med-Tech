@@ -2,6 +2,14 @@
 
 Production has not been switched. A passing build is not release approval.
 
+## Pharmacy scope supersedes the earlier six-role launch assumption
+
+The owner confirmed on September 24 that pharmacy is the core product and FaydaMedTech must contain its own dispensing/pharmacy-management system, including controlled substances, compounding and multiple potential locations. GLM is a candidate AI provider; no account or patient-data processing approval is configured. See [the pharmacy system requirements](../../docs/PHARMACY-SYSTEM.md).
+
+The first pharmacy foundation is a **synthetic-data development preview**, not operational pharmacy software. Its API is unavailable outside local/testing environments. Controlled and compounded final dispensing is blocked until the dedicated controls are built and validated. Patient clinical records, location-specific staff/licensure controls, clinical drug data, original-prescription storage, validated labels, compounding batches/calculations, controlled-substance rules/reporting, payer transport and recovery remain launch requirements.
+
+Current local evidence: 138 API tests / 1,451 assertions and 3,104 role decisions pass; the admin type check and optimized build pass with 113 generated pages. Chrome verified pharmacist MFA, two synthetic locations, stock receipt, prescription intake, reservation, pharmacist review, final-check attestation, handover, persistence after reload, and the stock change from 100 to 90 with zero remaining reservation. Pharmacy billing and negative permission/state cases have API-test coverage; this is not real-patient, real-drug, real-payer or regulatory acceptance. New pharmacy tests are included in the MySQL/MariaDB CI suite. This local-origin frontend artifact must not be deployed.
+
 ## Dependency remediation
 
 Raw before/after audits are retained in the workspace audit-evidence/dependencies-20260924 folder.

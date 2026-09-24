@@ -58,6 +58,23 @@ Route::post('signatures/docusign/webhook', [SignatureController::class, 'docusig
 
 // Protected routes
 Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
+    Route::middleware(['role:pharmacist,pharmacy_technician,medical_biller,admin', \App\Http\Middleware\PharmacyPreviewOnly::class])->prefix('pharmacy')->group(function () {
+        Route::get('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'locations']);
+        Route::post('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'storeLocation']);
+        Route::get('/stock', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'index']);
+        Route::post('/stock', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'store']);
+        Route::put('/stock/{id}/status', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'status']);
+
+        $controller = \App\Http\Controllers\API\PharmacyController::class;
+        Route::get('cases', [$controller, 'cases']);
+        Route::get('prescriptions', [$controller, 'index']);
+        Route::post('prescriptions', [$controller, 'store']);
+        Route::get('prescriptions/{id}', [$controller, 'show']);
+        Route::put('prescriptions/{id}/coverage', [$controller, 'coverage']);
+        Route::post('prescriptions/{id}/fills', [$controller, 'createFill']);
+        Route::post('prescriptions/{id}/fills/{fillId}/actions', [$controller, 'fillAction']);
+        Route::get('prescriptions/{id}/assistant', [$controller, 'assistant']);
+    });
     Route::get('/auth/mfa/status', [\App\Http\Controllers\API\Auth\MfaController::class, 'status']);
     Route::post('/auth/mfa/manage', [\App\Http\Controllers\API\Auth\MfaController::class, 'manage'])->middleware('throttle:mfa-manage');
     Route::post('/logout', [AuthController::class, 'logout']);

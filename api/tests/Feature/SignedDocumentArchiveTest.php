@@ -54,6 +54,11 @@ class SignedDocumentArchiveTest extends TestCase
         $this->fakeProvider();
         foreach (User::getAvailableRoles() as $role) {
             $this->acting($role);
+            if (in_array($role, ['pharmacist', 'pharmacy_technician'], true)) {
+                $this->preview()->assertForbidden();
+                $this->get('/api/documents/'.$this->document->id.'/completion-certificate')->assertForbidden();
+                continue;
+            }
             $response=$this->preview()->assertOk()->assertHeader('X-Document-Version','signed')->assertHeader('X-Completion-Certificate','true');
             $this->assertSame(self::PDF,$response->streamedContent());
             $certificate=$this->get('/api/documents/'.$this->document->id.'/completion-certificate')->assertOk()->assertHeader('X-Document-Version','certificate');

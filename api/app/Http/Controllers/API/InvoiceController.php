@@ -10,6 +10,11 @@ use Illuminate\Support\Facades\Validator;
 
 class InvoiceController extends Controller
 {
+    private function protectPharmacyInvoice(Invoice $invoice): void
+    {
+        abort_if(\Illuminate\Support\Facades\DB::table('pharmacy_fills')->where('invoice_id', $invoice->id)->exists(), 409, 'Pharmacy invoices retain their fill linkage. Use payment reconciliation; pharmacy invoice corrections require a dedicated workflow.');
+    }
+
     /**
      * Display a listing of the invoices.
      */
@@ -83,6 +88,8 @@ class InvoiceController extends Controller
             'metadata' => 'nullable|array',
             'metadata.billing_review' => 'missing',
             'metadata.billing_review_history' => 'missing',
+            'metadata.pharmacy_fill_id' => 'missing',
+            'metadata.prescription_id' => 'missing',
         ]);
 
         if ($validator->fails()) {
@@ -150,6 +157,7 @@ class InvoiceController extends Controller
         abort_if($request->user()->role !== 'admin' && !$request->user()->organization_id, 403);
         return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id) {
             $invoice = Invoice::lockForUpdate()->findOrFail($id);
+            $this->protectPharmacyInvoice($invoice);
 
             $validator = Validator::make($request->all(), [
                 'amount' => 'sometimes|required|numeric|min:0',
@@ -160,6 +168,8 @@ class InvoiceController extends Controller
                 'metadata' => 'nullable|array',
                 'metadata.billing_review' => 'missing',
                 'metadata.billing_review_history' => 'missing',
+            'metadata.pharmacy_fill_id' => 'missing',
+            'metadata.prescription_id' => 'missing',
             ]);
 
             if ($validator->fails()) {
@@ -207,6 +217,7 @@ class InvoiceController extends Controller
         ]);
         return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id, $data) {
             $invoice = Invoice::where('organization_id', $request->user()->organization_id)->lockForUpdate()->findOrFail($id);
+            $this->protectPharmacyInvoice($invoice);
             abort_unless($invoice->status === 'draft', 409, 'Only draft records can be changed by a provider.');
             $invoice->update([
                 'amount' => $data['amount'],
@@ -224,6 +235,7 @@ class InvoiceController extends Controller
         $data = $request->validate(['action' => 'required|in:reviewed,return', 'note' => 'required|string|max:5000']);
         return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $id, $data) {
             $invoice = Invoice::lockForUpdate()->findOrFail($id);
+            $this->protectPharmacyInvoice($invoice);
             abort_unless($invoice->status === 'sent', 409, 'Only records awaiting billing review can be reviewed.');
             $metadata = $invoice->metadata ?? [];
             abort_if(($metadata['billing_review']['state'] ?? null) === 'reviewed', 409, 'This record has already been reviewed.');
@@ -243,6 +255,7 @@ class InvoiceController extends Controller
         abort_if($request->user()->role !== 'admin' && !$request->user()->organization_id, 403);
         return \Illuminate\Support\Facades\DB::transaction(function () use ($id) {
             $invoice = Invoice::lockForUpdate()->findOrFail($id);
+            $this->protectPharmacyInvoice($invoice);
             abort_if($invoice->payments()->exists(), 409, 'Invoices with recorded payments cannot be archived.');
             $invoice->delete();
 

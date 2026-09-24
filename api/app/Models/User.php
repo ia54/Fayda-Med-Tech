@@ -19,6 +19,8 @@ class User extends Authenticatable
     const ROLE_ATTORNEY = 'attorney';         // Lawyer/paralegal - Case-focused
     const ROLE_MEDICAL_BILLER = 'medical_biller'; // Billing specialist - Billing-focused
     const ROLE_PROVIDER_STAFF = 'provider_staff'; // Doctor's office staff - Provider portal
+    const ROLE_PHARMACIST = 'pharmacist';
+    const ROLE_PHARMACY_TECHNICIAN = 'pharmacy_technician';
     const ROLE_CLIENT = 'client';             // Injured patient/claimant - Self-service
 
     // Helper method to get all available roles
@@ -30,6 +32,8 @@ class User extends Authenticatable
             self::ROLE_ATTORNEY,
             self::ROLE_MEDICAL_BILLER,
             self::ROLE_PROVIDER_STAFF,
+            self::ROLE_PHARMACIST,
+            self::ROLE_PHARMACY_TECHNICIAN,
             self::ROLE_CLIENT,
         ];
     }

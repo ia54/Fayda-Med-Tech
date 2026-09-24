@@ -48,10 +48,14 @@ class DocumentAccessTest extends TestCase
         $this->actingAs($this->actor, 'api');
     }
 
-    public function test_all_six_roles_can_read_authorized_documents_and_tenants_cannot_cross_boundaries(): void
+    public function test_document_roles_can_read_authorized_documents_and_pharmacy_roles_do_not_inherit_access(): void
     {
         foreach (User::getAvailableRoles() as $role) {
             $this->signIn($role);
+            if (in_array($role, ['pharmacist', 'pharmacy_technician'], true)) {
+                foreach (['', '/preview', '/signature-status', '/completion-certificate'] as $suffix) $this->getJson('/api/documents/'.$this->own->id.$suffix)->assertForbidden();
+                continue;
+            }
             foreach (['', '/preview', '/signature-status'] as $suffix) {
                 $this->getJson('/api/documents/'.$this->own->id.$suffix)->assertOk();
                 $response = $this->getJson('/api/documents/'.$this->other->id.$suffix);
