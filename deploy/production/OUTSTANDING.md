@@ -1,6 +1,14 @@
-# Outstanding launch gates — 2026-09-24
+# Outstanding launch gates — 2026-09-25
 
 Production has not been switched. A passing build is not release approval.
+
+## September 25 verification
+
+Patient charts without portal accounts and explicit location assignments are implemented in the development branch. Local regression passes 140 tests / 1,500 assertions and 3,104 role decisions. Type checking and the optimized admin build pass (115 generated pages). Existing preview-only and controlled/compounded dispensing blocks remain enabled. See docs/PHARMACY-SYSTEM.md for limitations and required migration onboarding.
+
+Read-only HTTPS checks returned HTTP 200 for api.faydamed.tech, admin.faydamed.tech and faydamed.tech. This proves reachability only; authenticated feature, backup/restore, server/runtime and deployment acceptance are still outstanding. No production files, processes or configuration were changed.
+
+Fresh dependency audits: Composer reports no current advisories; doctrine/annotations remains abandoned. Admin dependency audit reports one low-severity Quill HTML-export advisory, with no moderate/high/critical findings. Existing sanitization mitigation does not make this an unqualified clean audit.
 
 ## Pharmacy scope supersedes the earlier six-role launch assumption
 

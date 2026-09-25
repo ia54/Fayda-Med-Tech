@@ -58,7 +58,13 @@ Route::post('signatures/docusign/webhook', [SignatureController::class, 'docusig
 
 // Protected routes
 Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
-    Route::middleware(['role:pharmacist,pharmacy_technician,medical_biller,admin', \App\Http\Middleware\PharmacyPreviewOnly::class])->prefix('pharmacy')->group(function () {
+    Route::middleware(['role:pharmacist,pharmacy_technician,medical_biller,admin', \App\Http\Middleware\PharmacyPreviewOnly::class, \App\Http\Middleware\PharmacyWriteTransaction::class])->prefix('pharmacy')->group(function () {
+        Route::get('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'index']);
+        Route::post('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'store']);
+        Route::get('/patients/{id}', [\App\Http\Controllers\API\PharmacyPatientController::class, 'show']);
+        Route::put('/patients/{id}/clinical', [\App\Http\Controllers\API\PharmacyPatientController::class, 'clinical']);
+        Route::get('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'index']);
+        Route::put('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'save']);
         Route::get('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'locations']);
         Route::post('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'storeLocation']);
         Route::get('/stock', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'index']);

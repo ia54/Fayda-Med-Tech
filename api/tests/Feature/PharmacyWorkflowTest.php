@@ -41,6 +41,9 @@ class PharmacyWorkflowTest extends TestCase
         CaseParty::create(['case_id' => $this->case->id, 'user_id' => $this->patient->id, 'role_in_case' => 'client']);
         $this->location = DB::table('pharmacy_locations')->insertGetId(['organization_id' => 1, 'name' => 'Synthetic location A', 'address' => 'Synthetic only', 'license_reference' => 'NOT VALID']);
         $this->otherLocation = DB::table('pharmacy_locations')->insertGetId(['organization_id' => 1, 'name' => 'Synthetic location B', 'address' => 'Synthetic only', 'license_reference' => 'NOT VALID']);
+        foreach ([$this->location, $this->otherLocation] as $id) {
+            DB::table('pharmacy_staff_assignments')->insert(['location_id' => $id, 'user_id' => $this->actor->id, 'active' => true, 'valid_until' => now()->addYear()->toDateString()]);
+        }
     }
 
     private function body(array $overrides = []): array
@@ -234,4 +237,68 @@ class PharmacyWorkflowTest extends TestCase
         $this->postJson('/api/pharmacy/prescriptions',$this->body())->assertStatus(503);
         $this->assertSame(0,DB::table('pharmacy_prescriptions')->count());
     }
+    public function test_location_assignments_fail_closed_and_revocation_removes_existing_access(): void
+    {
+        $rx = $this->rx();
+        $lot = $this->lot();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->delete();
+        $this->getJson('/api/pharmacy/locations')->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson('/api/pharmacy/prescriptions')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/stock')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertNotFound();
+        $this->postJson('/api/pharmacy/prescriptions', $this->body())->assertNotFound();
+        $this->putJson("/api/pharmacy/stock/$lot/status", ['version' => 1, 'status' => 'quarantined', 'note' => 'Denied'])->assertNotFound();
+        $this->getJson('/api/pharmacy/staff')->assertForbidden();
+        $grant = ['location_id' => $this->location, 'user_id' => $this->actor->id, 'active' => true, 'valid_until' => now()->addMonth()->toDateString(), 'version' => 0, 'reason' => 'Synthetic assignment'];
+        $this->putJson('/api/pharmacy/staff', $grant)->assertForbidden();
+        $this->actor->role = 'admin';
+        $this->getJson('/api/pharmacy/staff')->assertOk();
+        // Database role remains pharmacist; the admin actor is only the request principal in this fixture.
+        $this->putJson('/api/pharmacy/staff', $grant)->assertOk();
+        $this->putJson('/api/pharmacy/staff', $grant)->assertConflict();
+        $this->actor->role = 'pharmacist';
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk();
+        $this->actor->role = 'admin';
+        $this->putJson('/api/pharmacy/staff', array_replace($grant, ['version' => 1, 'active' => false]))->assertOk();
+        $this->actor->role = 'pharmacist';
+        $this->getJson("/api/pharmacy/prescriptions/$rx/assistant")->assertNotFound();
+        $this->assertSame(2, DB::table('pharmacy_access_events')->count());
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true, 'valid_until' => now()->subDay()->toDateString()]);
+        $this->getJson('/api/pharmacy/locations')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/pharmacy/cases')->assertOk()->assertJsonCount(0, 'data');
+    }
+
+    public function test_independent_patient_chart_is_private_idempotent_and_invalidates_fill_review(): void
+    {
+        $body = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-CHART-1', 'location_id' => $this->location,
+            'first_name' => 'Synthetic', 'last_name' => 'No portal', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'SYNTHETIC identity'];
+        $usersBefore = DB::table('users')->count();
+        $p = $this->postJson('/api/pharmacy/patients', $body)->assertCreated()->json('data');
+        $this->postJson('/api/pharmacy/patients', $body)->assertOk()->assertJsonPath('data.id', $p['id']);
+        $this->postJson('/api/pharmacy/patients', array_replace($body, ['first_name' => 'Changed']))->assertConflict();
+        $this->assertSame($usersBefore, DB::table('users')->count());
+        $this->assertSame('unknown', $p['clinical']['allergies_status']);
+        $rx = $this->rx(['patient_id' => null, 'pharmacy_patient_id' => $p['id']]);
+        $this->getJson('/api/pharmacy/prescriptions')->assertOk()->assertJsonPath('data.data.0.last_name', 'No portal');
+        $f = $this->fill($rx, $this->lot());
+        $this->act($rx, $f, 'approve', $this->checks(), 422);
+        $review = ['version' => 1, 'allergies_status' => 'none_reported', 'medications_status' => 'none_reported', 'reviewed_on' => now()->toDateString(), 'source_reference' => 'Synthetic interview'];
+        $this->actor->role = 'pharmacy_technician';
+        $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", $review)->assertForbidden();
+        $this->actor->role = 'medical_biller';
+        $this->getJson("/api/pharmacy/patients/{$p['id']}")->assertForbidden();
+        $this->actor->role = 'pharmacist';
+        $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", $review)->assertOk();
+        $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", $review)->assertConflict();
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", array_replace($review, ['version' => 2, 'allergies_status' => 'documented', 'allergies' => 'Synthetic new allergy']))->assertOk();
+        $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic', 'counseling' => 'provided'], 422);
+        $this->assertEquals(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson("/api/pharmacy/patients/{$p['id']}")->assertNotFound();
+        $this->getJson('/api/pharmacy/patients')->assertOk()->assertJsonPath('data.total', 0);
+        $this->assertSame(3, DB::table('pharmacy_patient_events')->count());
+    }
+
 }

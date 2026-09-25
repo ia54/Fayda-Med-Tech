@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Services\PharmacyStock;
+use App\Services\PharmacyAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -18,7 +19,7 @@ class PharmacyInventoryController extends Controller
 
     public function locations(Request $r)
     {
-        return response()->json(['data' => DB::table('pharmacy_locations')->where('organization_id', $this->org($r))->orderBy('name')->get()]);
+        return response()->json(['data' => app(PharmacyAccess::class)->locations($r->user())->orderBy('name')->get()]);
     }
 
     public function storeLocation(Request $r)
@@ -45,6 +46,7 @@ class PharmacyInventoryController extends Controller
     {
         $d = $r->validate(['location_id' => 'nullable|integer', 'page' => 'nullable|integer|min:1', 'search' => 'nullable|string|max:100']);
         $q = DB::table('pharmacy_stock_lots')->where('organization_id', $this->org($r));
+        app(PharmacyAccess::class)->scope($q, $r->user());
         if (! empty($d['location_id'])) {
             $q->where('location_id', $d['location_id']);
         }
@@ -70,6 +72,7 @@ class PharmacyInventoryController extends Controller
         $id = DB::transaction(function () use ($r, $d) {
             $org = $this->org($r);
             DB::table('organizations')->where('id', $org)->lockForUpdate()->first();
+            app(PharmacyAccess::class)->requireLocation($r->user(), $d['location_id']);
             $hashData = $d;
             unset($hashData['request_id']);
             ksort($hashData);
@@ -100,6 +103,7 @@ class PharmacyInventoryController extends Controller
         DB::transaction(function () use ($r, $id, $d) {
             $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $this->org($r))->where('id', $id)->lockForUpdate()->first();
             abort_unless($lot, 404);
+            app(PharmacyAccess::class)->requireLocation($r->user(), $lot->location_id);
             abort_unless((int) $lot->version === (int) $d['version'], 409, 'Stock changed. Refresh before trying again.');
             abort_if($d['status'] === 'available' && $lot->expires_on < now()->toDateString(), 422, 'Expired stock cannot be released.');
             DB::table('pharmacy_stock_lots')->where('id', $id)->update(['status' => $d['status'], 'version' => $lot->version + 1, 'updated_at' => now()]);

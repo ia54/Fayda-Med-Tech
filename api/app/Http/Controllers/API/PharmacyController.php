@@ -7,6 +7,7 @@ use App\Models\CaseModel;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Services\PharmacyStock;
+use App\Services\PharmacyAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -29,6 +30,7 @@ class PharmacyController extends Controller
     private function rx(Request $r, $id, bool $lock = false)
     {
         $q = DB::table('pharmacy_prescriptions')->where('organization_id', $this->org($r))->where('id', $id);
+        app(PharmacyAccess::class)->scope($q, $r->user());
         if ($lock) {
             $q->lockForUpdate();
         } $rx = $q->first();
@@ -69,6 +71,9 @@ class PharmacyController extends Controller
     {
         $r->validate(['search' => 'nullable|string|max:100']);
         $q = CaseModel::where('organization_id', $this->org($r));
+        if (! app(PharmacyAccess::class)->locations($r->user())->exists()) {
+            return response()->json(['data' => []]);
+        }
         if ($r->filled('search')) {
             $q->where(fn ($q) => $q->where('case_number', 'like', '%'.$r->search.'%')->orWhere('title', 'like', '%'.$r->search.'%'));
         }
@@ -83,7 +88,8 @@ class PharmacyController extends Controller
     public function index(Request $r)
     {
         $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'search' => 'nullable|string|max:100']);
-        $q = DB::table('pharmacy_prescriptions as rx')->join('pharmacy_episodes as ep', 'ep.id', '=', 'rx.episode_id')->join('users as patient', 'patient.id', '=', 'ep.patient_id')->join('cases', 'cases.id', '=', 'ep.case_id')->where('rx.organization_id', $this->org($r));
+        $q = DB::table('pharmacy_prescriptions as rx')->join('pharmacy_episodes as ep', 'ep.id', '=', 'rx.episode_id')->leftJoin('users as patient', 'patient.id', '=', 'ep.patient_id')->leftJoin('pharmacy_patients as chart', 'chart.id', '=', 'ep.pharmacy_patient_id')->join('cases', 'cases.id', '=', 'ep.case_id')->where('rx.organization_id', $this->org($r));
+        app(PharmacyAccess::class)->scope($q, $r->user(), 'rx.location_id');
         $latest = DB::table('pharmacy_fills')->selectRaw('prescription_id, MAX(id) AS latest_fill_id')->groupBy('prescription_id');
         $q->leftJoinSub($latest, 'latest_fill', fn ($join) => $join->on('latest_fill.prescription_id', '=', 'rx.id'))->leftJoin('pharmacy_fills as fill', 'fill.id', '=', 'latest_fill.latest_fill_id');
         if (! empty($v['stage'])) {
@@ -100,7 +106,7 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('rx.id', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'ep.coverage_status', 'patient.first_name', 'patient.last_name', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
+        return response()->json(['data' => $q->select('rx.id', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw("COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name")->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
     }
 
     public function show(Request $r, $id)
@@ -109,7 +115,9 @@ class PharmacyController extends Controller
         $ep = DB::table('pharmacy_episodes')->where('id', $rx->episode_id)->first();
         $ep->coverage = $this->json($ep->coverage);
         $rx->episode = $ep;
-        $rx->patient = User::where('organization_id', $this->org($r))->findOrFail($ep->patient_id)->only(['id', 'first_name', 'last_name']);
+        $rx->patient = $ep->pharmacy_patient_id
+            ? DB::table('pharmacy_patients')->where('organization_id', $this->org($r))->where('id', $ep->pharmacy_patient_id)->first(['id', 'first_name', 'last_name', 'date_of_birth', 'record_number', 'version'])
+            : User::where('organization_id', $this->org($r))->findOrFail($ep->patient_id)->only(['id', 'first_name', 'last_name']);
         $rx->case = CaseModel::where('organization_id', $this->org($r))->findOrFail($ep->case_id)->only(['id', 'case_number', 'accident_date']);
         $rx->location = DB::table('pharmacy_locations')->where('id', $rx->location_id)->first(['id', 'name', 'address']);
         $rx->fills = DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->orderBy('fill_number')->get()->map(function ($f) {
@@ -135,9 +143,10 @@ class PharmacyController extends Controller
     public function store(Request $r)
     {
         $this->allow($r, ['pharmacist', 'pharmacy_technician']);
-        $d = $r->validate(['request_id' => 'required|uuid', 'case_id' => 'required|integer', 'patient_id' => 'required|integer', 'location_id' => 'required|integer', 'quantity_unit' => 'required|in:tablet,capsule,mL,g,each', 'compounded' => 'required|boolean', 'rx_number' => 'required|string|max:100', 'medication' => 'required|string|max:255', 'strength' => 'required|string|max:100', 'dosage_form' => 'required|string|max:100', 'directions' => 'required|string|max:2000', 'quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'refills_authorized' => 'required|integer|min:0|max:99', 'written_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'expires_on' => 'required|date_format:Y-m-d|after_or_equal:written_on', 'prescriber_name' => 'required|string|max:255', 'prescriber_identifier' => 'required|string|max:100', 'source_reference' => 'required|string|max:255', 'controlled' => 'required|boolean']);
+        $d = $r->validate(['request_id' => 'required|uuid', 'case_id' => 'required|integer', 'patient_id' => 'nullable|integer|required_without:pharmacy_patient_id|prohibits:pharmacy_patient_id', 'pharmacy_patient_id' => 'nullable|integer|required_without:patient_id|prohibits:patient_id', 'location_id' => 'required|integer', 'quantity_unit' => 'required|in:tablet,capsule,mL,g,each', 'compounded' => 'required|boolean', 'rx_number' => 'required|string|max:100', 'medication' => 'required|string|max:255', 'strength' => 'required|string|max:100', 'dosage_form' => 'required|string|max:100', 'directions' => 'required|string|max:2000', 'quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'refills_authorized' => 'required|integer|min:0|max:99', 'written_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'expires_on' => 'required|date_format:Y-m-d|after_or_equal:written_on', 'prescriber_name' => 'required|string|max:255', 'prescriber_identifier' => 'required|string|max:100', 'source_reference' => 'required|string|max:255', 'controlled' => 'required|boolean']);
         $org = $this->org($r);
         $id = DB::transaction(function () use ($r, $d, $org) {
+            app(PharmacyAccess::class)->requireLocation($r->user(), $d['location_id']);
             // Serialize intake for an organization, including duplicate request keys.
             DB::table('organizations')->where('id', $org)->lockForUpdate()->first();
             $old = DB::table('pharmacy_prescriptions')->where('organization_id', $org)->where('request_id', $d['request_id'])->first();
@@ -148,7 +157,12 @@ class PharmacyController extends Controller
             }
             abort_unless(DB::table('pharmacy_locations')->where('organization_id', $org)->where('id', $d['location_id'])->where('active', true)->exists(), 404);
             $case = CaseModel::where('organization_id', $org)->findOrFail($d['case_id']);
+            if (!empty($d['pharmacy_patient_id'])) {
+                abort_unless(DB::table('pharmacy_patients as p')->join('pharmacy_patient_locations as pl', 'pl.patient_id', '=', 'p.id')
+                    ->where('p.organization_id', $org)->where('p.id', $d['pharmacy_patient_id'])->where('pl.location_id', $d['location_id'])->exists(), 404);
+            } else {
             abort_unless(DB::table('case_parties')->join('users', 'users.id', '=', 'case_parties.user_id')->where('case_parties.case_id', $case->id)->where('users.id', $d['patient_id'])->where('users.role', 'client')->where('users.organization_id', $org)->exists(), 404);
+            }
             if (! $case->accident_date) {
                 $this->fail('The linked case needs its accident date before pharmacy intake.');
             }
@@ -158,10 +172,11 @@ class PharmacyController extends Controller
             if (DB::table('pharmacy_prescriptions')->where('organization_id', $org)->where('location_id', $d['location_id'])->where('rx_number', $d['rx_number'])->exists()) {
                 $this->fail('This prescription number already exists at this pharmacy location.');
             }
-            $ep = DB::table('pharmacy_episodes')->where(['organization_id' => $org, 'case_id' => $case->id, 'patient_id' => $d['patient_id']])->first();
-            $eid = $ep?->id ?? DB::table('pharmacy_episodes')->insertGetId(['organization_id' => $org, 'case_id' => $case->id, 'patient_id' => $d['patient_id'], 'created_at' => now(), 'updated_at' => now()]);
+            $episodeKeys = ['organization_id' => $org, 'case_id' => $case->id, 'patient_id' => $d['patient_id'] ?? null, 'pharmacy_patient_id' => $d['pharmacy_patient_id'] ?? null];
+            $ep = DB::table('pharmacy_episodes')->where($episodeKeys)->first();
+            $eid = $ep?->id ?? DB::table('pharmacy_episodes')->insertGetId($episodeKeys + ['created_at' => now(), 'updated_at' => now()]);
             $data = $d;
-            unset($data['case_id'],$data['patient_id']);
+            unset($data['case_id'],$data['patient_id'],$data['pharmacy_patient_id']);
             $id = DB::table('pharmacy_prescriptions')->insertGetId($data + ['organization_id' => $org, 'episode_id' => $eid, 'request_hash' => $this->hash($d), 'created_by' => $r->user()->id, 'created_at' => now(), 'updated_at' => now()]);
             $this->event($r, (object) ['id' => $id], 'prescription_received', ['source_reference' => $d['source_reference']]);
 
@@ -263,18 +278,28 @@ class PharmacyController extends Controller
                         if ($rx->controlled || $rx->compounded) {
                             $this->fail('Controlled and compounded dispensing is not enabled. Dedicated controls must be validated before approval.');
                         }
+                        if ($ep->pharmacy_patient_id) {
+                            $chart = DB::table('pharmacy_patients')->where('id', $ep->pharmacy_patient_id)->first();
+                            $clinical = $this->json($chart->clinical);
+                            if (empty($clinical['reviewed_on']) || ($clinical['allergies_status'] ?? 'unknown') === 'unknown' || ($clinical['medications_status'] ?? 'unknown') === 'unknown') {
+                                $this->fail('Complete the patient allergy and medication review before approving this fill.');
+                            }
+                        }
                         foreach (['identity', 'prescriber', 'therapy', 'product'] as $check) {
                             if (empty($d['checks'][$check])) {
                                 $this->fail('Complete each pharmacist review check.');
                             }
                         }
                     }
-                    $update = ['review_status' => $a === 'approve' ? 'approved' : 'held', 'review' => json_encode(['actor_id' => $r->user()->id, 'at' => now()->toIso8601String(), 'note' => $d['note'], 'checks' => $d['checks'] ?? []])];
+                    $update = ['review_status' => $a === 'approve' ? 'approved' : 'held', 'review' => json_encode(['actor_id' => $r->user()->id, 'at' => now()->toIso8601String(), 'note' => $d['note'], 'checks' => $d['checks'] ?? [], 'patient_version' => $chart->version ?? null])];
                 } elseif ($a === 'cancel') {
                     $update = ['fulfillment_status' => 'cancelled'];
                 } else {
                     if ($rx->controlled || $rx->compounded) {
                         $this->fail('Controlled and compounded dispensing is not enabled.');
+                    }
+                    if ($ep->pharmacy_patient_id && (int)($this->json($f->review)['patient_version'] ?? 0) !== (int) DB::table('pharmacy_patients')->where('id', $ep->pharmacy_patient_id)->value('version')) {
+                        $this->fail('The patient clinical record changed. A new pharmacist review is required; cancel a prepared fill and start again.');
                     }
                     if ($f->review_status !== 'approved') {
                         $this->fail('Pharmacist review is required.');

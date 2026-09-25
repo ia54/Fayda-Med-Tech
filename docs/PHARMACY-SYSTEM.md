@@ -18,6 +18,18 @@ Implemented in this branch:
 - Version checks, duplicate-request protection and action history. Operational records are not deleted on migration rollback.
 - Deterministic, source-referenced missing-information checks. No generative model connection and no patient data sent to an AI service.
 
+## September 25 patient and location access increment
+
+Implemented and request-tested:
+
+- Explicit, expiring staff-to-location assignments with administrator-only changes, version conflicts and retained reason/actor/history. No location grants are created automatically by the migration. Unassigned pharmacy staff see an empty worklist and cannot read or modify another location's prescriptions, stock or patient charts.
+- Organization-locked operational writes serialize assignment revocation with pharmacy changes. Failed writes roll back, including error responses rendered inside middleware.
+- Independent pharmacy patient records with record number, DOB, contact/identity evidence and location enrollment. No portal account is created. Existing case-linked portal patients are retained without automatic merging.
+- Pharmacist-maintained allergy, medication and clinical-history records with explicit unknown/none-reported/documented states and previous values retained. Technicians can register/view patients but cannot sign the clinical review; billers and administrators cannot open the clinical chart endpoint.
+- Prescription intake can select a pharmacy chart. New-chart fill approval requires a completed allergy/medication review, and subsequent clinical edits invalidate the recorded chart version at preparation/handover.
+
+This is a foundation, not a complete clinical record system: structured drug/allergen terminology, external clinical checks, identity corrections/merge review, authorized representatives, patient sharing across additional locations, prescription-to-case identity confirmation, licensure verification and legacy-record conversion remain required. Legacy case-linked patients retain the earlier manual review flow; they must be reconciled before a clinical launch. An entered license reference or staff assignment is not proof of professional licensure.
+
 ## Product structure
 
 Organization → licensed pharmacy location → authorized staff and stock.
