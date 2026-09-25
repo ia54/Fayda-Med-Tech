@@ -2,6 +2,10 @@
 
 Production has not been switched. A passing build is not release approval.
 
+## Compounding planning increment
+
+Formulation revisions and prescription-linked batch planning worksheets are implemented with independent pharmacist review, immutable source details, ingredient-source references, location restrictions and audit history. They do not implement ingredient inventory, manufacturing, BUD assignment, quality-result acceptance or finished-product release. See docs/PHARMACY-SYSTEM.md. This increment does not close the operational compounding launch gate. Local full regression passed 143 tests / 1,569 assertions; the final expanded pharmacy test run passed 12 tests / 246 assertions. All 3,104 role decisions and 27 protected pharmacy route declaration checks pass. Frontend type checking passes. Browser acceptance of the new compounding screens remains outstanding.
+
 ## September 25 verification
 
 Patient charts without portal accounts and explicit location assignments are implemented in the development branch. Local regression passes 140 tests / 1,500 assertions and 3,104 role decisions. Type checking and the optimized admin build pass (115 generated pages). Existing preview-only and controlled/compounded dispensing blocks remain enabled. See docs/PHARMACY-SYSTEM.md for limitations and required migration onboarding.
@@ -16,7 +20,7 @@ The owner confirmed on September 24 that pharmacy is the core product and FaydaM
 
 The first pharmacy foundation is a **synthetic-data development preview**, not operational pharmacy software. Its API is unavailable outside local/testing environments. Controlled and compounded final dispensing is blocked until the dedicated controls are built and validated. Patient clinical records, location-specific staff/licensure controls, clinical drug data, original-prescription storage, validated labels, compounding batches/calculations, controlled-substance rules/reporting, payer transport and recovery remain launch requirements.
 
-Current local evidence: 138 API tests / 1,451 assertions and 3,104 role decisions pass; the admin type check and optimized build pass with 113 generated pages. Chrome verified pharmacist MFA, two synthetic locations, stock receipt, prescription intake, reservation, pharmacist review, final-check attestation, handover, persistence after reload, and the stock change from 100 to 90 with zero remaining reservation. Pharmacy billing and negative permission/state cases have API-test coverage; this is not real-patient, real-drug, real-payer or regulatory acceptance. New pharmacy tests are included in the MySQL/MariaDB CI suite. This local-origin frontend artifact must not be deployed.
+Earlier foundation evidence: 138 API tests / 1,451 assertions and 3,104 role decisions pass; the admin type check and optimized build pass with 113 generated pages. Chrome verified pharmacist MFA, two synthetic locations, stock receipt, prescription intake, reservation, pharmacist review, final-check attestation, handover, persistence after reload, and the stock change from 100 to 90 with zero remaining reservation. Pharmacy billing and negative permission/state cases have API-test coverage; this is not real-patient, real-drug, real-payer or regulatory acceptance. New pharmacy tests are included in the MySQL/MariaDB CI suite. This local-origin frontend artifact must not be deployed.
 
 ## Dependency remediation
 

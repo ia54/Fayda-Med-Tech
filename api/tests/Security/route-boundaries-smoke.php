@@ -39,6 +39,6 @@ foreach (RouteInventory::$routes as $route) {
     $inventory[] = ['method' => $route->method, 'path' => $route->path, 'middleware' => $route->middleware, 'effective_roles' => $roles];
 }
 if ($checked < 20) throw new RuntimeException('Expected platform routes missing from inventory');
-if ($pharmacyChecked !== 19) throw new RuntimeException('Expected pharmacy routes missing from inventory');
+if ($pharmacyChecked !== 27) throw new RuntimeException('Expected pharmacy routes missing from inventory');
 if (in_array('--json', $argv, true)) echo json_encode($inventory, JSON_PRETTY_PRINT), "\n";
 else echo 'PASS: ' . $checked . ' platform-only and ' . $pharmacyChecked . ' protected pharmacy route declarations; inventoried ' . count($inventory) . " routes. Laravel request-level tests remain required.\n";

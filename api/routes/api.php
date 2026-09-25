@@ -59,6 +59,15 @@ Route::post('signatures/docusign/webhook', [SignatureController::class, 'docusig
 // Protected routes
 Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
     Route::middleware(['role:pharmacist,pharmacy_technician,medical_biller,admin', \App\Http\Middleware\PharmacyPreviewOnly::class, \App\Http\Middleware\PharmacyWriteTransaction::class])->prefix('pharmacy')->group(function () {
+        $compound = \App\Http\Controllers\API\PharmacyCompoundingController::class;
+        Route::get('/formulations', [$compound, 'formulas']);
+        Route::post('/formulations', [$compound, 'createFormula']);
+        Route::get('/formulations/{id}', [$compound, 'showFormula']);
+        Route::post('/formulations/{id}/review', [$compound, 'reviewFormula']);
+        Route::get('/batch-worksheets', [$compound, 'batches']);
+        Route::post('/batch-worksheets', [$compound, 'createBatch']);
+        Route::get('/batch-worksheets/{id}', [$compound, 'showBatch']);
+        Route::post('/batch-worksheets/{id}/review', [$compound, 'reviewBatch']);
         Route::get('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'index']);
         Route::post('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'store']);
         Route::get('/patients/{id}', [\App\Http\Controllers\API\PharmacyPatientController::class, 'show']);

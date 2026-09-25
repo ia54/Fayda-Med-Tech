@@ -48,9 +48,10 @@ class PharmacyWorkflowTest extends TestCase
 
     private function body(array $overrides = []): array
     {
-        if (!empty($overrides['compounded']) && !array_key_exists('compound_type', $overrides)) {
+        if (! empty($overrides['compounded']) && ! array_key_exists('compound_type', $overrides)) {
             $overrides['compound_type'] = 'nonsterile';
         }
+
         return array_replace(['request_id' => (string) Str::uuid(), 'location_id' => $this->location, 'case_id' => $this->case->id, 'patient_id' => $this->patient->id, 'rx_number' => 'SYN-'.Str::random(10), 'medication' => 'Synthetic medication', 'strength' => 'Synthetic strength', 'dosage_form' => 'tablet', 'directions' => 'Synthetic fixture only', 'quantity' => '10.000', 'quantity_unit' => 'tablet', 'refills_authorized' => 1, 'written_on' => now()->subDay()->toDateString(), 'expires_on' => now()->addMonth()->toDateString(), 'prescriber_name' => 'Synthetic prescriber', 'prescriber_identifier' => 'NOT VALID', 'source_reference' => 'synthetic fixture', 'controlled' => false, 'compounded' => false], $overrides);
     }
 
@@ -226,20 +227,21 @@ class PharmacyWorkflowTest extends TestCase
         $this->postJson("/api/pharmacy/prescriptions/$second/fills", $this->fillBody($wrongUnit))->assertUnprocessable();
         $this->postJson("/api/pharmacy/prescriptions/$second/fills", $this->fillBody($lot, ['ndc' => '11111-1111-11']))->assertUnprocessable();
         $expired = $this->rx(['expires_on' => now()->subDay()->toDateString()]);
-        $this->postJson("/api/pharmacy/prescriptions/$expired/fills",$this->fillBody($lot))->assertUnprocessable();
+        $this->postJson("/api/pharmacy/prescriptions/$expired/fills", $this->fillBody($lot))->assertUnprocessable();
     }
 
     public function test_preview_is_unavailable_in_production_and_firm_admin_cannot_grant_pharmacy_role(): void
     {
         $this->actor->role = 'firm_admin';
-        $this->postJson('/api/admin/users',['first_name' => 'Synthetic', 'last_name' => 'Denied', 'email' => 'blocked@example.invalid', 'password' => 'Synthetic-password-123!', 'role' => 'pharmacist'])->assertForbidden();
-        $this->assertDatabaseMissing('users',['email' => 'blocked@example.invalid']);
+        $this->postJson('/api/admin/users', ['first_name' => 'Synthetic', 'last_name' => 'Denied', 'email' => 'blocked@example.invalid', 'password' => 'Synthetic-password-123!', 'role' => 'pharmacist'])->assertForbidden();
+        $this->assertDatabaseMissing('users', ['email' => 'blocked@example.invalid']);
         $this->actor->role = 'pharmacist';
-        $this->app->instance('env','production');
+        $this->app->instance('env', 'production');
         $this->getJson('/api/pharmacy/prescriptions')->assertStatus(503);
-        $this->postJson('/api/pharmacy/prescriptions',$this->body())->assertStatus(503);
-        $this->assertSame(0,DB::table('pharmacy_prescriptions')->count());
+        $this->postJson('/api/pharmacy/prescriptions', $this->body())->assertStatus(503);
+        $this->assertSame(0, DB::table('pharmacy_prescriptions')->count());
     }
+
     public function test_location_assignments_fail_closed_and_revocation_removes_existing_access(): void
     {
         $rx = $this->rx();
@@ -319,4 +321,112 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
     }
 
+    private function formulationBody(array $overrides = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'code' => 'SYN-NOT-FOR-USE', 'name' => 'Synthetic formulation NOT FOR USE',
+            'preparation_type' => 'nonsterile', 'hazardous' => false, 'strength' => 'Synthetic only', 'dosage_form' => 'tablet',
+            'output_quantity' => '10.000', 'output_unit' => 'tablet', 'source_reference' => 'SYNTHETIC', 'method' => 'Not a manufacturing instruction',
+            'quality_checks' => 'Synthetic review', 'storage' => 'Synthetic only', 'bud_basis' => 'No clinical BUD assigned',
+            'ingredients' => [['key' => 'A', 'name' => 'Synthetic ingredient', 'quantity' => '2.000', 'unit' => 'g', 'specification' => 'NOT FOR USE']]], $overrides);
+    }
+
+    private function independentReviewer(): User
+    {
+        $u = User::create(['first_name' => 'Synthetic', 'last_name' => 'Reviewer', 'email' => Str::uuid().'@example.invalid', 'password' => 'synthetic-only', 'role' => 'pharmacist', 'organization_id' => 1, 'status' => 'active']);
+        $u->withAccessToken(new Token(['expires_at' => now()->addHour()]));
+        DB::table('pharmacy_staff_assignments')->insert(['location_id' => $this->location, 'user_id' => $u->id, 'active' => true, 'valid_until' => now()->addYear()->toDateString()]);
+
+        return $u;
+    }
+
+    public function test_compounding_records_require_independent_review_and_never_release_stock(): void
+    {
+        Http::preventStrayRequests();
+        $body = $this->formulationBody();
+        $f = $this->postJson('/api/pharmacy/formulations', $body)->assertCreated()->json('data.id');
+        $this->postJson('/api/pharmacy/formulations', $body)->assertOk()->assertJsonPath('data.id', $f);
+        $this->postJson('/api/pharmacy/formulations', array_replace($body, ['method' => 'Changed']))->assertStatus(409);
+        $review = ['version' => 1, 'action' => 'review', 'evidence' => 'Synthetic independent review'];
+        $this->postJson("/api/pharmacy/formulations/$f/review", $review)->assertStatus(422);
+        $reviewer = $this->independentReviewer();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/formulations/$f/review", $review)->assertOk()->assertJsonPath('data.status', 'reviewed');
+        $this->postJson("/api/pharmacy/formulations/$f/review", $review)->assertStatus(409);
+        $this->actingAs($this->actor, 'api');
+        $rx = $this->rx(['compounded' => true]);
+        $lot = $this->lot();
+        $batch = ['request_id' => (string) Str::uuid(), 'prescription_id' => $rx, 'formulation_id' => $f, 'batch_number' => 'SYN-ONLY',
+            'planned_on' => now()->toDateString(), 'calculation_reference' => 'Synthetic', 'prescription_match_reference' => 'Synthetic', 'site_process_reference' => 'Synthetic',
+            'ingredients' => [['key' => 'A', 'supplier' => 'Synthetic', 'lot' => 'SYN', 'expires_on' => now()->addMonth()->toDateString(), 'quantity' => '2.000', 'unit' => 'g', 'certificate_reference' => 'NOT VALID']]];
+        $b = $this->postJson('/api/pharmacy/batch-worksheets', $batch)->assertCreated()->assertJsonPath('data.production_release_enabled', false)->json('data.id');
+        $this->postJson('/api/pharmacy/batch-worksheets', $batch)->assertOk()->assertJsonPath('data.id', $b);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/review", $review)->assertStatus(422);
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/review", $review)->assertOk()->assertJsonPath('data.status', 'reviewed')->assertJsonPath('data.production_release_enabled', false);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/review", array_replace($review, ['version' => 2]))->assertStatus(422);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->assertSame(0, DB::table('pharmacy_fills')->count());
+        $this->getJson("/api/pharmacy/formulations/$f")->assertOk()->assertJsonCount(2, 'data.events');
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson("/api/pharmacy/batch-worksheets/$b")->assertForbidden();
+        Http::assertNothingSent();
+    }
+
+    public function test_compounding_validation_and_scope_fail_closed(): void
+    {
+        $this->postJson('/api/pharmacy/formulations', $this->formulationBody(['preparation_type' => 'sterile']))->assertUnprocessable()->assertJsonValidationErrors('aseptic_process');
+        $this->postJson('/api/pharmacy/formulations', $this->formulationBody(['hazardous' => true]))->assertUnprocessable()->assertJsonValidationErrors('hazard_controls');
+        $this->actor->role = 'pharmacy_technician';
+        $this->postJson('/api/pharmacy/formulations', $this->formulationBody())->assertForbidden();
+        $this->actor->role = 'pharmacist';
+        $f = $this->postJson('/api/pharmacy/formulations', $this->formulationBody())->assertCreated()->json('data.id');
+        $rx = $this->rx(['compounded' => true]);
+        $batch = ['request_id' => (string) Str::uuid(), 'prescription_id' => $rx, 'formulation_id' => $f, 'batch_number' => 'SYN-ONLY', 'planned_on' => now()->toDateString(),
+            'calculation_reference' => 'Synthetic', 'prescription_match_reference' => 'Synthetic', 'site_process_reference' => 'Synthetic',
+            'ingredients' => [['key' => 'A', 'supplier' => 'Synthetic', 'lot' => 'SYN', 'expires_on' => now()->addMonth()->toDateString(), 'quantity' => '2.000', 'unit' => 'g', 'certificate_reference' => 'NOT VALID']]];
+        $this->postJson('/api/pharmacy/batch-worksheets', $batch)->assertUnprocessable();
+        $reviewer = $this->independentReviewer();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/formulations/$f/review", ['version' => 1, 'action' => 'review', 'evidence' => 'Synthetic'])->assertOk();
+        $this->actingAs($this->actor, 'api');
+        $wrong = $batch;
+        $wrong['ingredients'][0]['quantity'] = '2.001';
+        $this->postJson('/api/pharmacy/batch-worksheets', $wrong)->assertUnprocessable();
+        $wrong = $batch;
+        $wrong['ingredients'][0]['unit'] = 'mg';
+        $this->postJson('/api/pharmacy/batch-worksheets', $wrong)->assertUnprocessable();
+        $wrong = $batch;
+        $wrong['ingredients'][0]['expires_on'] = now()->subDay()->toDateString();
+        $this->postJson('/api/pharmacy/batch-worksheets', $wrong)->assertUnprocessable();
+        $wrong = $batch;
+        $wrong['prescription_id'] = $this->rx(['compounded' => true, 'compound_type' => 'sterile']);
+        $this->postJson('/api/pharmacy/batch-worksheets', $wrong)->assertUnprocessable();
+        $wrong = $batch;
+        $wrong['prescription_id'] = $this->rx(['compounded' => true, 'quantity' => '11.000']);
+        $this->postJson('/api/pharmacy/batch-worksheets', $wrong)->assertUnprocessable();
+        $b = $this->postJson('/api/pharmacy/batch-worksheets', $batch)->assertCreated()->json('data.id');
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson("/api/pharmacy/batch-worksheets/$b")->assertNotFound();
+        $this->postJson('/api/pharmacy/batch-worksheets', $batch)->assertNotFound();
+        $this->getJson('/api/pharmacy/batch-worksheets')->assertOk()->assertJsonPath('data.total', 0);
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/formulations/$f/review", ['version' => 2, 'action' => 'retire', 'evidence' => 'Synthetic retirement'])->assertOk();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/review", ['version' => 1, 'action' => 'review', 'evidence' => 'Synthetic'])->assertUnprocessable();
+        $retry = $batch;
+        $retry['request_id'] = (string) Str::uuid();
+        $retry['batch_number'] = 'SYN-RETIRED';
+        $this->postJson('/api/pharmacy/batch-worksheets', $retry)->assertUnprocessable();
+        $revision = $this->postJson('/api/pharmacy/formulations', $this->formulationBody(['preparation_type' => 'sterile', 'aseptic_process' => 'SYNTHETIC NOT FOR USE', 'hazardous' => true, 'hazard_controls' => 'SYNTHETIC NOT FOR USE']))->assertCreated();
+        $revision->assertJsonPath('data.revision', 2)->assertJsonPath('data.status', 'draft');
+        $this->assertSame(1, DB::table('pharmacy_batch_worksheets')->count());
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('batch_id', $b)->count());
+        $reviewer->organization_id = 2;
+        $this->getJson("/api/pharmacy/formulations/$f")->assertForbidden();
+        $foreign = DB::table('pharmacy_locations')->insertGetId(['organization_id' => 2, 'name' => 'Other tenant synthetic', 'address' => 'NOT REAL', 'license_reference' => 'NOT VALID']);
+        DB::table('pharmacy_staff_assignments')->insert(['location_id' => $foreign, 'user_id' => $reviewer->id, 'active' => true, 'valid_until' => now()->addYear()->toDateString()]);
+        $this->getJson("/api/pharmacy/formulations/$f")->assertNotFound();
+        $this->getJson("/api/pharmacy/batch-worksheets/$b")->assertNotFound();
+        $this->getJson('/api/pharmacy/formulations')->assertOk()->assertJsonPath('data.total', 0);
+    }
 }
