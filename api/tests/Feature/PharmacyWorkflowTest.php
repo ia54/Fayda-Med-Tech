@@ -48,6 +48,9 @@ class PharmacyWorkflowTest extends TestCase
 
     private function body(array $overrides = []): array
     {
+        if (!empty($overrides['compounded']) && !array_key_exists('compound_type', $overrides)) {
+            $overrides['compound_type'] = 'nonsterile';
+        }
         return array_replace(['request_id' => (string) Str::uuid(), 'location_id' => $this->location, 'case_id' => $this->case->id, 'patient_id' => $this->patient->id, 'rx_number' => 'SYN-'.Str::random(10), 'medication' => 'Synthetic medication', 'strength' => 'Synthetic strength', 'dosage_form' => 'tablet', 'directions' => 'Synthetic fixture only', 'quantity' => '10.000', 'quantity_unit' => 'tablet', 'refills_authorized' => 1, 'written_on' => now()->subDay()->toDateString(), 'expires_on' => now()->addMonth()->toDateString(), 'prescriber_name' => 'Synthetic prescriber', 'prescriber_identifier' => 'NOT VALID', 'source_reference' => 'synthetic fixture', 'controlled' => false, 'compounded' => false], $overrides);
     }
 
@@ -299,6 +302,21 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson("/api/pharmacy/patients/{$p['id']}")->assertNotFound();
         $this->getJson('/api/pharmacy/patients')->assertOk()->assertJsonPath('data.total', 0);
         $this->assertSame(3, DB::table('pharmacy_patient_events')->count());
+    }
+
+    public function test_compounded_intake_requires_explicit_sterility_without_enabling_dispensing(): void
+    {
+        $this->postJson('/api/pharmacy/prescriptions', $this->body(['compounded' => true, 'compound_type' => null]))->assertUnprocessable();
+        $this->postJson('/api/pharmacy/prescriptions', $this->body(['compounded' => false, 'compound_type' => 'sterile']))->assertUnprocessable();
+        $this->postJson('/api/pharmacy/prescriptions', $this->body(['compounded' => true, 'compound_type' => 'unknown']))->assertUnprocessable();
+        foreach (['sterile', 'nonsterile'] as $type) {
+            $rx = $this->rx(['compounded' => true, 'compound_type' => $type]);
+            $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.compound_type', $type);
+            $f = $this->fill($rx, $this->lot());
+            $this->act($rx, $f, 'approve', $this->checks(), 422);
+        }
+        $this->assertSame(2, DB::table('pharmacy_prescriptions')->count());
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
     }
 
 }

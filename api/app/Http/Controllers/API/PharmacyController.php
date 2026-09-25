@@ -106,7 +106,7 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('rx.id', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw("COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name")->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
+        return response()->json(['data' => $q->select('rx.id', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw("COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name")->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
     }
 
     public function show(Request $r, $id)
@@ -143,7 +143,7 @@ class PharmacyController extends Controller
     public function store(Request $r)
     {
         $this->allow($r, ['pharmacist', 'pharmacy_technician']);
-        $d = $r->validate(['request_id' => 'required|uuid', 'case_id' => 'required|integer', 'patient_id' => 'nullable|integer|required_without:pharmacy_patient_id|prohibits:pharmacy_patient_id', 'pharmacy_patient_id' => 'nullable|integer|required_without:patient_id|prohibits:patient_id', 'location_id' => 'required|integer', 'quantity_unit' => 'required|in:tablet,capsule,mL,g,each', 'compounded' => 'required|boolean', 'rx_number' => 'required|string|max:100', 'medication' => 'required|string|max:255', 'strength' => 'required|string|max:100', 'dosage_form' => 'required|string|max:100', 'directions' => 'required|string|max:2000', 'quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'refills_authorized' => 'required|integer|min:0|max:99', 'written_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'expires_on' => 'required|date_format:Y-m-d|after_or_equal:written_on', 'prescriber_name' => 'required|string|max:255', 'prescriber_identifier' => 'required|string|max:100', 'source_reference' => 'required|string|max:255', 'controlled' => 'required|boolean']);
+        $d = $r->validate(['request_id' => 'required|uuid', 'case_id' => 'required|integer', 'patient_id' => 'nullable|integer|required_without:pharmacy_patient_id|prohibits:pharmacy_patient_id', 'pharmacy_patient_id' => 'nullable|integer|required_without:patient_id|prohibits:patient_id', 'location_id' => 'required|integer', 'quantity_unit' => 'required|in:tablet,capsule,mL,g,each', 'compounded' => 'required|boolean', 'compound_type' => 'nullable|required_if:compounded,true|in:sterile,nonsterile|prohibited_if:compounded,false', 'rx_number' => 'required|string|max:100', 'medication' => 'required|string|max:255', 'strength' => 'required|string|max:100', 'dosage_form' => 'required|string|max:100', 'directions' => 'required|string|max:2000', 'quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'refills_authorized' => 'required|integer|min:0|max:99', 'written_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'expires_on' => 'required|date_format:Y-m-d|after_or_equal:written_on', 'prescriber_name' => 'required|string|max:255', 'prescriber_identifier' => 'required|string|max:100', 'source_reference' => 'required|string|max:255', 'controlled' => 'required|boolean']);
         $org = $this->org($r);
         $id = DB::transaction(function () use ($r, $d, $org) {
             app(PharmacyAccess::class)->requireLocation($r->user(), $d['location_id']);
@@ -389,6 +389,9 @@ class PharmacyController extends Controller
         $rx = $this->rx($r, $id);
         $ep = DB::table('pharmacy_episodes')->where('id', $rx->episode_id)->first();
         $checks = [];
+        if ($rx->compounded && !$rx->compound_type) {
+            $checks[] = ['message' => 'This older compounded prescription has no verified sterile/nonsterile classification. Resolve it before production planning.', 'source' => 'prescription:'.$rx->id];
+        }
         if ($rx->controlled || $rx->compounded) {
             $checks[] = ['message' => 'Dedicated controlled-substance and compounding controls are required before dispensing can be enabled.', 'source' => 'prescription:'.$rx->id];
         }

@@ -1,6 +1,6 @@
 # FaydaMedTech internal pharmacy system
 
-Decision recorded September 24, 2026. Pharmacy is the core product, not an optional provider portal. Build the pharmacy-management and dispensing system inside FaydaMedTech. Support multiple potential pharmacy locations, controlled substances, and compounded preparations. The owner will confirm an AI account, most likely GLM; no account, endpoint, contractual approval or patient-data processing has been verified.
+Decision recorded September 24, 2026. Pharmacy is the core product, not an optional provider portal. Build the pharmacy-management and dispensing system inside FaydaMedTech. Support multiple potential pharmacy locations, controlled substances, and compounded preparations. On September 25 the owner confirmed BOTH sterile and nonsterile compounding. The owner will confirm an AI account, most likely GLM; no account, endpoint, contractual approval or patient-data processing has been verified.
 
 ## Current implementation boundary
 
@@ -9,7 +9,7 @@ Decision recorded September 24, 2026. Pharmacy is the core product, not an optio
 Implemented in this branch:
 
 - Dedicated pharmacist and pharmacy-technician roles; pharmacist-only clinical approval/final verification, biller-only invoice preparation. Platform administration does not imply pharmacist authority. Only platform administrators can grant pharmacy roles.
-- Locations belonging to an organization, with address and license reference. A stored reference is not verified licensure. Staff location assignments and verified credentials are still outstanding.
+- Locations belonging to an organization, with address and license reference. A stored reference is not verified licensure. Explicit staff location assignments are implemented; verified professional credentials remain outstanding.
 - Accident/patient-linked prescription intake, source reference, directions, quantity/unit, expiration, authorized refill count, controlled and compounded classifications.
 - Separate coverage, clinical review, fulfillment and billing states. Coverage verification is not dispensing permission or a promise of payment.
 - Location-specific stock receipts, lot/expiration tracking, reservations, quarantine and exact fractional quantity accounting. Stock is deducted once at handover; cancellation releases its reservation. Availability and expiration are checked again at final preparation and handover.
@@ -30,6 +30,16 @@ Implemented and request-tested:
 
 This is a foundation, not a complete clinical record system: structured drug/allergen terminology, external clinical checks, identity corrections/merge review, authorized representatives, patient sharing across additional locations, prescription-to-case identity confirmation, licensure verification and legacy-record conversion remain required. Legacy case-linked patients retain the earlier manual review flow; they must be reconciled before a clinical launch. An entered license reference or staff assignment is not proof of professional licensure.
 
+## Sterile and nonsterile implementation scope — September 25
+
+Both are required. New compounded intake must explicitly identify sterile or nonsterile preparation; contradictory or missing classifications are rejected. Existing records remain unclassified rather than receiving an invented default. Both types remain blocked from final dispensing.
+
+Next shared implementation: immutable approved formulation versions; ingredient identities, supplier lots, expiry, potency and units; calculation evidence; a patient/prescription-linked batch record; preparer and checker attribution; quarantine, rejection and recall traceability. An AI suggestion must remain a proposal until reviewed.
+
+Keep separate production pathways. The sterile pathway needs site-specific aseptic process, personnel/environment/equipment qualification, monitoring and applicable test/release evidence. The nonsterile pathway needs its applicable preparation, equipment, cleaning and quality-control evidence. Hazardous handling is a separate classification that can apply to either. Do not infer beyond-use dates or clinical calculations from a general template. Obtain pharmacy-approved standards, formula references and source-backed rationale before enabling production release.
+
+This change implements intake classification only. Formula, ingredient and batch workflows above are still outstanding; no regulatory or production readiness is claimed.
+
 ## Product structure
 
 Organization → licensed pharmacy location → authorized staff and stock.
@@ -38,7 +48,7 @@ Patient → accident/PIP episode → prescription → fill → reserved stock �
 
 Compounding adds a versioned formulation and a production batch between prescription and fill. Controlled-substance handling adds schedule-specific rules, custody, reporting and reconciliation. A prescription can require both sets of controls.
 
-The current intake links existing case-party/client records. A true pharmacy patient record must become its own entity; patients must not need portal login accounts to receive care. Keep a stable link to existing case/client identifiers rather than merging patients by email.
+Intake supports independent pharmacy patient charts and the legacy case-party/client path. Patients using a pharmacy chart do not require a portal login. Keep a stable link to existing case/client identifiers rather than merging patients by email.
 
 ## Required work before pharmacy operational launch
 
@@ -60,7 +70,7 @@ The current intake links existing case-party/client records. A true pharmacy pat
 
 Do not implement a generic refill count as the full rule engine. A Boolean flag is only an intake classification; schedule, prescription origin, timing, partial-fill circumstances and applicable rules are required for operational decisions. MAPS lookup and dispensing-data submission are separate integrations. A manually entered confirmation is evidence supplied by staff, not verified delivery.
 
-Do not treat a compounded preparation as a product with one NDC. Ingredient-level records, formula versions and batch provenance must be represented explicitly. Sterile/nonsterile and hazardous preparation requirements determine the production controls. The owner has confirmed both controlled substances and compounding; the responsible pharmacist must identify the actual service types and validate procedures.
+Do not treat a compounded preparation as a product with one NDC. Ingredient-level records, formula versions and batch provenance must be represented explicitly. Sterile/nonsterile and hazardous preparation requirements determine the production controls. The owner has confirmed both controlled substances and compounding; both sterile and nonsterile preparation types are confirmed. The responsible pharmacist must still identify hazardous handling, actual formulas and site capabilities, and validate procedures.
 
 Reference starting points, retrieved September 24, 2026:
 
@@ -83,6 +93,6 @@ AI must not independently issue a prescription, approve a fill, calculate an unr
 
 No production pharmacy launch is authorized by passing a build. Complete the operational requirements above and verify integrations and recovery before replacing a pharmacy's existing processes. Preserve the owner's three-domain scope and existing ports. Record payments only.
 
-Still needed from pharmacy operations: location roster and credentials; controlled schedules; sterile/nonsterile/hazardous compounding scope and formulas; stock catalogue and unit conventions; target payers/e-prescribing/reporting arrangements. These do not prevent building the shared foundation.
+Still needed from pharmacy operations: location roster and credentials; controlled schedules; hazardous preparation scope, sterile service categories and actual formulas; stock catalogue and unit conventions; target payers/e-prescribing/reporting arrangements. These do not prevent building the shared foundation.
 
 Still needed for AI: confirmed provider account and hosting/processing approval. Do not assume a GLM model name establishes suitable patient-data handling.
