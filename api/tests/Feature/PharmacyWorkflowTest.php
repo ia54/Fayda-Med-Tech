@@ -528,4 +528,92 @@ class PharmacyWorkflowTest extends TestCase
         $this->travelBack();
         $this->assertSame(0, DB::table('pharmacy_ingredient_allocations')->count());
     }
+
+    private function reservedWorksheet(bool $two = false): array
+    {
+        $b = $this->reviewedWorksheet($two);
+        $lot = $this->postJson('/api/pharmacy/ingredient-lots', $this->ingredientReceipt())->assertCreated()->json('data.id');
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/status", ['version' => 1, 'status' => 'available', 'evidence' => 'Synthetic'])->assertOk();
+        $lots = [['key' => 'A', 'lot_id' => $lot]];
+        if ($two) {
+            $lots[] = ['key' => 'B', 'lot_id' => $lot];
+        }
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/allocation", ['version' => 2, 'action' => 'reserve', 'evidence' => 'Synthetic', 'lots' => $lots])->assertOk();
+
+        return [$b, $lot];
+    }
+
+    private function executionBody(bool $two = false): array
+    {
+        $ingredients = [['key' => 'A', 'quantity' => '2.000', 'unit' => 'g', 'measurement_reference' => 'SYNTHETIC ONLY']];
+        if ($two) {
+            $ingredients[] = array_replace($ingredients[0], ['key' => 'B']);
+        }
+
+        return ['version' => 3, 'prepared_on' => now()->toDateString(), 'personnel_reference' => 'SYNTHETIC ONLY', 'equipment_reference' => 'SYNTHETIC ONLY',
+            'process_record_reference' => 'SYNTHETIC ONLY', 'quality_results_reference' => 'SYNTHETIC ONLY', 'yield_quantity' => '9.000', 'yield_unit' => 'tablet',
+            'deviations' => 'SYNTHETIC yield difference, quarantined; not for use', 'ingredients' => $ingredients];
+    }
+
+    public function test_execution_consumes_reserved_ingredients_once_and_never_releases_product(): void
+    {
+        [$b,$lot] = $this->reservedWorksheet();
+        $body = $this->executionBody();
+        $this->actor->role = 'pharmacy_technician';
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertForbidden();
+        $this->actor->role = 'pharmacist';
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertCreated()->assertJsonPath('data.output_status', 'quarantined')->assertJsonPath('data.allocations.0.status', 'consumed')->assertJsonPath('data.production_release_enabled', false);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertStatus(409);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", array_replace($body, ['version' => 4]))->assertStatus(409);
+        $this->assertEquals(3, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(0, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('reserved'));
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/allocation", ['version' => 4, 'action' => 'release', 'evidence' => 'Synthetic'])->assertUnprocessable();
+        $review = ['version' => 1, 'decision' => 'document_reviewed', 'evidence' => 'Synthetic document review, not product release'];
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution/review", $review)->assertUnprocessable();
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution/review", $review)->assertOk()->assertJsonPath('data.execution.status', 'document_reviewed')->assertJsonPath('data.output_status', 'quarantined')->assertJsonPath('data.production_release_enabled', false);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution/review", $review)->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'consumed_in_preparation')->count());
+        $this->assertSame(1, DB::table('pharmacy_batch_executions')->count());
+        $this->assertSame(0, DB::table('pharmacy_stock_lots')->count());
+        $this->assertSame(0, DB::table('pharmacy_fills')->count());
+    }
+
+    public function test_execution_rechecks_custody_and_rolls_back_partial_consumption(): void
+    {
+        [$b,$lot] = $this->reservedWorksheet(true);
+        $body = $this->executionBody(true);
+        $body['ingredients'][1]['quantity'] = '1.999';
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertUnprocessable();
+        $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(4, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('reserved'));
+        $this->assertSame(0, DB::table('pharmacy_ingredient_events')->where('action', 'consumed_in_preparation')->count());
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+        $body = $this->executionBody(true);
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/status", ['version' => 4, 'status' => 'quarantined', 'evidence' => 'Synthetic hold'])->assertOk();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertUnprocessable();
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['status' => 'available', 'expires_on' => now()->subDay()->toDateString()]);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertUnprocessable();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertNotFound();
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+    }
+
+    public function test_execution_requires_sterile_and_hazard_evidence_and_current_review(): void
+    {
+        [$b,$lot] = $this->reservedWorksheet();
+        $body = $this->executionBody();
+        $f = DB::table('pharmacy_batch_worksheets')->where('id', $b)->value('formulation_id');
+        DB::table('pharmacy_formulations')->where('id', $f)->update(['preparation_type' => 'sterile', 'hazardous' => true]);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertUnprocessable();
+        $body['environment_reference'] = 'SYNTHETIC ONLY';
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertUnprocessable();
+        $body['hazard_control_reference'] = 'SYNTHETIC ONLY';
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", array_replace($body, ['yield_unit' => 'g']))->assertUnprocessable();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", array_replace($body, ['yield_quantity' => '11.000']))->assertUnprocessable();
+        DB::table('pharmacy_formulations')->where('id', $f)->update(['status' => 'retired']);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $body)->assertUnprocessable();
+        $this->assertEquals(5,DB::table('pharmacy_ingredient_lots')->where('id',$lot)->value('on_hand'));
+        $this->assertSame(0,DB::table('pharmacy_batch_executions')->count());
+    }
 }

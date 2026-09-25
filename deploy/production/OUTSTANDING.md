@@ -10,6 +10,10 @@ Formulation revisions and prescription-linked batch planning worksheets are impl
 
 Ingredient receiving, quarantine/availability review, exact location-scoped worksheet reservation and full reservation release are implemented. Quantities use fixed precision. Failed multi-line allocation rolls back all stock, allocation and event changes; review/allocation use version conflicts and serialized organization writes. Full local regression passes 146 tests / 1,641 assertions; final focused pharmacy regression passes 15 tests / 310 assertions; route checks cover 32 protected pharmacy declarations. This does not provide manufacturing consumption, stock adjustments/transfers, quality-result approval, recalls or final release. New inventory/reservation UI requires fresh Chrome acceptance.
 
+## Executed preparation increment
+
+Exact-quantity synthetic execution records now deduct reserved ingredients atomically, retain measurement/personnel/equipment/process/quality references and support independent document review or rejection. Output remains quarantined under every decision. No finished-product inventory, BUD, label or dispensing release is created. Full local regression passes 149 tests / 1,704 assertions; focused pharmacy tests pass 18 tests / 371 assertions; declaration checks cover 34 pharmacy routes. Operational blockers still include deviation reconciliation, execution corrections/addenda, actual test-result acceptance, losses/destruction, controlled adjustments, site credential/process validation, BUD assignment and product release. This preview only supports same-day exact quantities, not a general manufacturing workflow.
+
 ## September 25 verification
 
 Patient charts without portal accounts and explicit location assignments are implemented in the development branch. Local regression passes 140 tests / 1,500 assertions and 3,104 role decisions. Type checking and the optimized admin build pass (115 generated pages). Existing preview-only and controlled/compounded dispensing blocks remain enabled. See docs/PHARMACY-SYSTEM.md for limitations and required migration onboarding.

@@ -141,6 +141,9 @@ class PharmacyCompoundingController extends Controller
             ->join('pharmacy_ingredient_lots as l', 'l.id', '=', 'a.ingredient_lot_id')
             ->where('a.batch_id', $id)
             ->select('a.*', 'l.status as lot_status', 'l.expires_on as lot_expires_on', 'l.lot_number', 'l.quantity_unit')->get();
+        $b->execution = DB::table('pharmacy_batch_executions')->where('batch_id', $id)->first();
+        if ($b->execution) { $b->execution->record = json_decode($b->execution->record, true, 512, JSON_THROW_ON_ERROR); }
+        $b->output_status = $b->execution ? 'quarantined' : 'not_prepared';
         $b->production_release_enabled = false;
 
         return response()->json(['data' => $b]);
