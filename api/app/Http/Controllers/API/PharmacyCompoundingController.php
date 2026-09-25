@@ -137,6 +137,10 @@ class PharmacyCompoundingController extends Controller
         $b->formula = $this->formula($r, $b->formulation_id);
         unset($b->formula->request_hash,$b->formula->request_id);
         $b->events = DB::table('pharmacy_compounding_events')->where('batch_id', $id)->orderByDesc('id')->limit(100)->get();
+        $b->allocations = DB::table('pharmacy_ingredient_allocations as a')
+            ->join('pharmacy_ingredient_lots as l', 'l.id', '=', 'a.ingredient_lot_id')
+            ->where('a.batch_id', $id)
+            ->select('a.*', 'l.status as lot_status', 'l.expires_on as lot_expires_on', 'l.lot_number', 'l.quantity_unit')->get();
         $b->production_release_enabled = false;
 
         return response()->json(['data' => $b]);
