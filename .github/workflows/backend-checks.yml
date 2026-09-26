@@ -1,0 +1,116 @@
+name: Backend checks
+
+on:
+  push:
+    # Development branches are verified by pull_request; avoid duplicate runs.
+    branches: [main]
+    paths: ['api/**', '.github/workflows/backend-checks.yml']
+  pull_request:
+    paths: ['api/**', '.github/workflows/backend-checks.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: PHP 8.3 regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, pdo_sqlite, curl, zip, bcmath, intl, sodium
+          coverage: none
+          tools: composer:v2
+      - run: composer validate --no-check-publish --no-interaction
+      - run: composer audit --locked --abandoned=report --no-interaction
+      - run: composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins
+      - run: php vendor/bin/phpunit --colors=never --testdox
+      - name: Declaration regression checks
+        run: |
+          php tests/Security/role-access-smoke.php
+          php tests/Security/route-boundaries-smoke.php
+          php tests/Security/cors-config-smoke.php
+
+  mysql-schema:
+    name: ${{ matrix.database.name }} schema, finance and recovery
+    strategy:
+      fail-fast: false
+      matrix:
+        database:
+          - { name: MySQL 8, image: 'mysql:8.0' }
+          - { name: MariaDB 10.11, image: 'mariadb:10.11' }
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: ${{ matrix.database.image }}
+        env:
+          MYSQL_DATABASE: faydamed_ci
+          MYSQL_ROOT_PASSWORD: ci-only-disposable
+          MARIADB_ROOT_PASSWORD: ci-only-disposable
+        ports:
+          - 3306:3306
+        # Ephemeral test data only; retain fsync/transaction semantics on tmpfs.
+        options: >-
+          --tmpfs /var/lib/mysql:rw,size=1g
+          --health-cmd="if command -v mariadb-admin >/dev/null 2>&1; then mariadb-admin ping -h127.0.0.1 -pci-only-disposable; else mysqladmin ping -h127.0.0.1 -pci-only-disposable; fi"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: faydamed_ci
+      DB_USERNAME: root
+      DB_PASSWORD: ci-only-disposable
+      CACHE_DRIVER: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      QUEUE_CONNECTION: sync
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, pdo_mysql, curl, zip, bcmath, intl, sodium
+          coverage: none
+          tools: composer:v2
+      - run: composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins
+      - run: php artisan migrate --force --no-interaction
+      - run: php artisan migrate:status --no-interaction
+      - name: Legacy data upgrade rehearsal
+        run: php tests/Security/mysql-upgrade-smoke.php
+      - name: Synthetic database and private-file restore rehearsal
+        env:
+          FAYDAMED_CI_DB_CONTAINER: ${{ job.services.mysql.id }}
+        run: bash tests/Security/database-restore-smoke.sh
+      - name: MySQL financial workflow regression
+        run: timeout --signal=TERM --kill-after=15s 8m php vendor/bin/phpunit -c phpunit.mysql.xml --colors=never --debug
+      - name: Disposable database diagnostics on failure
+        if: failure()
+        env:
+          FAYDAMED_CI_DB_CONTAINER: ${{ job.services.mysql.id }}
+        run: |
+          client=$(docker exec "$FAYDAMED_CI_DB_CONTAINER" sh -c 'if command -v mariadb >/dev/null 2>&1; then echo mariadb; else echo mysql; fi')
+          printf 'SHOW FULL PROCESSLIST; SHOW ENGINE INNODB STATUS;\n' | docker exec -i -e MYSQL_PWD="$DB_PASSWORD" "$FAYDAMED_CI_DB_CONTAINER" "$client" -uroot

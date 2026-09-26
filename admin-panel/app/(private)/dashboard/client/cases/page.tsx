@@ -29,7 +29,9 @@ const statusColors: Record<string, string> = {
 export default function ClientCasesPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
-  const { data: casesData, isLoading } = useGetClientCasesQuery({
+  const [page, setPage] = useState(1)
+  const { currentData: casesData, isFetching: isLoading, isError, refetch } = useGetClientCasesQuery({
+    page,
     search: searchTerm || undefined,
     status: statusFilter || undefined,
   })
@@ -57,13 +59,13 @@ export default function ClientCasesPage() {
                 placeholder="Search by case title or number..."
                 className="pl-10"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
               />
             </div>
-            <select
+            <select aria-label="Case status"
               className="h-10 px-3 rounded-md border border-input bg-background text-sm"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
             >
               <option value="">All Statuses</option>
               <option value="New">New</option>
@@ -76,7 +78,7 @@ export default function ClientCasesPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isError ? <div role="alert">Could not load cases. <Button onClick={() => refetch()}>Try again</Button></div> : isLoading ? (
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-20 w-full rounded-xl" />
@@ -92,7 +94,7 @@ export default function ClientCasesPage() {
             <div className="space-y-3">
               {cases.map((c: any) => (
                 <div key={c.id} className="block">
-                  <div className="flex items-center justify-between p-5 border border-slate-100 dark:border-slate-800 rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-white dark:bg-slate-900/50">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between p-5 border border-slate-100 dark:border-slate-800 rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-white dark:bg-slate-900/50">
                     <div className="flex items-center gap-4 flex-1">
                       <div className="p-2.5 rounded-lg bg-primary/10">
                         <Scale className="h-5 w-5 text-primary" />
@@ -100,7 +102,7 @@ export default function ClientCasesPage() {
                       <Link href={`/dashboard/client/cases/${c.id}`} className="flex-1">
                         <div>
                           <h3 className="font-bold text-slate-900 dark:text-white hover:text-primary transition-colors">{c.title}</h3>
-                          <div className="flex items-center gap-3 mt-1">
+                          <div className="flex flex-wrap items-center gap-3 mt-1">
                             <span className="text-xs text-muted-foreground font-medium">{c.case_number}</span>
                             {c.accident_date && (
                               <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -129,7 +131,7 @@ export default function ClientCasesPage() {
                         </Button>
                       </Link>
                       <Link href={`/dashboard/client/cases/${c.id}`}>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                        <Button aria-label={`View ${c.case_number}`} size="sm" variant="ghost" className="h-8 w-8 p-0">
                           <ExternalLink className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </Link>
@@ -139,6 +141,7 @@ export default function ClientCasesPage() {
               ))}
             </div>
           )}
+          <div className="mt-4 flex items-center justify-between gap-2"><Button variant="outline" disabled={page <= 1 || isLoading} onClick={() => setPage(p => p - 1)}>Previous</Button><span>Page {page} of {casesData?.meta.last_page || 1}</span><Button variant="outline" disabled={isError || isLoading || page >= (casesData?.meta.last_page || 1)} onClick={() => setPage(p => p + 1)}>Next</Button></div>
         </CardContent>
       </Card>
     </div>

@@ -27,7 +27,7 @@ Six roles drive the admin panel, each seeing only its own menus:
 - **Provider Staff** - provider portal: treatment records, document uploads, claim visibility
 - **Client (Patient)** - self-service: own cases, own documents, in-app signing
 
-Demo accounts for every role are listed on the admin login page.
+Accounts are managed by organization administrators. Public self-registration is disabled. Use synthetic accounts in an isolated development environment for testing.
 
 ## Environment
 

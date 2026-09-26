@@ -1,0 +1,162 @@
+# Outstanding launch gates — 2026-09-25
+
+Production has not been switched. A passing build is not release approval.
+
+## Compounding planning increment
+
+Formulation revisions and prescription-linked batch planning worksheets are implemented with independent pharmacist review, immutable source details, ingredient-source references, location restrictions and audit history. Ingredient receipts, quarantine and explicit worksheet reservations are now implemented in a subsequent custody increment. Manufacturing, BUD assignment, quality-result acceptance and finished-product release remain outstanding. See docs/PHARMACY-SYSTEM.md. This increment does not close the operational compounding launch gate. Local full regression passed 143 tests / 1,569 assertions; the final expanded pharmacy test run passed 12 tests / 246 assertions. All 3,104 role decisions and 27 protected pharmacy route declaration checks pass. Frontend type checking passes. Browser acceptance of the new compounding screens remains outstanding.
+
+## Ingredient custody increment
+
+Ingredient receiving, quarantine/availability review, exact location-scoped worksheet reservation and full reservation release are implemented. Quantities use fixed precision. Failed multi-line allocation rolls back all stock, allocation and event changes; review/allocation use version conflicts and serialized organization writes. Full local regression passes 146 tests / 1,641 assertions; final focused pharmacy regression passes 15 tests / 310 assertions; route checks cover 32 protected pharmacy declarations. This does not provide manufacturing consumption, stock adjustments/transfers, quality-result approval, recalls or final release. New inventory/reservation UI requires fresh Chrome acceptance.
+
+## Executed preparation increment
+
+Exact-quantity synthetic execution records now deduct reserved ingredients atomically, retain measurement/personnel/equipment/process/quality references and support independent document review or rejection. Output remains quarantined under every decision. No finished-product inventory, BUD, label or dispensing release is created. Full local regression passes 149 tests / 1,704 assertions; focused pharmacy tests pass 18 tests / 371 assertions; declaration checks cover 34 pharmacy routes. Operational blockers still include deviation reconciliation, execution corrections/addenda, actual test-result acceptance, losses/destruction, controlled adjustments, site credential/process validation, BUD assignment and product release. This preview only supports same-day exact quantities, not a general manufacturing workflow.
+
+## September 25 verification
+
+Patient charts without portal accounts and explicit location assignments are implemented in the development branch. Local regression passes 140 tests / 1,500 assertions and 3,104 role decisions. Type checking and the optimized admin build pass (115 generated pages). Existing preview-only and controlled/compounded dispensing blocks remain enabled. See docs/PHARMACY-SYSTEM.md for limitations and required migration onboarding.
+
+Read-only HTTPS checks returned HTTP 200 for api.faydamed.tech, admin.faydamed.tech and faydamed.tech. This proves reachability only; authenticated feature, backup/restore, server/runtime and deployment acceptance are still outstanding. No production files, processes or configuration were changed.
+
+Fresh dependency audits: Composer reports no current advisories; doctrine/annotations remains abandoned. Admin dependency audit reports one low-severity Quill HTML-export advisory, with no moderate/high/critical findings. Existing sanitization mitigation does not make this an unqualified clean audit.
+
+## Pharmacy scope supersedes the earlier six-role launch assumption
+
+The owner confirmed on September 24 that pharmacy is the core product and FaydaMedTech must contain its own dispensing/pharmacy-management system, including controlled substances, compounding and multiple potential locations. GLM is a candidate AI provider; no account or patient-data processing approval is configured. See [the pharmacy system requirements](../../docs/PHARMACY-SYSTEM.md).
+
+The first pharmacy foundation is a **synthetic-data development preview**, not operational pharmacy software. Its API is unavailable outside local/testing environments. Controlled and compounded final dispensing is blocked until the dedicated controls are built and validated. Patient clinical records, location-specific staff/licensure controls, clinical drug data, original-prescription storage, validated labels, compounding batches/calculations, controlled-substance rules/reporting, payer transport and recovery remain launch requirements.
+
+Earlier foundation evidence: 138 API tests / 1,451 assertions and 3,104 role decisions pass; the admin type check and optimized build pass with 113 generated pages. Chrome verified pharmacist MFA, two synthetic locations, stock receipt, prescription intake, reservation, pharmacist review, final-check attestation, handover, persistence after reload, and the stock change from 100 to 90 with zero remaining reservation. Pharmacy billing and negative permission/state cases have API-test coverage; this is not real-patient, real-drug, real-payer or regulatory acceptance. New pharmacy tests are included in the MySQL/MariaDB CI suite. This local-origin frontend artifact must not be deployed.
+
+## Dependency remediation
+
+Raw before/after audits are retained in the workspace audit-evidence/dependencies-20260924 folder.
+
+- Website: 16 affected-package findings initially; compatible lockfile refresh yields zero known findings and production-origin build passes.
+- API PHP: 37 advisories across 11 packages initially, plus one ignored JWT advisory. Compatible updates first reduced active findings to three Laravel advisories. Laravel 12.69.2, Swagger 9 and PHPUnit 11 upgrades now resolve all known PHP advisories, including JWT 7.2.0; the prior JWT advisory ignore has been removed. Local regression passes: 65 tests / 776 assertions. GitHub run 35989584311 passes PHP 8.3 plus MySQL 8 and MariaDB 10.11 schema, finance and recovery checks at backend commit 50d3509. doctrine/annotations remains abandoned (maintenance finding, not a current advisory).
+- API asset tooling: ten affected-package findings reduced to zero after updating Vite and its Laravel plugin. Final asset production build passes. Use Node 20.19+ or 22.12+ for Vite 7; host Node runtime must be reverified.
+- Admin: Next 15.5.26 and PostCSS override leave one low Quill HTML-export advisory with no listed patched version. DOMPurify now sanitizes all identified HTML display sinks and rich-editor values/changes. Four DOM-based security tests cover malicious markup, protocol tricks, embeds/clobbering, retained basic formatting and identical policies across both frontends. The advisory remains visible rather than suppressed; final browser acceptance remains required. The sanitizer excludes inline styles and embedded media by design.
+
+
+Audit counts differ across tools: npm counts affected package entries; pnpm counts advisories. These are dependency matches, not evidence of exploitation. No vulnerabilities have been deliberately suppressed in this remediation batch.
+
+## External-service findings from source
+
+- Payment scope decided by the owner: record previously received payments only for launch. Online collection routes and the unsafe Stripe controller are removed, as is the backend Stripe SDK. A six-role regression proves old collection/webhook endpoints are absent and cannot add payment records. The existing receipt, duplicate/overpayment prevention and reversal workflows remain tested. Future collections require a separate receiving-account decision and a complete sandbox-tested integration; no Stripe credentials are required for this launch scope.
+- Google Vision OCR now uses the provider's reported total page count, requests every page in batches of at most five, validates page identity/count and file/page errors, and rejects partial success. Language hints are transmitted. Failures expose no raw provider messages and store no partial extracted text. Four synthetic provider tests cover full extraction, later-batch failure, malformed/missing pages and tenant/role boundaries. The synchronous path is limited to 100 pages; larger documents require a separate asynchronous workflow. Actual provider delivery and provider agreement remain unverified; no patient files were sent by these tests.
+- AiOcrController expects services.openai.api_key absent from services.php; no active route to that controller was found in the inspected route file. Do not advertise AI extraction as verified.
+- DocuSign authentication now selects demo/production OAuth, verifies the configured account and discovers its API region. Document-organization credentials, validated provider origins, timeouts and sanitized failures are enforced. A persistent dispatch claim blocks duplicate/ambiguous resends; HMAC callbacks use the document tenant secret, deduplicate identical payloads and protect terminal states. Synthetic tests cover these behaviors. Completed PDF/certificate retrieval and private archival now have synthetic coverage, with authenticated downloads and no unsigned fallback. Real consent/account configuration, delivery/completion and artifact acceptance, actual operator-recovery acceptance and rendered full-application browser acceptance remain outstanding. Reconciliation tooling now supports read-only lookup and explicit audited linking against a saved dispatch snapshot; unresolved or legacy claims cannot be automatically cleared. See SIGNING.md; electronic signing is not release-ready.
+- Browser access to raw environment secrets is retired. The admin status endpoint returns non-secret service status; arbitrary .env writes return 410.
+- Password recovery now submits to the API rather than showing simulated success. Links use the configured admin origin and actual reset route. Responses avoid account disclosure; recovery/reset endpoints have dedicated rate limits. Password changes, reset-token consumption, session revocation and MFA-challenge removal are transactional. Password console logging is removed; authentication URLs are excluded from analytics and the reset page sets no-referrer/noindex metadata. Six synthetic API tests cover link encoding, hashed tokens, single use, expiry, validation, delivery-error sanitization, throttling, revocation and rollback. Two frontend request tests verify request privacy and failure handling. Production mail delivery, sender domain and invitation delivery remain unverified; example settings use a sandbox mailbox.
+
+## Hosting and recovery
+
+- Authorized host: 144.126.132.98 only; sites api.faydamed.tech, admin.faydamed.tech, faydamed.tech only. Never use the discarded 66.94.122.48 host.
+- Working SSH/provider terminal remains unavailable. CyberPanel sign-in works but is not shell access.
+- CyberPanel API backup reports 635 MB; contents/database/keys/isolated restore unverified. Admin and website backups report zero size; do not rely on them.
+- Back up the actual admin tree /var/www/admin-faydamed-tech in addition to site home folders. Verify encryption and OAuth keys, database, private uploads and process configuration; rehearse isolated recovery.
+- Verify installed Linux dependencies/extensions, database grants, permissions, queue/scheduler behavior and production configuration on the exact host.
+- Rehearse reviewed migrations and all six role journeys with synthetic data before production cutover. Do not seed/reset production or regenerate existing keys.
+
+## Evidence required for completion
+
+Clean audited lockfiles or explicit reviewed remediation for every remaining advisory; current Linux build and DB regression results; restorable full backups; read-only production configuration gate; synthetic integration acceptance; six-role sign-in, access boundaries, documents and financial lifecycle acceptance; scoped deployment and rollback verification.
+
+Upgrade compatibility: retained existing Laravel application structure, removed obsolete native-schema test switch, and preserved inactivity-timeout direction explicitly for Carbon 3. A real-token regression verifies recent activity succeeds and stale activity revokes access. Passport remains on its compatible 12.x major. Production PHP must be 8.3+ as declared.
+
+References: [Next 15 upgrade guide](https://nextjs.org/docs/app/guides/upgrading/version-15); [Quill advisory](https://github.com/advisories/GHSA-v3m3-f69x-jf25).
+[Laravel 11 upgrade guide](https://laravel.com/docs/11.x/upgrade); [Laravel 12 upgrade guide](https://laravel.com/docs/12.x/upgrade).
+
+## 2026-09-24 follow-up validation
+
+Commits 3f8b5b9, a4080c9 and aeea271 implement record-only payments, complete-or-failed OCR, non-secret configuration status and rich-text sanitization. GitHub run 35990886721 at aeea271 passes 71 PHP tests / 813 assertions, plus MySQL 8 and MariaDB 10.11 with 10 tests / 347 assertions each and 64-table synthetic restore verification. Website and admin production builds pass (109 admin pages); changed admin file lint passes. Website dependency audit remains zero; admin retains the one low Quill advisory.
+
+Sanitizer guidance: https://github.com/cure53/DOMPurify . Provider page-count contract: https://docs.cloud.google.com/nodejs/docs/reference/vision/latest/vision/protos.google.cloud.vision.v1.iannotatefileresponse .
+
+## Signing recovery and component browser acceptance
+
+Backend commit 0c4068e passes 111 local PHP tests / 1,125 assertions. GitHub run 35999512415 passes PHP 8.3, MySQL 8 and MariaDB 10.11, including recovery, migration, legacy-upgrade and synthetic restore checks. Recovery defaults to read-only provider lookup; explicit linking requires an exact envelope ID, an authorized actor, a reason, and matching saved dispatch evidence. No automatic resend or guard reset is provided.
+
+Chrome component acceptance used the actual shared preview with mocked responses and synthetic PDFs at 390x667 and 1280x900. It verified signed/certificate selection, protected download links, unavailable-file errors and retry controls. The preview now overrides the generic dialog width and limits PDF height so mobile headings, close buttons and download controls remain visible. These checks do not establish downloaded-file persistence, full-app six-role acceptance or real DocuSign delivery. No external provider request or patient data was used.
+
+## Six-role application browser smoke checks — 2026-09-24
+
+The current application was built for the existing local-only 127.0.0.1:3102 frontend and 127.0.0.1:8000 API, with a separate synthetic SQLite database, non-delivery mail and no production data. All six roles completed password plus authenticator sign-in and reached their expected dashboards in Chrome. Provider claims data, biller invoice balances and receipt/reversal history, patient case/payment summaries and authenticated original-document retrieval, attorney assigned-case visibility, firm administrator insurance data and Super Admin totals were observed. This is a smoke check, not exhaustive six-role workflow acceptance or real-provider acceptance.
+
+The checks exposed and fixed insurance links offered to provider and billing roles despite backend denial; the menu and direct-page message now follow the existing backend boundary. Super Admin totals distinguish loading/errors from zero, total cases are labeled correctly, and hard-coded uptime and month-over-month claims are removed. The notification shortcut uses the shared working route. Backend permissions have not changed.
+
+Still needed: complete create/edit/review/correction workflows across all roles, adverse-network UI acceptance, real mail/OCR/signing acceptance, verified server access, backups and scoped deployment verification. Local production-mode builds use local API origins and must never be deployed as production artifacts.
+
+## Provider-to-biller financial browser acceptance — 2026-09-24
+
+Real local Chrome/Next/Laravel acceptance completed: provider draft creation and revision ($120.50 to $125.50), submission with locked provider editing, biller review, receipt recording, explained reversal preserving history, replacement receipt, duplicate-reference rejection, and final $125.50 paid / $0 balance. Database read-back confirms four ledger entries netting to $125.50 and retained review metadata. The patient dashboard, invoice list and detail show correct totals and correction history without rendered staff notes. Local synthetic fixtures only; no money moved or external messages were sent. Other role write workflows, adverse-network behavior and real-provider acceptance remain outstanding.
+
+Diagnostic CI commit 08e3c02 adds per-test progress, an eight-minute financial-suite limit and disposable-database failure diagnostics. Branch run 36008537897 passes PHP 8.3, MySQL 8 and MariaDB 10.11, including 39 database workflow tests per engine. Earlier run 36004060394 hit its MySQL job limit and is not a pass. Separate PR run 36008547448 also passes all three jobs at the same commit. MySQL took about three minutes in the branch run and about six minutes in the PR run; the earlier timeout cause is unproven. Retain bounded diagnostics for any recurrence.
+
+## Legal workflow and report repair — 2026-09-24
+
+Synthetic full-app Chrome acceptance verified pending settlement creation/editing, completion, required correction reason, preserved read-only original, linked replacement and corrected case/report totals without double counting. The report page exposed inert generation/export/history controls; the repair connects all six existing report types and saved results, adds CSV output and real history pagination, and distinguishes loading/failure/unknown values from zero. It preserves the existing API authorization and visual system. Numeric report display avoids binary floating-point artifacts; report controls wrap within narrow cards. Report results use a wrapping field/value list because the shared table minimum width clipped values in the dialog.
+
+All six report types, saved-result retrieval and history page 2 returned actual API data in Chrome. Temporarily stopping only the synthetic local API produced a safe report error without stale values; restoring it and retrying succeeded. Two CSV regression tests cover unknowns/zeros/nesting/rounding and spreadsheet-formula neutralization; changed-file lint passes. Browser download persistence remains unverified: the download event timed out, and browser policy blocked download-history inspection. No workaround was attempted. These are local synthetic checks, not production or real-provider acceptance.
+
+Mobile report acceptance remains open: the browser ignored the requested 390x667 override and stayed at a measured 960x830. Final visual results must be interpreted at that actual size.
+
+Final report UI build passes type checks and generates 110 pages. Chrome at measured 960x830 verifies unclipped field/value results, wrapped actions and corrected numeric display. The local-origin artifact must not be deployed.
+
+## Saved-report access repair — 2026-09-24
+
+Request-level tests exposed stored reports bypassing generation permissions: staff could retrieve colleagues' settlement snapshots and platform administrators bypassed the global organization scope. History/detail now require explicit organization context. Staff see only their own reports with a server-stamped generation role matching their current role and allowed report type; firm administrators cannot reopen platform-admin or unmarked legacy snapshots. Older reports are preserved and can be regenerated through currently authorized endpoints. No permissions are broadened. Three new tests exercise all six roles, cross-organization and role-change boundaries, legacy snapshots and caller attempts to spoof the generation role. Full local PHP regression passes 114 tests / 1,169 assertions; MySQL/MariaDB CI includes these tests. Browser download persistence and mobile report acceptance remain open.
+
+## Report generation boundaries and provider billing — 2026-09-24
+
+Provider billing now obtains net recorded receipts through invoice IDs instead of querying a nonexistent payment metadata column. Provider lists and report model queries explicitly enforce organization context, including platform admins; attorney case/referral reports honor assignment. Audit reports are organization-scoped and the PHI filter uses the actual event column. This does not certify PHI logging completeness or compliance. Three new synthetic regression tests reproduced the original failures and now pass; full local suite passes 117 tests / 1,227 assertions. The new tests are included in MySQL/MariaDB CI. Provider attribution uses existing invoice provider_id metadata; unknown attribution is not invented. Insurance-aging correction is documented below.
+
+## Insurance aging balance correction — 2026-09-24
+
+Aging now subtracts recorded receipts, including signed reversal entries, from sent invoices using integer cents. It excludes zero/credit balances and foreign-organization receipts, and defines age as calendar days since invoice creation. The report includes this basis explicitly. A synthetic request-level regression covers partial payments, reversals, a fully paid invoice retaining sent status, cross-organization records and the 30/31/60/61/90/91-day boundaries. Real insurer remittance processing is not established by this test.
+
+Final local PHP regression passes 118 tests / 1,230 assertions, including four report-generation tests / 61 assertions. Commit 1bd2623 passes GitHub branch run 36017131690: PHP 8.3, MySQL 8 and MariaDB 10.11, including all four new cases in each 46-case database suite.
+
+## Revenue date range and balance reconciliation — 2026-09-24
+
+Revenue range totals now include the entire end date and use payment_date for receipts instead of data-entry timestamps. Outstanding uses receipts linked to the invoices created in the selected range, dated through the end date; receipts for older invoices no longer reduce the new invoice balance. Net signed receipt amounts are accumulated in cents. Invalid/reversed date ranges and unsupported period values return validation errors without saving misleading snapshots. The response states its calculation basis, that totals are not grouped by month/quarter, and that all invoice statuses are included. This operational report is not recognized accounting revenue or a historical ledger reconstruction.
+
+Two synthetic request tests cover late data entry, end-of-day invoices, older-invoice receipts, post-cutoff receipts, reversals and invalid ranges. Historical saved reports remain unchanged; regenerate to use corrected calculations.
+
+Local PHP regression: 120 tests / 1,242 assertions pass. Six report-generation tests / 73 assertions pass and are included in the database workflow suite. Commit 43cb195 passes GitHub branch run 36020342080: PHP 8.3, MySQL 8 and MariaDB 10.11, including each 48-case database workflow suite.
+
+## Attorney report case permissions — 2026-09-24
+
+Lien summary generation now uses the same assigned-case boundary as the attorney lien workflow. Attorney saved reports carry a server-owned fingerprint of assigned case IDs captured before report data is read; history/detail require the current assignment fingerprint. Assignment changes, including additions, require regeneration. Older attorney snapshots without that evidence are preserved but hidden from attorneys. Organization administrators retain their existing organization-wide access. Caller-supplied scope markers cannot override the server marker. This controls future retrieval, not copies already downloaded.
+
+Synthetic tests reproduce overbroad lien totals and cover unchanged-access retrieval, forged markers, legacy snapshots, assignment removal, history filtering, record preservation, regenerated empty reports and firm-administrator scope. The two test files already run in the MySQL/MariaDB suite.
+
+Local regression passes 122 tests / 1,259 assertions; targeted report-access/generation tests pass 11 tests / 134 assertions. Commit 0a9e441 passes GitHub branch run 36021890811: PHP 8.3, MySQL 8 and MariaDB 10.11, including each 50-case database workflow suite.
+
+## Lien summary amount interpretation — 2026-09-24
+
+Lien reports now exclude records marked settled/released from recorded open totals. A recorded negotiated amount can supply the reduction, or an explicit reduction can supply the remaining amount. Zero is preserved. Missing figures, out-of-range legacy figures and inconsistent pairs are flagged as unknown rather than silently counted as zero or chosen arbitrarily. Complete totals become null when affected, while known subtotals and unknown/conflict counts remain available. Amounts accumulate in integer cents. The response explains that these are tracking records and do not verify payment or legal release. Existing records and saved snapshots are unchanged; regenerate reports for corrected calculations.
+
+A synthetic regression reproduced $660.35 reported outstanding where recorded open amounts were $90.20. Coverage includes pending/negotiated/settled/released states, derived reductions, explicit zeros, missing/conflicting values and empty results.
+
+Local regression passes 123 tests / 1,271 assertions. Report-generation coverage passes eight tests / 91 assertions and is included in the database workflow suite. Commit 5d3dde0 passes GitHub branch run 36023341649: PHP 8.3, MySQL 8 and MariaDB 10.11, including each 51-case database workflow suite.
+
+## OCR and signature report document boundaries — 2026-09-24
+
+OCR and signature reports now use the existing Document.visibleTo permission rules plus explicit organization scope. Deleted/inaccessible documents and mismatched foreign document links are excluded. OCR report rows contain only processing identifiers, provider, status and processed timestamp; extracted text, provider responses and document metadata are not copied into report snapshots. Successful jobs use the actual processed status. Processing success rate is labeled as such, extraction accuracy remains unknown, and in-progress jobs are counted separately. Signature totals are explicitly activity-record counts rather than unique envelopes or current document states.
+
+Saved OCR/signature reports require a server-owned document-visibility fingerprint matching current access. Changes to the visible document set require regeneration; unmarked legacy snapshots remain stored but inaccessible through report retrieval, including to administrators. This does not revoke already downloaded copies or prove external-provider delivery. Synthetic request tests cover attorney uploader access, hidden/deleted/foreign documents, sanitized report content, status counts, caller spoofing, saved-report revocation, administrator organization boundaries and legacy snapshots.
+
+Final local regression: 124 tests / 1,295 assertions pass. The new request regression is included in the MySQL/MariaDB workflow suite. Commit 671280d passes GitHub branch run 36026249346: PHP 8.3, MySQL 8 and MariaDB 10.11, including all 52 database workflow cases.
+
+## Deployment acceleration and refreshed hosting evidence — 2026-09-24
+
+The disposable database suite rebuilt the schema before every case. It now migrates once per test process and truncates populated/previously allocated fixture tables between cases, restoring foreign-key checks and retaining real transaction behavior. All safety guards restricting resets to the named loopback GitHub CI database remain. Explicit fresh migration, legacy upgrade and synthetic restore rehearsals remain separate jobs steps. Run 36028861806 at cc8c0df passes all checks: MySQL job 72 seconds versus 288 seconds at 671280d; MariaDB 52 seconds. These are observed single-run timings, not guaranteed durations. A dedicated isolation canary additionally covers leftover rows, deleted rows, reset IDs, migration preservation and enabled foreign-key constraints.
+
+Development commits now run once through pull_request, rather than duplicating push and PR runs. Main pushes and manual dispatch remain checked. Open a PR or dispatch manually for a branch-only check. No tests were removed.
+
+Fresh read-only server checks: 144.126.132.98 remains reachable, but both existing-key and supplied-root-password SSH attempts are rejected. CyberPanel session works. Its backup list now shows COMPLETED backups for API (635 MB), admin (392 MB) and website (255 MB), superseding earlier zero-size observations. Contents, actual /var/www/admin-faydamed-tech coverage, keys/database/private-file recovery and isolated restore are still unverified. Root File Manager redirects to a paid add-on; no purchase, security-setting change, remote script upload or production mutation was performed. A working provider console or confirmed SSH login is needed for the remaining host checks.
+
+CI database services use a bounded 1 GiB memory-backed data directory to reduce shared-runner disk variability. This is disposable test storage only; transaction/fsync settings and restore checks are unchanged. Production storage is unaffected. Final timing and isolation verification are pending this workflow update.

@@ -1,5 +1,7 @@
 "use client";
 
+import { SafeRichText } from "@/components/SafeRichText"
+
 import { commonValidationSchemas } from "@/app/schemas/common.schema";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { Button } from "@/components/ui/button";
@@ -237,10 +239,7 @@ export default function FAQSettingsPage() {
                       <p className="text-xs font-semibold text-muted-foreground">
                         Answer
                       </p>
-                      <div
-                        className="text-sm"
-                        dangerouslySetInnerHTML={{ __html: faq.answer }}
-                      />
+                      <SafeRichText className="text-sm" html={faq.answer} />
                     </div>
                   </div>
                 )}

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { FileText, Plus, Search, Filter, Download, Trash2, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { useGetInvoicesQuery, useCreateInvoiceMutation, useDeleteInvoiceMutation } from "@/store/api/billingApiSlice"
+import { Invoice, useGetInvoicesQuery, useCreateInvoiceMutation, useDeleteInvoiceMutation, useReviewInvoiceMutation } from "@/store/api/billingApiSlice"
 import { useGetCasesQuery } from "@/store/api/casesApiSlice"
 import { useSelector } from "react-redux"
 import { RootState } from "@/store/store"
@@ -19,20 +19,24 @@ import { useToast } from "@/hooks/use-toast"
 
 export default function InvoicesPage() {
   const { toast } = useToast()
+  const [selected, setSelected] = useState<Invoice | null>(null)
+  const [page, setPage] = useState(1)
+  const [status, setStatus] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [isModalOpen, setIsModalOpen] = useState(false)
-  
+
   // Form State
   const [selectedCase, setSelectedCase] = useState("")
   const [amount, setAmount] = useState("")
   const [dueDate, setDueDate] = useState("")
 
-  const { data: invoicesData, isLoading } = useGetInvoicesQuery({ search: searchTerm })
+  const { currentData: invoicesData, isFetching: isLoading, isError, refetch } = useGetInvoicesQuery({ search: searchTerm, page, status: status === "all" ? undefined : status })
   const { data: casesData } = useGetCasesQuery({})
   const [createInvoice, { isLoading: isCreating }] = useCreateInvoiceMutation()
   const [deleteInvoice] = useDeleteInvoiceMutation()
   const user = useSelector((state: RootState) => state.auth.user)
-  const isClient = user?.role === 'client'
+
+  const canReview = ['admin', 'firm_admin', 'medical_biller'].includes(user?.role || '')
 
   const handleCreateInvoice = async () => {
     if (!selectedCase || !amount || !dueDate) {
@@ -88,12 +92,7 @@ export default function InvoicesPage() {
           <p className="text-muted-foreground">Manage and track all billing invoices</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
-          
-          {!isClient && (
+          {canReview && (
             <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -151,13 +150,14 @@ export default function InvoicesPage() {
                 placeholder="Search by invoice number..."
                 className="pl-10"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
               />
             </div>
+            <Select value={status} onValueChange={value => { setStatus(value); setPage(1) }}><SelectTrigger aria-label="Invoice status" className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All records</SelectItem><SelectItem value="sent">Billing review</SelectItem><SelectItem value="draft">Drafts</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent></Select>
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isError ? <p role="alert">Could not load invoices. <Button variant="outline" onClick={() => refetch()}>Try again</Button></p> : isLoading ? (
             <div className="space-y-4">
               {[1, 2, 3, 4, 5].map((i) => (
                 <Skeleton key={i} className="h-12 w-full" />
@@ -171,6 +171,8 @@ export default function InvoicesPage() {
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Legal Case</TableHead>
                     <TableHead>Amount</TableHead>
+                    <TableHead>Recorded Paid</TableHead>
+                    <TableHead>Balance</TableHead>
                     <TableHead>Due Date</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -182,19 +184,18 @@ export default function InvoicesPage() {
                       <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{invoice.case?.title || "N/A"}</TableCell>
                       <TableCell>${Number(invoice.amount).toLocaleString()}</TableCell>
-                      <TableCell>{invoice.due_date}</TableCell>
+                      <TableCell>${Number(invoice.total_paid || 0).toFixed(2)}</TableCell>
+                      <TableCell>${(Number(invoice.amount) - Number(invoice.total_paid || 0)).toFixed(2)}</TableCell>
+                      <TableCell>{invoice.due_date?.slice(0, 10) || 'Not set'}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={getStatusColor(invoice.status)}>
-                          {invoice.status.toUpperCase()}
+                          {invoice.status === 'sent' && invoice.metadata?.billing_review?.state === 'reviewed' ? 'REVIEWED' : invoice.status === 'sent' ? 'BILLING REVIEW' : invoice.status.toUpperCase()}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">View</Button>
-                        {isClient && invoice.status !== 'paid' && (
-                          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 ml-2">Pay Now</Button>
-                        )}
-                        {!isClient && (
-                          <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 ml-2" onClick={() => handleDelete(invoice.id)}>
+                        <Button variant="ghost" size="sm" onClick={() => setSelected(invoice)} aria-label={`Review ${invoice.invoice_number}`}>View / Review</Button>
+                        {canReview && Number(invoice.total_paid || 0) === 0 && (
+                          <Button aria-label={`Archive ${invoice.invoice_number}`} variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 ml-2" onClick={() => handleDelete(invoice.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         )}
@@ -203,7 +204,7 @@ export default function InvoicesPage() {
                   ))}
                   {invoicesData?.data?.data?.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center">No invoices found.</TableCell>
+                      <TableCell colSpan={8} className="h-24 text-center">No invoices found.</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -212,6 +213,26 @@ export default function InvoicesPage() {
           )}
         </CardContent>
       </Card>
+      <div className="flex justify-between items-center gap-3"><Button variant="outline" disabled={page <= 1 || isLoading} onClick={() => setPage(p => p-1)}>Previous</Button><span>Page {page} of {invoicesData?.data.last_page || 1}</span><Button variant="outline" disabled={isLoading || isError || !invoicesData || page >= invoicesData.data.last_page} onClick={() => setPage(p => p+1)}>Next</Button></div>
+      <Dialog open={!!selected} onOpenChange={open => { if (!open) setSelected(null) }}><DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{selected?.invoice_number}</DialogTitle><DialogDescription>Internal review only. This does not submit an insurance claim or record a payment.</DialogDescription></DialogHeader>{selected && <InvoiceReview key={selected.id} invoice={selected} canReview={canReview} onSaved={() => setSelected(null)} />}</DialogContent></Dialog>
     </div>
   )
+}
+
+
+function InvoiceReview({invoice, canReview, onSaved}: {invoice: Invoice; canReview: boolean; onSaved: () => void}) {
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const [review, {isLoading}] = useReviewInvoiceMutation()
+  async function submit(action: 'reviewed' | 'return') {
+    setError('')
+    if (!note.trim()) { setError('Enter a review note explaining your decision.'); return }
+    try { await review({id: invoice.id, action, note: note.trim()}).unwrap(); onSaved() }
+    catch (err: any) { setError(err.data?.message || 'Could not save the review. Please try again.') }
+  }
+  return <div className="space-y-4">
+    <dl className="space-y-2 break-words">{Object.entries({Patient: invoice.metadata?.patient_name, Case: invoice.case?.title, Amount: `$${Number(invoice.amount).toFixed(2)}`, 'Service date': invoice.metadata?.service_date, Payer: invoice.metadata?.payer, 'CPT codes': invoice.metadata?.cpt_codes, 'Diagnosis codes': invoice.metadata?.diagnosis_codes, Notes: invoice.metadata?.notes || invoice.notes}).map(([label,value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd>{value || 'Not recorded'}</dd></div>)}</dl>
+    {invoice.metadata?.billing_review && <p>Last review: {invoice.metadata.billing_review.state} — {invoice.metadata.billing_review.note}</p>}
+    {canReview && invoice.status === 'sent' && invoice.metadata?.billing_review?.state !== 'reviewed' && <><Label htmlFor="review-note">Review note</Label><Input id="review-note" value={note} onChange={e => setNote(e.target.value)} disabled={isLoading} />{error && <p role="alert">{error}</p>}<div className="flex flex-wrap gap-2"><Button disabled={isLoading} onClick={() => submit('reviewed')}>Mark reviewed</Button><Button variant="outline" disabled={isLoading} onClick={() => submit('return')}>Return for correction</Button></div></>}
+  </div>
 }

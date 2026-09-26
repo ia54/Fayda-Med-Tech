@@ -33,18 +33,27 @@ export interface BillingDashboardResponse {
 export interface Invoice {
   id: number;
   invoice_number: string;
+  total_paid?: number | string | null;
   amount: number;
   status: 'draft' | 'sent' | 'paid' | 'denied' | 'voided';
   due_date: string;
+  created_at?: string;
+  notes?: string;
   paid_at?: string;
+  metadata?: { billing_review?: { state: 'reviewed' | 'returned'; note: string; reviewed_by: number; reviewed_at: string }; payer?: string; cpt_codes?: string; diagnosis_codes?: string; patient_name?: string; service_date?: string; notes?: string };
   case_id?: number;
   case?: {
     id: number;
     title: string;
+    case_number?: string;
   };
 }
 
 export interface Payment {
+  notes?: string;
+  recorded_by?: number;
+  reversal_of_id?: number | null;
+  reversal?: { id: number; notes?: string } | null;
   id: number;
   invoice_id: number;
   amount: number;
@@ -80,14 +89,14 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       query: () => '/billing/stats',
       providesTags: ['Invoice'],
     }),
-    getInvoices: builder.query<{ data: { data: Invoice[] } }, any>({
+    getInvoices: builder.query<{ data: { data: Invoice[]; current_page: number; last_page: number; total: number } }, any>({
       query: (params) => ({
         url: '/invoices',
         params,
       }),
       providesTags: ['Invoice'],
     }),
-    getPayments: builder.query<{ data: { data: Payment[] } }, any>({
+    getPayments: builder.query<{ data: { data: Payment[]; current_page: number; last_page: number; total: number } }, any>({
       query: (params) => ({
         url: '/payments',
         params,
@@ -112,6 +121,10 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       query: () => '/billing/analytics',
       providesTags: ['Invoice', 'Payment'],
     }),
+    reversePayment: builder.mutation<any, { id: number; reason: string }>({
+      query: ({ id, reason }) => ({ url: `/payments/${id}/reverse`, method: 'POST', body: { reason } }),
+      invalidatesTags: ['Payment', 'Invoice'],
+    }),
     createPayment: builder.mutation<any, Partial<Payment>>({
       query: (body) => ({
         url: '/payments',
@@ -126,6 +139,14 @@ export const billingApiSlice = apiSlice.injectEndpoints({
         method: 'POST',
         body,
       }),
+      invalidatesTags: ['Invoice'],
+    }),
+    updateProviderDraft: builder.mutation<{ data: Invoice }, { id: number; amount: number; status: 'draft' | 'sent'; metadata: Invoice['metadata'] }>({
+      query: ({ id, ...body }) => ({ url: `/provider/invoices/${id}/draft`, method: 'PUT', body }),
+      invalidatesTags: ['Invoice'],
+    }),
+    reviewInvoice: builder.mutation<{ data: Invoice }, { id: number; action: 'reviewed' | 'return'; note: string }>({
+      query: ({ id, ...body }) => ({ url: `/invoices/${id}/review`, method: 'POST', body }),
       invalidatesTags: ['Invoice'],
     }),
     deleteInvoice: builder.mutation<any, number>({
@@ -166,7 +187,7 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       providesTags: ['Invoice', 'Document'],
     }),
     // Client-specific endpoints
-    getClientInvoices: builder.query<{ data: { data: Invoice[] } }, any>({
+    getClientInvoices: builder.query<{ data: { data: Invoice[]; last_page: number; total: number } }, any>({
       query: (params) => ({
         url: '/client/invoices',
         params,
@@ -177,7 +198,7 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       query: (id) => `/client/invoices/${id}`,
       providesTags: (result, error, id) => [{ type: 'Invoice' as const, id }],
     }),
-    getClientPayments: builder.query<{ data: { data: Payment[] } }, any>({
+    getClientPayments: builder.query<{ data: { data: Payment[]; last_page: number; total: number } }, any>({
       query: (params) => ({
         url: '/client/payments',
         params,
@@ -219,8 +240,11 @@ export const {
   useGetDocumentsQuery,
   useUploadDocumentMutation,
   useCreateInvoiceMutation,
+  useReviewInvoiceMutation,
+  useUpdateProviderDraftMutation,
   useDeleteInvoiceMutation,
   useCreatePaymentMutation,
+  useReversePaymentMutation,
   useGenerateAppealMutation,
   useGetProviderStatsQuery,
   useGetClientStatsQuery,

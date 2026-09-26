@@ -45,7 +45,7 @@ export default function ClientSignaturesPage() {
     setIsProcessing(true)
     try {
       // 1. Fetch original PDF
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api'
       const response = await fetch(`${baseUrl}/documents/${selectedDoc.id}/preview`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -80,11 +80,11 @@ export default function ClientSignaturesPage() {
       
       // 5. Save stamped PDF
       const modifiedPdfBytes = await pdfDoc.save()
-      const blob = new Blob([modifiedPdfBytes], { type: 'application/pdf' })
+      const blob = new Blob([new Uint8Array(modifiedPdfBytes)], { type: 'application/pdf' })
       
       const formData = new FormData()
       formData.append('file', blob, selectedDoc.original_name || 'signed_document.pdf')
-      formData.append('signer_email', signerInfo.email)
+      // The server derives signing identity from the authenticated account.
 
       // 6. Upload
       await signInApp({

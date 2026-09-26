@@ -20,6 +20,8 @@ import { Controller, useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 import { Image } from "antd";
 
+import { sanitizeRichText } from "@/lib/sanitizeRichText.mjs";
+
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 
 type TMyInp = {
@@ -51,7 +53,7 @@ type TMyInp = {
   selectionMode?: "single" | "multiple";
   // For array type (using useFieldArray)
   fields?: any[]; // from useFieldArray
-  append?: (value: string) => void;
+  append?: (value: { value: string }) => void;
   remove?: (index: number) => void;
   existingImageUrl?: string;
 };
@@ -256,8 +258,8 @@ export default function MyInp({
             <div className="relative">
               <ReactQuill
                 theme="snow"
-                value={field.value ?? ""}
-                onChange={field.onChange}
+                value={sanitizeRichText(field.value)}
+                onChange={(html: string) => field.onChange(sanitizeRichText(html))}
                 // Optional: pass ref if you need to focus programmatically
                 // ref={field.ref}
                 placeholder={placeholder}
