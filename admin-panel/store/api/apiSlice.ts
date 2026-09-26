@@ -1,6 +1,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { logout, setCredentials } from '../slices/authSlice';
+import { sessionIdentity } from '../session-boundary.mjs';
 import type { RootState } from '../store';
 
 export interface Notification {
@@ -83,7 +84,7 @@ const rawBaseQuery = fetchBaseQuery({
 });
 
 type RefreshPayload = { access_token: string; refresh_token: string; token_type: string; expires_in: number };
-let refreshInFlight: Promise<RefreshPayload | null> | null = null;
+const refreshesInFlight = new Map<string, Promise<RefreshPayload | null>>();
 
 // Custom baseQuery that adds auth headers selectively and handles 401 errors
 const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
@@ -92,6 +93,9 @@ const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, Fetch
   extraOptions
 ) => {
   // Determine if this is an auth endpoint
+  const requestIdentity = sessionIdentity((api.getState() as RootState).auth);
+  const staleSession = () => !isAuthEndpoint && requestIdentity !== sessionIdentity((api.getState() as RootState).auth);
+  const sessionChanged = () => ({ error: { status: 'CUSTOM_ERROR' as const, error: 'Session changed. Discarded prior account response.' } });
   const url = typeof args === "string" ? args : args.url;
   // Detect method
   const method =
@@ -131,6 +135,8 @@ const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, Fetch
 
   let result = await rawBaseQuery(modifiedArgs, api, extraOptions);
 
+  if (staleSession()) return sessionChanged();
+
   // Serialize refreshes: single-use refresh tokens must not race across parallel requests.
   if (result.error?.status === 401 && !isAuthEndpoint) {
     const state = (api.getState() as RootState).auth;
@@ -138,20 +144,23 @@ const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, Fetch
       headers.set('Authorization', `Bearer ${state.token.access_token}`);
       result = await rawBaseQuery({ ...modifiedArgs, headers }, api, extraOptions);
     } else if (state.token?.refresh_token) {
+      const refreshToken = state.token.refresh_token;
+      let refreshInFlight = refreshesInFlight.get(refreshToken);
       if (!refreshInFlight) {
-        const refreshToken = state.token.refresh_token;
         refreshInFlight = (async () => {
           const refreshed = await rawBaseQuery({ url: '/refresh-token', method: 'POST', body: { refresh_token: refreshToken } }, api, extraOptions);
           const data = refreshed.data as RefreshPayload | undefined;
           if (!data?.access_token || !data.refresh_token) return null;
           const current = (api.getState() as RootState).auth;
           // Never resurrect a signed-out or switched account.
-          if (!current.user || current.token?.refresh_token !== refreshToken) return null;
+          if (!current.user || sessionIdentity(current) !== requestIdentity || current.token?.refresh_token !== refreshToken) return null;
           api.dispatch(setCredentials({ token: data, user: current.user }));
           return data;
-        })().finally(() => { refreshInFlight = null; });
+        })().finally(() => { refreshesInFlight.delete(refreshToken); });
+        refreshesInFlight.set(refreshToken, refreshInFlight);
       }
       const refreshed = await refreshInFlight;
+      if (staleSession()) return sessionChanged();
       if (refreshed) {
         headers.set('Authorization', `Bearer ${refreshed.access_token}`);
         result = await rawBaseQuery({ ...modifiedArgs, headers }, api, extraOptions);
@@ -165,6 +174,7 @@ const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, Fetch
     }
   }
 
+  if (staleSession()) return sessionChanged();
   return result;
 };
 

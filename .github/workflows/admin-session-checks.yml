@@ -1,0 +1,28 @@
+name: Admin session checks
+on:
+  pull_request:
+    paths: ['admin-panel/**', '.github/workflows/admin-session-checks.yml']
+  push:
+    branches: [main]
+    paths: ['admin-panel/**', '.github/workflows/admin-session-checks.yml']
+permissions:
+  contents: read
+concurrency:
+  group: admin-session-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  session-isolation:
+    runs-on: ubuntu-latest
+    container: node:22-bookworm
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: admin-panel
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm test:session
+      - run: corepack pnpm run typecheck

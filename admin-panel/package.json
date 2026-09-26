@@ -8,6 +8,7 @@
     "lint": "next lint",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test:session": "node --test tests/session-boundary.test.mjs",
     "test:recovery": "node --test tests/password-recovery.test.mjs",
     "test:documents": "node --test tests/protected-document.test.mjs",
     "test:reports": "node --test tests/report-export.test.mjs"
