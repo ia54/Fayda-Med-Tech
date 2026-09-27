@@ -10,11 +10,11 @@ Not deployed. The public website and existing production application are separat
 
 | Requirement | Current evidence / remaining action |
 | --- | --- |
-| Authorized host access | Owner is having the administrator restore SSH to 144.126.132.98. Await current access confirmation or an authenticated provider terminal. No other host, domain, folder or port is authorized. |
+| Authorized host access | Owner is having the administrator restore SSH to 144.126.132.98. A September 27 credential-free connection reached OpenSSH/key exchange and stopped at strict host-key verification; this does not establish account authentication or a regional block. Independently confirm host identity and current access through an authenticated provider terminal. No other host, domain, folder or port is authorized. |
 | Production inventory | Reconfirm active API/admin/public roots, process owners, PHP/Node/database versions and existing admin port 3005 after access is restored. Do not infer these from the local runtime. |
 | Recoverable production backup | Last panel inspection reported completed API/admin/public backups, but contents, actual admin tree, database/private files/keys and isolated restore remain unverified. CI synthetic recovery does not establish production recovery. |
 | Migration and release rehearsal | Branch CI covers SQLite, MySQL 8 and MariaDB 10.11 plus synthetic upgrades/restore. Pinned source packaging records per-file and migration hashes and verifies archive integrity without extraction. The exact production schema/data and host permissions still require scoped read-only inspection and rehearsal. Preserve all existing keys and records. |
-| Production builds and cutover | Build with the three real origins; existing local admin build targets localhost. Run production configuration checks and controlled rollback procedure in LAUNCH.md. No DNS changes or new ports. |
+| Production builds and cutover | The Linux web-build workflow builds with the three real origins and packages verifiable artifacts; local browser acceptance uses localhost. Match the selected artifact to the final release commit, verify its trusted digest, and establish host runtime compatibility. Run production configuration checks and controlled rollback procedure in LAUNCH.md. No DNS changes or new ports. |
 | Identity and account recovery | Synthetic MFA/session/reset checks exist. Owner-controlled production sign-in and actual reset/invitation mail delivery or accepted operator recovery remain to be demonstrated. |
 | Shared platform acceptance | Synthetic financial, document, case, legal/report and role workflows have recorded acceptance. Verify the final release on the actual HTTPS origins and retained production configuration before reopening writes. Payments remain record-only. |
 | Optional external services | Real signing delivery/archive, OCR and AI processing are not verified. Keep unconfigured functionality unavailable. GLM is a candidate only; do not send patient data without approved account/hosting/processing terms. |
@@ -90,3 +90,7 @@ Assigned pharmacists can retain source-backed corrections to strength, dosage fo
 ### Patient detail correction increment
 
 Independent pharmacy patient charts now have an assigned-pharmacist correction path for names, birth date and contact details, with same-person confirmation, reason/evidence and retained before/after history. Record identity, organization/location links and clinical records remain unchanged. The shared patient version invalidates older fill reviews; unsupported patient merging/reassignment is not enabled. Stale/no-op/invalid requests and failed audit writes cannot produce partial corrections. Validation evidence is retained with the final published increment; this remains synthetic-only and requires professional operating acceptance.
+
+### Patient history access
+
+Patient histories now have scoped, read-only pagination and readable before/after details for demographic and clinical corrections. Older retained records are accessible beyond the legacy 100-event response limit. Validation and browser acceptance are recorded with the published increment; production deployment and pharmacy operational acceptance remain outstanding.

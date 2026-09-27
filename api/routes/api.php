@@ -84,6 +84,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'index']);
         Route::post('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'store']);
         Route::get('/patients/{id}', [\App\Http\Controllers\API\PharmacyPatientController::class, 'show']);
+        Route::get('/patients/{id}/history', [\App\Http\Controllers\API\PharmacyPatientController::class, 'history']);
         Route::put('/patients/{id}/clinical', [\App\Http\Controllers\API\PharmacyPatientController::class, 'clinical']);
         Route::put('/patients/{id}/demographics', [\App\Http\Controllers\API\PharmacyPatientController::class, 'demographics']);
         Route::get('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'index']);

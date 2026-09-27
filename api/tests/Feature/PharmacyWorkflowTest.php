@@ -2923,6 +2923,41 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson('/api/pharmacy/cases')->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_patient_history_pagination_reaches_older_records_without_cross_patient_or_location_disclosure(): void
+    {
+        $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-HISTORY-1', 'location_id' => $this->location,
+            'first_name' => 'Synthetic', 'last_name' => 'History', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic intake'];
+        $id = $this->postJson('/api/pharmacy/patients', $intake)->assertCreated()->json('data.id');
+        $other = $this->postJson('/api/pharmacy/patients', array_replace($intake, ['request_id' => (string) Str::uuid(),
+            'record_number' => 'SYN-HISTORY-2', 'location_id' => $this->otherLocation]))->assertCreated()->json('data.id');
+        for ($n = 1; $n <= 104; $n++) {
+            DB::table('pharmacy_patient_events')->insert(['patient_id' => $id, 'actor_id' => $this->actor->id,
+                'details' => json_encode(['action' => 'synthetic_history_fixture', 'sequence' => $n]), 'created_at' => now()]);
+        }
+        $url = "/api/pharmacy/patients/$id/history";
+        $first = $this->getJson($url)->assertOk()->assertJsonPath('data.total', 105)->assertJsonPath('data.last_page', 6)
+            ->assertJsonCount(20, 'data.data')->assertJsonPath('data.data.0.details.sequence', 104)->json('data.data');
+        $second = $this->getJson("$url?page=2")->assertOk()->assertJsonCount(20, 'data.data')->json('data.data');
+        $this->assertSame([], array_values(array_intersect(array_column($first, 'id'), array_column($second, 'id'))));
+        $last = $this->getJson("$url?page=6")->assertOk()->assertJsonCount(5, 'data.data')->json('data.data');
+        $this->assertSame('created', $last[4]['details']['action']);
+        foreach (array_merge($first, $second, $last) as $event) $this->assertSame($id, $event['patient_id']);
+        $this->getJson("$url?page=0")->assertUnprocessable();
+        $this->getJson("$url?page=bad")->assertUnprocessable();
+        $this->actor->role = 'medical_biller';
+        $this->getJson($url)->assertForbidden();
+        $this->actor->role = 'pharmacy_technician';
+        $this->getJson($url)->assertOk();
+        $this->actor->role = 'pharmacist';
+        $this->actor->organization_id = 2;
+        $this->getJson($url)->assertNotFound();
+        $this->actor->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->getJson("/api/pharmacy/patients/$other/history")->assertOk()->assertJsonPath('data.total', 1);
+        $this->assertSame(106, DB::table('pharmacy_patient_events')->count());
+    }
+
     public function test_patient_demographic_correction_preserves_identity_history_and_invalidates_prepared_fill(): void
     {
         $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-CORRECT-1', 'location_id' => $this->location,

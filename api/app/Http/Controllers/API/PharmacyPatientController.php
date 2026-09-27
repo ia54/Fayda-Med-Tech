@@ -44,6 +44,18 @@ class PharmacyPatientController extends Controller
         return response()->json(['data' => $p]);
     }
 
+    public function history(Request $r, $id)
+    {
+        abort_unless($this->query($r)->where('id', $id)->exists(), 404);
+        $r->validate(['page' => 'nullable|integer|min:1']);
+        $events = DB::table('pharmacy_patient_events')->where('patient_id', $id)->orderByDesc('id')->paginate(20);
+        $events->getCollection()->transform(function ($event) {
+            $event->details = json_decode($event->details, true, 512, JSON_THROW_ON_ERROR);
+            return $event;
+        });
+        return response()->json(['data' => $events]);
+    }
+
     public function store(Request $r)
     {
         $this->query($r); // Role check, including intake without an existing record.
