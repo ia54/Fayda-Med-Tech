@@ -36,3 +36,7 @@ Multi-location access, independent patient charts, intake, exact original/refill
 5. Cut over only the authorized applications after their actual launch requirements pass. Record deployed commit, migration/backup/rollback evidence and real HTTPS acceptance.
 
 Local preview credentials, OAuth keys, databases and patient-like fixtures stay outside Git. No real prescribing, dispensing, payments, messages or patient-data exports are authorized by this checklist.
+
+### Product verification increment
+
+Receipt-specific immutable product verification and review freshness checks are implemented in the current worktree. Container labels, retained label/reprint artifacts, barcode checks and licensed catalogue/substitution workflows remain outstanding. Existing and transferred receipts require actual source-product verification; there is no inferred legacy backfill. See `docs/PHARMACY-SYSTEM.md`. Local and branch validation results are recorded with the final published increment.

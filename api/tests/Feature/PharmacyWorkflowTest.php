@@ -319,7 +319,10 @@ class PharmacyWorkflowTest extends TestCase
         $dest = $this->postJson("/api/pharmacy/stock-transfers/$id/actions", $this->transferAction($id, 'receive', ['received_quantity' => '10.125']))->assertOk()->json('data.destination_lot_id');
         $this->putJson("/api/pharmacy/stock/$dest/status", ['version' => 1, 'status' => 'available', 'note' => 'Synthetic'])->assertOk();
         $rx = $this->rx(['location_id' => $this->otherLocation]);
-        $f = $this->act($rx, $this->fill($rx, $dest), 'approve', $this->checks());
+        $f = $this->fill($rx, $dest);
+        $this->act($rx, $f, 'approve', $this->checks(), 422); // source verification is not inherited
+        $this->postJson("/api/pharmacy/stock/$dest/product", $this->productBody())->assertCreated();
+        $f = $this->act($rx, $f, 'approve', $this->checks());
         $this->actingAs($this->actor, 'api');
         $this->recallStock($lot)->assertOk();
         $this->act($rx, $f, 'ready', ['checks' => ['label' => true]], 422);
@@ -560,7 +563,7 @@ class PharmacyWorkflowTest extends TestCase
         for ($i = 0; $i < 31; $i++) {
             DB::table('pharmacy_stock_events')->insert(['stock_lot_id' => $lot, 'actor_id' => $this->actor->id, 'action' => 'synthetic_history', 'quantity' => '0.000', 'details' => '{}', 'created_at' => now()]);
         }
-        $this->getJson("/api/pharmacy/stock/$lot?event_page=2")->assertOk()->assertJsonPath('data.events.total', 33)->assertJsonCount(3, 'data.events.data');
+        $this->getJson("/api/pharmacy/stock/$lot?event_page=2")->assertOk()->assertJsonPath('data.events.total', 34)->assertJsonCount(4, 'data.events.data');
         $this->recallStock($lot)->assertOk();
         // A retained hold independently blocks use even if legacy status is inconsistent.
         DB::table('pharmacy_stock_lots')->where('id', $lot)->update(['status' => 'available']);
@@ -1002,9 +1005,111 @@ class PharmacyWorkflowTest extends TestCase
         return $this->postJson('/api/pharmacy/prescriptions', $this->body($overrides))->assertCreated()->json('data.id');
     }
 
-    private function lot(array $overrides = []): int
+    private function lot(array $overrides = [], bool $verified = true): int
     {
-        return $this->postJson('/api/pharmacy/stock', array_replace(['request_id' => (string) Str::uuid(), 'location_id' => $this->location, 'ndc' => '00000-0000-00', 'medication' => 'Synthetic medication', 'lot_number' => 'SYN-LOT', 'quantity_unit' => 'tablet', 'expires_on' => now()->addMonth()->toDateString(), 'quantity' => '50.000', 'receipt_reference' => 'Synthetic receipt'], $overrides))->assertCreated()->json('data.id');
+        $id = $this->postJson('/api/pharmacy/stock', array_replace(['request_id' => (string) Str::uuid(), 'location_id' => $this->location, 'ndc' => '00000-0000-00', 'medication' => 'Synthetic medication', 'lot_number' => 'SYN-LOT', 'quantity_unit' => 'tablet', 'expires_on' => now()->addMonth()->toDateString(), 'quantity' => '50.000', 'receipt_reference' => 'Synthetic receipt'], $overrides))->assertCreated()->json('data.id');
+        if ($verified && $this->actor->role === 'pharmacist') {
+            $this->postJson("/api/pharmacy/stock/$id/product", $this->productBody())->assertCreated();
+        }
+        return $id;
+    }
+
+    private function productBody(array $overrides = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'revision' => 0,
+            'generic_name' => 'SYNTHETIC established name', 'brand_name' => null, 'strength' => 'SYNTHETIC strength',
+            'dosage_form' => 'tablet', 'manufacturer' => 'SYNTHETIC manufacturer', 'verified_on' => now()->toDateString(),
+            'evidence' => 'SYNTHETIC package and NDC/lot/expiry check', 'reason' => 'Initial synthetic product verification', 'confirmed' => true], $overrides);
+    }
+
+    public function test_product_verification_retains_revisions_and_does_not_change_stock_or_holds(): void
+    {
+        $lot = $this->lot([], false); $url = "/api/pharmacy/stock/$lot/product";
+        DB::table('pharmacy_stock_lots')->where('id', $lot)->update(['status' => 'quarantined']);
+        $baseline = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        $this->getJson("/api/pharmacy/stock/$lot")->assertOk()->assertJsonPath('data.product', null);
+        $body = $this->productBody();
+        $first = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.product.revision', 1)->json('data.product');
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.product.id', $first['id']);
+        $this->postJson($url, array_replace($body, ['manufacturer' => 'changed']))->assertStatus(409);
+        $this->postJson($url, $this->productBody())->assertStatus(409);
+        $second = $this->postJson($url, $this->productBody(['revision' => 1, 'brand_name' => 'SYNTHETIC brand', 'manufacturer' => 'SYNTHETIC corrected supplier', 'reason' => 'Synthetic transcription correction']))->assertCreated()->assertJsonPath('data.product.revision', 2)->json('data.product');
+        // An exact late retry is safe after a newer revision and returns current state.
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.product.id', $second['id']);
+        $this->getJson("/api/pharmacy/stock/$lot")->assertOk()->assertJsonPath('data.product_history.total', 2)
+            ->assertJsonPath('data.product_history.data.1.manufacturer', $first['manufacturer'])
+            ->assertJsonMissingPath('data.product.request_hash')->assertJsonMissingPath('data.product_history.data.0.request_id');
+        $this->assertSame($baseline, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $this->assertSame(2, DB::table('pharmacy_stock_events')->where('action', 'product_verified')->count());
+        $this->putJson($url, $body)->assertStatus(405);
+        $this->deleteJson($url)->assertStatus(405);
+        $other = $this->independentReviewer();
+        $this->actingAs($other, 'api');
+        $this->postJson($url, $body)->assertStatus(409);
+    }
+
+    public function test_product_verification_requires_scoped_pharmacist_complete_evidence_and_atomic_audit(): void
+    {
+        $lot = $this->lot([], false); $url = "/api/pharmacy/stock/$lot/product";
+        $body = $this->productBody();
+        foreach (['generic_name', 'strength', 'dosage_form', 'manufacturer', 'verified_on', 'evidence', 'reason', 'confirmed'] as $field) {
+            $this->postJson($url, array_replace($body, [$field => null]))->assertStatus(422);
+        }
+        $this->postJson($url, array_replace($body, ['verified_on' => now()->addDay()->toDateString()]))->assertStatus(422);
+        $this->postJson($url, array_replace($body, ['confirmed' => false]))->assertStatus(422);
+        $this->postJson($url, array_replace($body, ['revision' => 1]))->assertStatus(409);
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save();
+            $this->postJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        $this->getJson("/api/pharmacy/stock/$lot")->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $this->postJson('/api/pharmacy/stock/99999/product', $body)->assertNotFound();
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_stock_events')) {
+                throw new \RuntimeException('Synthetic product audit failure');
+            }
+        });
+        $this->postJson($url, $body)->assertStatus(500);
+        $this->assertSame(0, DB::table('pharmacy_stock_products')->count());
+    }
+
+    public function test_product_correction_invalidates_open_review_but_retains_completed_selection(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot([], false); $url = "/api/pharmacy/stock/$lot/product";
+        $f = $this->fill($rx, $lot);
+        $this->act($rx, $f, 'approve', $this->checks(), 422);
+        $first = $this->postJson($url, $this->productBody())->assertCreated()->json('data.product');
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $this->assertSame($first['id'], $f['reviewed_product']['id']);
+        $this->postJson($url, $this->productBody(['revision' => 1, 'reason' => 'SYNTHETIC correction']))->assertCreated();
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true]], 422);
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $this->postJson($url, $this->productBody(['revision' => 2]))->assertCreated();
+        $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic handover', 'counseling' => 'provided'], 422);
+        $this->act($rx, $f, 'approve', $this->checks(), 422);
+        $this->act($rx, $f, 'cancel');
+        $newFill = collect($this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertOk()->json('data.fills'))->last();
+        $f = $this->complete($rx, $newFill);
+        $this->assertSame(3, $f['reviewed_product']['revision']);
+        $handed = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $this->postJson($url, $this->productBody(['revision' => 3, 'generic_name' => 'SYNTHETIC corrected name']))->assertCreated();
+        $r = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk();
+        $saved = collect($r->json('data.fills'))->firstWhere('id', $f['id']);
+        $this->assertSame(3, $saved['reviewed_product']['revision']);
+        $this->assertSame(4, $saved['current_product']['revision']);
+        $this->assertSame($handed, (array) DB::table('pharmacy_fills')->find($f['id']));
+        // A legacy approval without a retained product is not grandfathered into preparation.
+        $next = collect($this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertOk()->json('data.fills'))->last();
+        DB::table('pharmacy_fills')->where('id', $next['id'])->update(['review_status' => 'approved', 'review' => json_encode(['checks' => $this->checks()['checks']])]);
+        $this->act($rx, $next, 'ready', ['checks' => ['label' => true]], 422);
     }
 
     private function fillBody(int $lot, array $overrides = []): array

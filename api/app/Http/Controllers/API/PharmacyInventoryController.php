@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Services\PharmacyStock;
+use App\Services\PharmacyProduct;
 use App\Services\PharmacyRecall;
 use App\Services\PharmacyAccess;
 use Illuminate\Http\Request;
@@ -64,7 +65,7 @@ class PharmacyInventoryController extends Controller
     public function show(Request $r, $id)
     {
         abort_unless(in_array($r->user()->role, ['pharmacist', 'pharmacy_technician'], true), 403);
-        $r->validate(['fill_page' => 'nullable|integer|min:1', 'event_page' => 'nullable|integer|min:1', 'count_page' => 'nullable|integer|min:1']);
+        $r->validate(['fill_page' => 'nullable|integer|min:1', 'event_page' => 'nullable|integer|min:1', 'count_page' => 'nullable|integer|min:1', 'product_page' => 'nullable|integer|min:1']);
         $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $this->org($r))->where('id', $id)->first();
         abort_unless($lot, 404);
         app(PharmacyAccess::class)->requireLocation($r->user(), $lot->location_id);
@@ -76,10 +77,45 @@ class PharmacyInventoryController extends Controller
             ->select('f.id', 'f.prescription_id', 'rx.rx_number', 'f.fill_number', 'f.quantity', 'f.fulfillment_status', 'f.created_at')
             ->orderByDesc('f.id')->paginate(30, ['*'], 'fill_page');
         $lot->counts = DB::table('pharmacy_stock_counts')->where('stock_lot_id', $id)->select('id', 'created_by', 'recorded_quantity', 'counted_quantity', 'lot_version', 'reason', 'evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at')->orderByDesc('id')->paginate(20, ['*'], 'count_page');
+        $lot->product = app(PharmacyProduct::class)->current((int) $id);
+        $lot->product_history = DB::table('pharmacy_stock_products')->where('stock_lot_id', $id)->select(PharmacyProduct::FIELDS)->orderByDesc('revision')->paginate(10, ['*'], 'product_page');
         $lot->count_pending = DB::table('pharmacy_stock_counts')->where('stock_lot_id', $id)->where('status', 'pending')->exists();
         $lot->events = DB::table('pharmacy_stock_events')->where('stock_lot_id', $id)
             ->select('id', 'fill_id', 'actor_id', 'action', 'quantity', 'details', 'created_at')->orderByDesc('id')->paginate(30, ['*'], 'event_page');
         return response()->json(['data' => $lot]);
+    }
+
+    public function verifyProduct(Request $r, $id)
+    {
+        abort_unless($r->user()->role === 'pharmacist', 403);
+        $lot = $this->countLot($r, $id);
+        $d = $r->validate([
+            'request_id' => 'required|uuid', 'revision' => 'required|integer|min:0',
+            'generic_name' => 'required|string|max:255', 'brand_name' => 'nullable|string|max:255',
+            'strength' => 'required|string|max:255', 'dosage_form' => 'required|string|max:255',
+            'manufacturer' => 'required|string|max:255', 'verified_on' => 'required|date_format:Y-m-d|before_or_equal:today',
+            'evidence' => 'required|string|max:5000', 'reason' => 'required|string|max:2000', 'confirmed' => 'required|accepted',
+        ]);
+        $d['brand_name'] = $d['brand_name'] ?? null;
+        ksort($d);
+        $hash = hash('sha256', json_encode($d, JSON_THROW_ON_ERROR));
+        $old = DB::table('pharmacy_stock_products')->where('stock_lot_id', $id)->where('request_id', $d['request_id'])->first();
+        if ($old) {
+            abort_unless((int) $old->actor_id === (int) $r->user()->id && hash_equals($old->request_hash, $hash), 409, 'This request identifier belongs to another product verification.');
+            return $this->show($r, $id);
+        }
+        $current = app(PharmacyProduct::class)->current((int) $id);
+        abort_unless((int) ($current->revision ?? 0) === $d['revision'], 409, 'Product details changed. Refresh and review the current verification.');
+        abort_if($current && $d['verified_on'] < $current->verified_on, 422, 'Verification cannot predate the previous verification.');
+        unset($d['confirmed']);
+        $d['revision']++;
+        $productId = DB::table('pharmacy_stock_products')->insertGetId($d + [
+            'stock_lot_id' => $id, 'actor_id' => $r->user()->id, 'request_hash' => $hash, 'created_at' => now(),
+        ]);
+        app(PharmacyStock::class)->event($r->user(), $lot, 'product_verified', '0.000', [
+            'product_id' => $productId, 'revision' => $d['revision'], 'previous_product_id' => $current->id ?? null,
+        ]);
+        return $this->show($r, $id)->setStatusCode(201);
     }
 
     private function countLot(Request $r, $id)

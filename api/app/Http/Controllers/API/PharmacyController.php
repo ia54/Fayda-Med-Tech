@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\User;
 use App\Services\PharmacyAccess;
 use App\Services\PharmacyStock;
+use App\Services\PharmacyProduct;
 use App\Services\PharmacyQuantity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -243,6 +244,9 @@ class PharmacyController extends Controller
             foreach (['review', 'fulfillment', 'claim'] as $k) {
                 $f->$k = $this->json($f->$k);
             }
+            $f->current_product = $stock ? app(PharmacyProduct::class)->current((int) $stock->id) : null;
+            $f->reviewed_product = $stock && ! empty($f->review['product_id'])
+                ? DB::table('pharmacy_stock_products')->where('stock_lot_id', $stock->id)->where('id', $f->review['product_id'])->first(PharmacyProduct::FIELDS) : null;
             if ($f->invoice_id) {
                 $inv = Invoice::withSum('payments as total_paid', 'amount')->find($f->invoice_id);
                 $f->invoice = $inv?->only(['id', 'invoice_number', 'amount', 'status', 'total_paid']);
@@ -466,18 +470,26 @@ class PharmacyController extends Controller
                                 $this->fail('Complete the patient allergy and medication review before approving this fill.');
                             }
                         }
+                        $product = app(PharmacyProduct::class)->current((int) $f->stock_lot_id);
+                        if (! $product) {
+                            $this->fail('A pharmacist must verify the stock receipt product details before approving this fill.');
+                        }
                         foreach (['identity', 'prescriber', 'therapy', 'product'] as $check) {
                             if (empty($d['checks'][$check])) {
                                 $this->fail('Complete each pharmacist review check.');
                             }
                         }
                     }
-                    $update = ['review_status' => $a === 'approve' ? 'approved' : 'held', 'review' => json_encode(['actor_id' => $r->user()->id, 'at' => now()->toIso8601String(), 'note' => $d['note'], 'checks' => $d['checks'] ?? [], 'patient_version' => $chart->version ?? null, 'source_last_id' => DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->max('id') ?? 0])];
+                    $update = ['review_status' => $a === 'approve' ? 'approved' : 'held', 'review' => json_encode(['actor_id' => $r->user()->id, 'at' => now()->toIso8601String(), 'note' => $d['note'], 'checks' => $d['checks'] ?? [], 'product_id' => $product->id ?? null, 'patient_version' => $chart->version ?? null, 'source_last_id' => DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->max('id') ?? 0])];
                 } elseif ($a === 'cancel') {
                     $update = ['fulfillment_status' => 'cancelled'];
                 } else {
                     if ($rx->controlled || $rx->compounded) {
                         $this->fail('Controlled and compounded dispensing is not enabled.');
+                    }
+                    $product = app(PharmacyProduct::class)->current((int) $f->stock_lot_id);
+                    if (! $product || (int) ($this->json($f->review)['product_id'] ?? 0) !== (int) $product->id) {
+                        $this->fail('Verified product details need a fresh pharmacist review. Review a pending fill again; cancel a prepared fill and start again.');
                     }
                     if ($ep->pharmacy_patient_id && (int) ($this->json($f->review)['patient_version'] ?? 0) !== (int) DB::table('pharmacy_patients')->where('id', $ep->pharmacy_patient_id)->value('version')) {
                         $this->fail('The patient clinical record changed. A new pharmacist review is required; cancel a prepared fill and start again.');
