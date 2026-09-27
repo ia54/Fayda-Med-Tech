@@ -335,6 +335,50 @@ class PharmacyController extends Controller
         return $this->show($r, $id);
     }
 
+    public function closeAllowance(Request $r, $id)
+    {
+        $this->allow($r, ['pharmacist']);
+        $d = $r->validate([
+            'request_id' => 'required|uuid', 'ledger_token' => 'required|string|regex:/^[a-f0-9]{64}$/D',
+            'authorization_number' => 'required|integer|min:1|max:100',
+            'basis' => 'required|in:patient_request,prescriber_instruction',
+            'occurred_on' => 'required|date_format:Y-m-d|before_or_equal:today',
+            'reason' => 'required|string|max:2000', 'evidence' => 'required|string|max:2000',
+            'confirmed' => 'required|accepted',
+        ]);
+        DB::transaction(function () use ($r, $id, $d) {
+            $rx = $this->rx($r, $id, true);
+            $prior = DB::table('pharmacy_allowance_closures')->where('prescription_id', $rx->id)->where('request_id', $d['request_id'])->first();
+            if ($prior) {
+                abort_unless((int) $prior->actor_id === (int) $r->user()->id && hash_equals($prior->request_hash, $this->hash($d)), 409, 'This request already has different retained evidence.');
+                return;
+            }
+            abort_if($rx->controlled || $rx->compounded, 422, 'This closure workflow does not apply to controlled or compounded prescriptions.');
+            abort_if($rx->discontinued_at || $rx->expires_on < now()->toDateString(), 422, 'This prescription is no longer active for further supply.');
+            $balance = app(PharmacyQuantity::class)->balance($rx);
+            abort_unless(hash_equals($balance['ledger_token'], $d['ledger_token']), 409, 'The prescription quantity record changed. Refresh and review it before closing a remainder.');
+            $fills = DB::table('pharmacy_fills')->where('prescription_id', $rx->id);
+            abort_if((clone $fills)->whereNotIn('fulfillment_status', ['collected', 'delivered', 'cancelled'])->exists(), 422, 'Resolve the open fill before closing a remainder.');
+            $group = collect($balance['allowances'])->firstWhere('number', (int) $d['authorization_number']);
+            abort_unless($group && (int) $d['authorization_number'] === $balance['next_authorization_number'] && ! $group['closure']
+                && PharmacyStock::milli($group['handed_over']) > 0 && PharmacyStock::milli($group['remaining']) > 0, 422, 'Only the current partially supplied allowance has a remainder that can be closed.');
+            $latest = $rx->written_on;
+            foreach ((clone $fills)->where('authorization_number', $d['authorization_number'])->whereIn('fulfillment_status', ['collected', 'delivered'])->get() as $fill) {
+                $latest = max($latest, $this->json($fill->fulfillment)['occurred_on'] ?? substr($fill->updated_at, 0, 10));
+            }
+            abort_if($d['occurred_on'] < $latest, 422, 'Closure cannot predate the most recent handover for this allowance.');
+            $record = $d;
+            unset($record['confirmed']);
+            $closureId = DB::table('pharmacy_allowance_closures')->insertGetId($record + [
+                'prescription_id' => $rx->id, 'quantity' => $group['remaining'], 'actor_id' => $r->user()->id,
+                'request_hash' => $this->hash($d), 'created_at' => now(),
+            ]);
+            $this->event($r, $rx, 'allowance_remainder_closed', ['closure_id' => $closureId, 'authorization_number' => $d['authorization_number'],
+                'quantity' => $group['remaining'], 'basis' => $d['basis'], 'occurred_on' => $d['occurred_on'], 'reason' => $d['reason'], 'evidence' => $d['evidence']]);
+        });
+        return $this->show($r, $id);
+    }
+
     public function createFill(Request $r, $id)
     {
         $this->allow($r, ['pharmacist', 'pharmacy_technician']);

@@ -1100,6 +1100,105 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson('/api/pharmacy/prescriptions')->assertForbidden();
     }
 
+    private function closureBody(int $rx, array $overrides = []): array
+    {
+        $balance = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.quantity_balance');
+        return array_replace(['request_id' => (string) Str::uuid(), 'ledger_token' => $balance['ledger_token'],
+            'authorization_number' => 1, 'basis' => 'patient_request', 'occurred_on' => now()->toDateString(),
+            'reason' => 'Synthetic patient request to close remainder', 'evidence' => 'Synthetic evidence only', 'confirmed' => true], $overrides);
+    }
+
+    public function test_closing_partial_allowance_retains_history_and_never_pools_quantity(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '4.000', 'partial_reason' => 'Synthetic partial']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $f);
+        $before = (array) DB::table('pharmacy_fills')->where('id', $f['id'])->first();
+        $stock = (array) DB::table('pharmacy_stock_lots')->where('id', $lot)->first();
+        $body = $this->closureBody($rx); $url = "/api/pharmacy/prescriptions/$rx/allowances/close";
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.quantity_balance.allowances.0.closed_quantity', '6.000')
+            ->assertJsonPath('data.quantity_balance.allowances.0.handed_over', '4.000')
+            ->assertJsonPath('data.quantity_balance.next_authorization_number', 2)
+            ->assertJsonPath('data.quantity_balance.available_quantity', '10.000')
+            ->assertJsonPath('data.quantity_balance.closable_authorization_number', null)
+            ->assertJsonMissingPath('data.quantity_balance.allowances.0.closure.request_hash');
+        $this->assertSame($before, (array) DB::table('pharmacy_fills')->where('id', $f['id'])->first());
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->where('id', $lot)->first());
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['reason' => 'Changed']))->assertStatus(409);
+        $this->actingAs($this->independentReviewer(), 'api'); $this->postJson($url, $body)->assertStatus(409);
+        $this->actingAs($this->actor, 'api');
+        $this->assertSame(1, DB::table('pharmacy_allowance_closures')->count());
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'allowance_remainder_closed')->count());
+        $this->putJson($url, $body)->assertStatus(405);
+        $this->deleteJson($url)->assertStatus(405);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '16.000']))->assertUnprocessable();
+        $next = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertOk()->json('data.fills.1');
+        $this->assertSame(2, $next['authorization_number']);
+        $this->complete($rx, $next);
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.quantity_balance.next_authorization_number', null);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '6.000', 'partial_reason' => 'Cannot reclaim closed quantity']))->assertUnprocessable();
+        $this->assertEquals(36, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertSame(2, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+    }
+
+    public function test_allowance_closure_is_scoped_to_assigned_pharmacists_and_current_general_records(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $url = "/api/pharmacy/prescriptions/$rx/allowances/close";
+        $this->postJson($url, $this->closureBody($rx))->assertUnprocessable();
+        $f = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '4.000', 'partial_reason' => 'Synthetic partial']))->assertOk()->json('data.fills.0');
+        $this->postJson($url, $this->closureBody($rx))->assertUnprocessable();
+        $this->complete($rx, $f); $body = $this->closureBody($rx);
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save(); $this->postJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save(); $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        foreach (['controlled', 'compounded'] as $flag) {
+            DB::table('pharmacy_prescriptions')->where('id', $rx)->update([$flag => true]);
+            $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.closable_authorization_number', null);
+            $this->postJson($url, $this->closureBody($rx))->assertUnprocessable();
+            DB::table('pharmacy_prescriptions')->where('id', $rx)->update([$flag => false]);
+        }
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['expires_on' => now()->subDay()->toDateString()]);
+        $this->postJson($url, $this->closureBody($rx))->assertUnprocessable();
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['expires_on' => now()->addMonth()->toDateString(), 'discontinued_at' => now()]);
+        $this->postJson($url, $this->closureBody($rx))->assertUnprocessable();
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['discontinued_at' => null]);
+        DB::table('pharmacy_fills')->where('id', $f['id'])->update(['authorization_number' => null]);
+        $this->postJson($url, $this->closureBody($rx))->assertUnprocessable();
+        $this->assertSame(0, DB::table('pharmacy_allowance_closures')->count());
+    }
+
+    public function test_allowance_closure_rejects_stale_dates_and_rolls_back_failed_evidence(): void
+    {
+        $rx = $this->rx(['refills_authorized' => 0]); $lot = $this->lot(); $url = "/api/pharmacy/prescriptions/$rx/allowances/close";
+        $f = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '4.000', 'partial_reason' => 'Synthetic partial']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $f); $stale = $this->closureBody($rx);
+        $pending = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '6.000']))->assertOk()->json('data.fills.1');
+        $this->act($rx, $pending, 'cancel');
+        $this->postJson($url, $stale)->assertStatus(409);
+        $body = $this->closureBody($rx);
+        foreach ([['authorization_number' => 2], ['confirmed' => false], ['evidence' => ''], ['occurred_on' => now()->subDay()->toDateString()], ['occurred_on' => now()->addDay()->toDateString()]] as $invalid) {
+            $this->postJson($url, array_replace($body, $invalid))->assertUnprocessable();
+        }
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) { throw new \RuntimeException('Synthetic closure audit failure'); }
+        });
+        $this->postJson($url, $body)->assertStatus(500); $fail = false;
+        $this->assertSame(0, DB::table('pharmacy_allowance_closures')->count());
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '6.000')->assertJsonPath('data.quantity_balance.ledger_token', $body['ledger_token']);
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.quantity_balance.next_authorization_number', null);
+        $this->assertEquals(46, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+    }
+
     public function test_partial_quantities_share_an_allowance_and_cannot_exceed_it(): void
     {
         $rx = $this->rx(['quantity' => '0.300', 'refills_authorized' => 1]);
