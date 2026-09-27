@@ -37,6 +37,9 @@ class PharmacyPatientController extends Controller
         abort_unless($p, 404);
         unset($p->request_hash, $p->request_id);
         $p->clinical = json_decode($p->clinical, true, 512, JSON_THROW_ON_ERROR);
+        $p->locations = app(PharmacyAccess::class)->locations($r->user())
+            ->whereIn('id', DB::table('pharmacy_patient_locations')->select('location_id')->where('patient_id', $id))
+            ->orderBy('name')->orderBy('id')->get(['id', 'name']);
         $p->history = DB::table('pharmacy_patient_events')->where('patient_id', $id)->orderByDesc('id')->limit(100)->get()->map(function ($e) {
             $e->details = json_decode($e->details, true, 512, JSON_THROW_ON_ERROR);
             return $e;
@@ -107,6 +110,31 @@ class PharmacyPatientController extends Controller
         $this->event($r, $id, ['action' => 'demographics_corrected', 'previous' => $previous,
             'recorded' => $recorded, 'reason' => $d['reason'], 'identity_reference' => $d['identity_reference'],
             'same_patient_confirmed' => true, 'version' => $p->version + 1]);
+        return $this->show($r, $id);
+    }
+
+    public function enrollLocation(Request $r, $id)
+    {
+        abort_unless($r->user()->role === 'pharmacist', 403);
+        $p = $this->query($r)->where('id', $id)->lockForUpdate()->first();
+        abort_unless($p, 404);
+        $d = $r->validate([
+            'version' => 'required|integer|min:1',
+            'source_location_id' => 'required|integer', 'location_id' => 'required|integer|different:source_location_id',
+            'reason' => 'required|string|max:2000', 'identity_reference' => 'required|string|max:2000',
+            'sharing_authority_reference' => 'required|string|max:2000', 'sharing_confirmed' => 'required|accepted',
+        ]);
+        $access = app(PharmacyAccess::class);
+        $access->requireLocation($r->user(), $d['source_location_id']);
+        $access->requireLocation($r->user(), $d['location_id']);
+        abort_unless(DB::table('pharmacy_patient_locations')->where('patient_id', $id)->where('location_id', $d['source_location_id'])->exists(), 404, 'Source patient enrollment is unavailable.');
+        abort_unless((int) $p->version === $d['version'], 409, 'Patient record changed. Refresh before enrolling.');
+        abort_if(DB::table('pharmacy_patient_locations')->where('patient_id', $id)->where('location_id', $d['location_id'])->exists(), 422, 'Patient is already enrolled at this location.');
+        DB::table('pharmacy_patient_locations')->insert(['patient_id' => $id, 'location_id' => $d['location_id']]);
+        DB::table('pharmacy_patients')->where('id', $id)->update(['version' => $p->version + 1, 'updated_at' => now()]);
+        $this->event($r, $id, ['action' => 'location_enrolled', 'source_location_id' => $d['source_location_id'],
+            'location_id' => $d['location_id'], 'reason' => $d['reason'], 'identity_reference' => $d['identity_reference'],
+            'sharing_authority_reference' => $d['sharing_authority_reference'], 'sharing_confirmed' => true, 'version' => $p->version + 1]);
         return $this->show($r, $id);
     }
 

@@ -28,7 +28,7 @@ export function PatientHistory({id}:{id:number}){
        {Boolean(d.identity_reference)&&<p>Identity evidence: {String(d.identity_reference)}</p>}
        <dl className="space-y-3">{fields.map(key=><div key={key}><dt className="font-medium capitalize">{key.replaceAll('_',' ')}</dt><dd className="text-sm whitespace-pre-wrap">Before: {display(key,before[key])}</dd><dd className="text-sm whitespace-pre-wrap">After: {display(key,after[key])}</dd></div>)}</dl>
        <p className="text-sm">Patient record revision {String(d.version)}</p>
-      </div>:action==='created'?<p className="pt-3">Identity evidence: {String(d.identity_reference||'Not recorded')} · Original location #{String(d.location_id||'Not recorded')}</p>:<pre className="whitespace-pre-wrap text-sm">{JSON.stringify(d,null,2)}</pre>}
+      </div>:action==='location_enrolled'?<div className="space-y-2 pt-3"><p>Enrolled at location #{String(d.location_id)} from existing location #{String(d.source_location_id)}.</p><p>Reason: {String(d.reason)}</p><p>Identity evidence: {String(d.identity_reference)}</p><p>Sharing authority: {String(d.sharing_authority_reference)}</p><p>Patient record revision {String(d.version)}</p></div>:action==='created'?<p className="pt-3">Identity evidence: {String(d.identity_reference||'Not recorded')} · Original location #{String(d.location_id||'Not recorded')}</p>:<pre className="whitespace-pre-wrap text-sm">{JSON.stringify(d,null,2)}</pre>}
      </details>
     </li>
    })}</ul>

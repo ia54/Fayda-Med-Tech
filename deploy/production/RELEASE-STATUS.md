@@ -94,3 +94,7 @@ Independent pharmacy patient charts now have an assigned-pharmacist correction p
 ### Patient history access
 
 Patient histories now have scoped, read-only pagination and readable before/after details for demographic and clinical corrections. Older retained records are accessible beyond the legacy 100-event response limit. Validation and browser acceptance are recorded with the published increment; production deployment and pharmacy operational acceptance remain outstanding.
+
+### Multi-location patient enrollment
+
+The same independent patient chart can be explicitly enrolled at another same-organization location by a pharmacist assigned to both sites, with retained identity and sharing-authority evidence. Source prescriptions and stock retain their original access boundaries. This does not establish consent/legal authority or enable prescription transfer. Erroneous enrollment correction, operational sharing procedures and professional acceptance remain required.

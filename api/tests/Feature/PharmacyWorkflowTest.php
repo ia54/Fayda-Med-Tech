@@ -2923,6 +2923,104 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson('/api/pharmacy/cases')->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_patient_location_enrollment_shares_one_chart_but_not_source_prescriptions(): void
+    {
+        $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-ENROLL-1', 'location_id' => $this->location,
+            'first_name' => 'Synthetic', 'last_name' => 'Multi location', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic intake'];
+        $p = $this->postJson('/api/pharmacy/patients', $intake)->assertCreated()->assertJsonCount(1, 'data.locations')->json('data');
+        $url = "/api/pharmacy/patients/{$p['id']}";
+        $rx = $this->rx(['patient_id' => null, 'pharmacy_patient_id' => $p['id']]);
+        $beforePatient = (array) DB::table('pharmacy_patients')->where('id', $p['id'])->first();
+        $beforeRx = DB::table('pharmacy_prescriptions')->get()->toJson();
+        $beforeUsers = DB::table('users')->count();
+        $body = ['version' => 1, 'source_location_id' => $this->location, 'location_id' => $this->otherLocation,
+            'reason' => 'Synthetic care at second pharmacy', 'identity_reference' => 'Synthetic identity',
+            'sharing_authority_reference' => 'Synthetic sharing authorization', 'sharing_confirmed' => true];
+        // Target-only staff cannot discover or enroll a chart before an authorized source pharmacist shares it.
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->postJson("$url/locations", $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $changed = $this->postJson("$url/locations", $body)->assertOk()->assertJsonCount(2, 'data.locations')
+            ->assertJsonPath('data.version', 2)->json('data');
+        $event = $changed['history'][0];
+        $this->assertSame($this->actor->id, $event['actor_id']);
+        $this->assertSame('location_enrolled', $event['details']['action']);
+        $this->assertSame($this->location, $event['details']['source_location_id']);
+        $this->assertSame($this->otherLocation, $event['details']['location_id']);
+        $this->assertSame($body['sharing_authority_reference'], $event['details']['sharing_authority_reference']);
+        $this->assertTrue($event['details']['sharing_confirmed']);
+        $afterPatient = (array) DB::table('pharmacy_patients')->where('id', $p['id'])->first();
+        foreach ($beforePatient as $field => $value) {
+            if (!in_array($field, ['version', 'updated_at'], true)) $this->assertSame($value, $afterPatient[$field]);
+        }
+        $this->postJson("$url/locations", $body)->assertConflict();
+        $this->postJson("$url/locations", array_replace($body, ['version' => 2]))->assertUnprocessable();
+        $this->assertSame(1, DB::table('pharmacy_patients')->count());
+        $this->assertSame(2, DB::table('pharmacy_patient_locations')->count());
+        $this->assertSame(2, DB::table('pharmacy_patient_events')->count());
+        $this->assertSame($beforeRx, DB::table('pharmacy_prescriptions')->get()->toJson());
+        $this->assertSame($beforeUsers, DB::table('users')->count());
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertOk()->assertJsonCount(1, 'data.locations')->assertJsonPath('data.locations.0.id', $this->otherLocation);
+        $this->getJson("$url/history")->assertOk()->assertJsonPath('data.total', 2);
+        $this->getJson('/api/pharmacy/patients?location_id='.$this->otherLocation)->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertNotFound();
+        $this->getJson('/api/pharmacy/prescriptions')->assertOk()->assertJsonPath('data.total', 0);
+        // A separately received prescription can use the same chart at the enrolled site.
+        $newRx = $this->rx(['patient_id' => null, 'pharmacy_patient_id' => $p['id'], 'location_id' => $this->otherLocation]);
+        $this->getJson("/api/pharmacy/prescriptions/$newRx")->assertOk()->assertJsonPath('data.location_id', $this->otherLocation);
+        $this->getJson('/api/pharmacy/prescriptions')->assertOk()->assertJsonPath('data.total', 1);
+        $this->assertSame(1, DB::table('pharmacy_patients')->count());
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->otherLocation)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->getJson("$url/history")->assertNotFound();
+    }
+
+    public function test_patient_location_enrollment_requires_both_assignments_evidence_and_atomic_audit(): void
+    {
+        $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-ENROLL-2', 'location_id' => $this->location,
+            'first_name' => 'Synthetic', 'last_name' => 'Multi location', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic intake'];
+        $id = $this->postJson('/api/pharmacy/patients', $intake)->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/patients/$id/locations";
+        $body = ['version' => 1, 'source_location_id' => $this->location, 'location_id' => $this->otherLocation,
+            'reason' => 'Synthetic enrollment', 'identity_reference' => 'Synthetic identity',
+            'sharing_authority_reference' => 'Synthetic authority', 'sharing_confirmed' => true];
+        foreach (['pharmacy_technician', 'medical_biller', 'admin', 'firm_admin', 'attorney', 'client', 'provider'] as $role) {
+            $this->actor->role = $role; $this->postJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist';
+        foreach ([['sharing_confirmed' => false], ['reason' => ''], ['identity_reference' => ''], ['sharing_authority_reference' => ''],
+            ['location_id' => $this->location]] as $invalid) {
+            $this->postJson($url, array_replace($body, $invalid))->assertUnprocessable();
+        }
+        $this->postJson($url, array_replace($body, ['source_location_id' => $this->otherLocation, 'location_id' => $this->location]))->assertNotFound();
+        $this->postJson($url, array_replace($body, ['version' => 2]))->assertConflict();
+        $this->actor->organization_id = 2; $this->postJson($url, $body)->assertNotFound(); $this->actor->organization_id = 1;
+        foreach ([['active' => false], ['valid_until' => now()->subDay()->toDateString()]] as $invalid) {
+            DB::table('pharmacy_staff_assignments')->where('location_id', $this->otherLocation)->update($invalid);
+            $this->postJson($url, $body)->assertNotFound();
+            DB::table('pharmacy_staff_assignments')->where('location_id', $this->otherLocation)->update(['active' => true, 'valid_until' => now()->addYear()->toDateString()]);
+        }
+        DB::table('pharmacy_locations')->where('id', $this->otherLocation)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_locations')->where('id', $this->otherLocation)->update(['active' => true, 'organization_id' => 2]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_locations')->where('id', $this->otherLocation)->update(['organization_id' => 1]);
+        $before = (array) DB::table('pharmacy_patients')->where('id', $id)->first();
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_patient_events')) {
+                throw new \RuntimeException('Synthetic enrollment audit failure');
+            }
+        });
+        $this->postJson($url, $body)->assertStatus(500); $fail = false;
+        $this->assertSame($before, (array) DB::table('pharmacy_patients')->where('id', $id)->first());
+        $this->assertSame(1, DB::table('pharmacy_patient_locations')->count());
+        $this->assertSame(1, DB::table('pharmacy_patient_events')->count());
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.version', 2);
+    }
+
     public function test_patient_history_pagination_reaches_older_records_without_cross_patient_or_location_disclosure(): void
     {
         $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-HISTORY-1', 'location_id' => $this->location,
