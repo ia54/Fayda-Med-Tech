@@ -558,3 +558,13 @@ body > * {
   height: min(60vh, calc(90dvh - 280px));
   min-height: 100px;
 }
+
+/* Pharmacy worklist identifiers and follow-up counts must remain fully readable. */
+.overflow-x-auto table[data-pharmacy-worklist="true"] th,
+.overflow-x-auto table[data-pharmacy-worklist="true"] td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+  vertical-align: top;
+}
