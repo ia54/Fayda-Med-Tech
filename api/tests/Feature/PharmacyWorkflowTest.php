@@ -529,6 +529,68 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(0, DB::table('pharmacy_ingredient_allocations')->count());
     }
 
+    public function test_ingredient_count_quarantines_and_applies_once_with_independent_review(): void
+    {
+        $lot = $this->postJson('/api/pharmacy/ingredient-lots', $this->ingredientReceipt())->assertCreated()->json('data.id');
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/status", ['version' => 1, 'status' => 'available', 'evidence' => 'Synthetic'])->assertOk();
+        $body = ['request_id' => (string) Str::uuid(), 'version' => 2, 'counted_quantity' => '4.875', 'reason' => 'observed_loss', 'evidence' => 'Synthetic physical count'];
+        $url = "/api/pharmacy/ingredient-lots/$lot/counts";
+        $r = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.status', 'quarantined');
+        $count = $r->json('data.counts.0.id');
+        $this->assertEquals(5, $r->json('data.on_hand'));
+        $this->postJson($url, $body)->assertOk()->assertJsonCount(1, 'data.counts');
+        $this->postJson($url, array_replace($body, ['counted_quantity' => '4']))->assertStatus(409);
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/status", ['version' => 3, 'status' => 'available', 'evidence' => 'Synthetic'])->assertUnprocessable();
+        $review = ['decision' => 'apply', 'evidence' => 'Synthetic independent count verification'];
+        $this->postJson("$url/$count/review", $review)->assertUnprocessable();
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("$url/$count/review", $review)->assertOk()->assertJsonPath('data.counts.0.status', 'applied')->assertJsonPath('data.status', 'quarantined');
+        $this->postJson("$url/$count/review", $review)->assertStatus(409);
+        $this->assertEquals(4.875, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(-0.125, DB::table('pharmacy_ingredient_events')->where('action', 'count_adjustment_applied')->value('quantity'));
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'count_adjustment_applied')->count());
+    }
+
+    public function test_counts_protect_reservations_and_stale_counts_require_rejection(): void
+    {
+        [$b, $lot] = $this->reservedWorksheet();
+        $version = DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('version');
+        $body = ['request_id' => (string) Str::uuid(), 'version' => $version, 'counted_quantity' => '1', 'reason' => 'physical_count', 'evidence' => 'Synthetic shortage'];
+        $url = "/api/pharmacy/ingredient-lots/$lot/counts";
+        $count = $this->postJson($url, $body)->assertCreated()->json('data.counts.0.id');
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $this->executionBody())->assertUnprocessable();
+        $this->actingAs($this->independentReviewer(), 'api');
+        $review = ['decision' => 'apply', 'evidence' => 'Synthetic'];
+        $this->postJson("$url/$count/review", $review)->assertUnprocessable();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/allocation", ['version' => 3, 'action' => 'release', 'evidence' => 'Synthetic shortage'])->assertOk();
+        $this->postJson("$url/$count/review", $review)->assertStatus(409);
+        $this->postJson("$url/$count/review", array_replace($review, ['decision' => 'reject']))->assertOk()->assertJsonPath('data.counts.0.status', 'rejected')->assertJsonPath('data.status', 'quarantined');
+        $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertSame(0, DB::table('pharmacy_ingredient_events')->where('action', 'count_adjustment_applied')->count());
+    }
+
+    public function test_count_roles_scope_validation_and_zero_balance(): void
+    {
+        $lot = $this->postJson('/api/pharmacy/ingredient-lots', $this->ingredientReceipt())->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/ingredient-lots/$lot/counts";
+        $body = ['request_id' => (string) Str::uuid(), 'version' => 1, 'counted_quantity' => '0', 'reason' => 'observed_loss', 'evidence' => 'Synthetic zero count'];
+        $this->postJson($url, array_replace($body, ['counted_quantity' => '-1']))->assertUnprocessable();
+        $this->postJson($url, array_replace($body, ['counted_quantity' => '6']))->assertUnprocessable();
+        $this->actor->role = 'pharmacy_technician';
+        $count = $this->postJson($url, $body)->assertCreated()->json('data.counts.0.id');
+        $this->postJson("$url/$count/review", ['decision' => 'apply', 'evidence' => 'Synthetic'])->assertForbidden();
+        $reviewer = $this->independentReviewer();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("$url/$count/review", ['decision' => 'apply', 'evidence' => 'Synthetic'])->assertOk();
+        $this->assertEquals(0, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->actor->role = 'pharmacist';
+        $this->actingAs($this->actor, 'api');
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 2;
+        $this->postJson("$url/$count/review", ['decision' => 'apply', 'evidence' => 'Synthetic'])->assertNotFound();
+    }
+
     private function reservedWorksheet(bool $two = false): array
     {
         $b = $this->reviewedWorksheet($two);

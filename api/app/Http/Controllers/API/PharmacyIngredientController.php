@@ -53,6 +53,8 @@ class PharmacyIngredientController extends Controller
     {
         $lot = $this->lot($r, $id);
         unset($lot->request_id,$lot->request_hash);
+        $lot->counts = DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)
+            ->select('id', 'created_by', 'recorded_quantity', 'counted_quantity', 'lot_version', 'reason', 'evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at')->orderByDesc('id')->get();
         $lot->events = DB::table('pharmacy_ingredient_events')->where('ingredient_lot_id', $id)->orderByDesc('id')->limit(100)->get();
 
         return response()->json(['data' => $lot]);
@@ -93,11 +95,64 @@ class PharmacyIngredientController extends Controller
         $lot = $this->lot($r, $id);
         $d = $r->validate(['version' => 'required|integer|min:1', 'status' => 'required|in:available,quarantined', 'evidence' => 'required|string|max:5000']);
         abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh before reviewing.');
+        abort_if($d['status'] === 'available' && DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)->where('status', 'pending')->exists(), 422, 'Resolve the pending stock discrepancy before releasing quarantine.');
         abort_if($d['status'] === $lot->status, 422, 'Status is unchanged.');
         abort_if($d['status'] === 'available' && $lot->expires_on < now()->toDateString(), 422, 'Expired ingredients cannot be released from quarantine.');
         DB::table('pharmacy_ingredient_lots')->where('id', $id)->update(['status' => $d['status'], 'version' => $lot->version + 1, 'updated_at' => now()]);
         $this->event($r, $id, null, 'status_changed', '0.000', ['previous' => $lot->status, 'status' => $d['status'], 'evidence' => $d['evidence']]);
 
+        return $this->show($r, $id);
+    }
+
+    public function count(Request $r, $id)
+    {
+        $lot = $this->lot($r, $id);
+        $d = $r->validate(['request_id' => 'required|uuid', 'version' => 'required|integer|min:1',
+            'counted_quantity' => 'required|numeric|min:0|max:999999.999|decimal:0,3',
+            'reason' => 'required|in:physical_count,observed_loss', 'evidence' => 'required|string|max:5000']);
+        $hash = hash('sha256', json_encode($d, JSON_THROW_ON_ERROR));
+        $old = DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)->where('request_id', $d['request_id'])->first();
+        if ($old) {
+            abort_unless((int) $old->created_by === (int) $r->user()->id && hash_equals($old->request_hash, $hash), 409, 'This request identifier belongs to another count.');
+            return $this->show($r, $id);
+        }
+        abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh and recount.');
+        abort_if(DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)->where('status', 'pending')->exists(), 409, 'A discrepancy is already awaiting review.');
+        $counted = PharmacyStock::milli($d['counted_quantity']);
+        $recorded = PharmacyStock::milli($lot->on_hand);
+        abort_if($counted === $recorded, 422, 'There is no quantity discrepancy to reconcile.');
+        abort_if($d['reason'] !== 'physical_count' && $counted > $recorded, 422, 'An observed loss cannot increase stock.');
+        $countId = DB::table('pharmacy_ingredient_counts')->insertGetId([
+            'ingredient_lot_id' => $id, 'created_by' => $r->user()->id, 'request_id' => $d['request_id'], 'request_hash' => $hash,
+            'recorded_quantity' => $lot->on_hand, 'counted_quantity' => PharmacyStock::decimal($counted), 'lot_version' => $lot->version + 1,
+            'reason' => $d['reason'], 'evidence' => $d['evidence'], 'created_at' => now(),
+        ]);
+        DB::table('pharmacy_ingredient_lots')->where('id', $id)->update(['status' => 'quarantined', 'version' => $lot->version + 1, 'updated_at' => now()]);
+        $this->event($r, $id, null, 'discrepancy_recorded', '0.000', ['count_id' => $countId, 'recorded_quantity' => $lot->on_hand, 'counted_quantity' => PharmacyStock::decimal($counted), 'status' => 'quarantined', 'evidence' => $d['evidence']]);
+        return $this->show($r, $id)->setStatusCode(201);
+    }
+
+    public function reviewCount(Request $r, $id, $countId)
+    {
+        $this->org($r, true);
+        $lot = $this->lot($r, $id);
+        $d = $r->validate(['decision' => 'required|in:apply,reject', 'evidence' => 'required|string|max:5000']);
+        $count = DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)->where('id', $countId)->first();
+        abort_unless($count, 404);
+        abort_unless($count->status === 'pending', 409, 'This discrepancy has already been reviewed.');
+        abort_if((int) $count->created_by === (int) $r->user()->id, 422, 'A different pharmacist must review this discrepancy.');
+        $delta = 0;
+        if ($d['decision'] === 'apply') {
+            abort_unless((int) $lot->version === (int) $count->lot_version && $lot->status === 'quarantined', 409, 'Stock changed after this count. Reject this proposal and record a fresh count.');
+            $counted = PharmacyStock::milli($count->counted_quantity);
+            abort_unless($counted >= PharmacyStock::milli($lot->reserved), 422, 'Count is below reserved stock. Resolve worksheet reservations, reject this proposal and recount.');
+            $delta = $counted - PharmacyStock::milli($lot->on_hand);
+            DB::table('pharmacy_ingredient_lots')->where('id', $id)->update(['on_hand' => PharmacyStock::decimal($counted), 'version' => $lot->version + 1, 'updated_at' => now()]);
+        }
+        DB::table('pharmacy_ingredient_counts')->where('id', $countId)->update(['status' => $d['decision'] === 'apply' ? 'applied' : 'rejected', 'reviewed_by' => $r->user()->id, 'review_evidence' => $d['evidence'], 'reviewed_at' => now()]);
+        $signed = ($delta < 0 ? '-' : '').PharmacyStock::decimal(abs($delta));
+        $this->event($r, $id, null, $d['decision'] === 'apply' ? 'count_adjustment_applied' : 'count_adjustment_rejected', $signed,
+            ['count_id' => (int) $countId, 'before' => $lot->on_hand, 'after' => $d['decision'] === 'apply' ? $count->counted_quantity : $lot->on_hand, 'evidence' => $d['evidence'], 'status' => 'quarantined']);
         return $this->show($r, $id);
     }
 

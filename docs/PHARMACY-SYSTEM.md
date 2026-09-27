@@ -2,6 +2,14 @@
 
 Decision recorded September 24, 2026. Pharmacy is the core product, not an optional provider portal. Build the pharmacy-management and dispensing system inside FaydaMedTech. Support multiple potential pharmacy locations, controlled substances, and compounded preparations. On September 25 the owner confirmed BOTH sterile and nonsterile compounding. The owner will confirm an AI account, most likely GLM; no account, endpoint, contractual approval or patient-data processing has been verified.
 
+## September 27 ingredient discrepancy reconciliation
+
+Assigned pharmacy staff can record a physical count or observed-loss discrepancy against an ingredient receipt. A count retains the original ledger balance, actual counted balance, evidence, author/time and stock version. It immediately quarantines the lot without altering on-hand or reserved quantities. One pending discrepancy is allowed per receipt; retries do not duplicate the record.
+
+A different assigned pharmacist must apply or reject the proposal with evidence. Apply uses fixed-precision arithmetic, changes on-hand once, and retains the signed stock adjustment and reviewer evidence. The count cannot fall below reservations; any intervening stock version change prevents application. Staff must reject a stale proposal, resolve worksheet reservations as appropriate and recount. Rejection does not change quantities. Both decisions retain quarantine, and pending counts block release from quarantine. Existing reservations and executed batches are never rewritten.
+
+This is synthetic ingredient-count reconciliation, not controlled-substance loss reporting, disposal documentation, transfers, recall handling or reconciliation of actual manufacturing measurements. Physically present damaged stock remains part of the physical count; disposal requires its own workflow. No real drug or patient processing is enabled.
+
 ## Current implementation boundary
 
 **Development preview with synthetic records only. Not cleared for real dispensing.** The pharmacy API rejects requests outside local/testing environments. Existing production workflows are not replaced. Controlled and compounded prescriptions can be received and held, but final dispensing is deliberately unavailable until the required workflows are built and validated. This is an engineering release boundary, not a statement that these medication types are outside the product scope.

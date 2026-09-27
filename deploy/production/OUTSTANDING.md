@@ -2,6 +2,14 @@
 
 Production has not been switched. A passing build is not release approval.
 
+## September 27 ingredient discrepancy reconciliation
+
+Assigned pharmacy staff can record a physical count or observed-loss discrepancy against an ingredient receipt. A count retains the original ledger balance, actual counted balance, evidence, author/time and stock version. It immediately quarantines the lot without altering on-hand or reserved quantities. One pending discrepancy is allowed per receipt; retries do not duplicate the record.
+
+A different assigned pharmacist must apply or reject the proposal with evidence. Apply uses fixed-precision arithmetic, changes on-hand once, and retains the signed stock adjustment and reviewer evidence. The count cannot fall below reservations; any intervening stock version change prevents application. Staff must reject a stale proposal, resolve worksheet reservations as appropriate and recount. Rejection does not change quantities. Both decisions retain quarantine, and pending counts block release from quarantine. Existing reservations and executed batches are never rewritten.
+
+This is synthetic ingredient-count reconciliation, not controlled-substance loss reporting, disposal documentation, transfers, recall handling or reconciliation of actual manufacturing measurements. Physically present damaged stock remains part of the physical count; disposal requires its own workflow. No real drug or patient processing is enabled.
+
 ## September 27 documentary corrections
 
 Append-only execution addenda are implemented with author/time/version, reason and evidence; original records and old reviews are retained. Amendments reset a reviewed document to quarantine for fresh independent review, while rejected records remain rejected. Preparers and addendum contributors cannot review their own amended record. No inventory or product-release change is performed. Documentary addenda no longer remain wholly unimplemented; quantity/deviation reconciliation, losses/destruction and other pharmacy launch gates still do.
