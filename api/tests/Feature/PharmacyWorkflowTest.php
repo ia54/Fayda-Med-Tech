@@ -1437,6 +1437,131 @@ class PharmacyWorkflowTest extends TestCase
         return array_replace(['request_id' => (string) Str::uuid(), 'location_id' => $this->location, 'case_id' => $this->case->id, 'patient_id' => $this->patient->id, 'rx_number' => 'SYN-'.Str::random(10), 'medication' => 'Synthetic medication', 'strength' => 'Synthetic strength', 'dosage_form' => 'tablet', 'directions' => 'Synthetic fixture only', 'quantity' => '10.000', 'quantity_unit' => 'tablet', 'refills_authorized' => 1, 'written_on' => now()->subDay()->toDateString(), 'expires_on' => now()->addMonth()->toDateString(), 'prescriber_name' => 'Synthetic prescriber', 'prescriber_identifier' => 'NOT VALID', 'source_reference' => 'synthetic fixture', 'controlled' => false, 'compounded' => false], $overrides);
     }
 
+    private function amendmentBody(int $rx, array $values = []): array
+    {
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $source = $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'SYNTHETIC prescriber consultation',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('consultation.pdf', "%PDF-1.4\n% SYNTHETIC ONLY\n%%EOF")], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        $row = DB::table('pharmacy_prescriptions')->find($rx);
+        return ['request_id' => (string) Str::uuid(), 'source_token' => $this->getJson("/api/pharmacy/prescriptions/$rx/amendments")->assertOk()->json('data.source_token'),
+            'values' => array_replace(['strength' => $row->strength, 'dosage_form' => $row->dosage_form, 'directions' => 'SYNTHETIC corrected directions', 'quantity' => '12.500', 'refills_authorized' => 2], $values),
+            'source_document_id' => $source, 'consulted_on' => now()->toDateString(), 'consultation_evidence' => 'SYNTHETIC prescriber identity and direct consultation', 'reason' => 'SYNTHETIC correction', 'confirmed' => true];
+    }
+
+    public function test_presupply_amendment_retains_original_values_and_new_fills_use_new_authorization(): void
+    {
+        $rx = $this->rx(); $url = "/api/pharmacy/prescriptions/$rx/amendments";
+        $before = (array) DB::table('pharmacy_prescriptions')->find($rx);
+        $body = $this->amendmentBody($rx);
+        $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.revision', 2)->assertJsonPath('data.amendments.data.0.before_snapshot.directions', $before['directions'])
+            ->assertJsonPath('data.amendments.data.0.after_snapshot.directions', 'SYNTHETIC corrected directions');
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['reason' => 'changed retry']))->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_prescription_amendments')->count());
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'prescription_amended')->count());
+        $row = (array) DB::table('pharmacy_prescriptions')->find($rx);
+        foreach (['rx_number', 'medication', 'episode_id', 'location_id', 'prescriber_name', 'prescriber_identifier', 'quantity_unit', 'written_on', 'expires_on', 'request_hash', 'source_reference'] as $field) $this->assertSame($before[$field], $row[$field]);
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '12.500')->assertJsonPath('data.quantity_balance.allowances_remaining', 3);
+        $lot = $this->lot();
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '12.501']))->assertStatus(422);
+        $fill = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '12.500']))->assertOk()->json('data.fills.0');
+        $this->assertSame(2, (int) $fill['prescription_revision']); $this->assertSame('pending', $fill['review_status']);
+        $this->act($rx, $fill, 'ready', ['checks' => ['label' => true], 'label_id' => 999], 422);
+        $this->deleteJson($url.'/1')->assertNotFound();
+        $this->putJson($url.'/1', ['reason' => 'overwrite'])->assertNotFound();
+    }
+
+    public function test_amendments_require_cancellation_and_preserve_cancelled_fill_and_label_history(): void
+    {
+        $rx = $this->rx(); $url = "/api/pharmacy/prescriptions/$rx/amendments"; $lot = $this->lot(); $f = $this->fill($rx, $lot);
+        $f = $this->act($rx, $f, 'approve', ['checks' => array_fill_keys(['identity', 'prescriber', 'therapy', 'product'], true)]);
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $body = $this->amendmentBody($rx); $labels = DB::table('pharmacy_fill_labels')->get()->toJson();
+        $this->postJson($url, $body)->assertStatus(422);
+        $f = $this->act($rx, $f, 'cancel');
+        $cancelled = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        $this->postJson($url, $body)->assertStatus(409);
+        $body['source_token'] = $this->getJson($url)->json('data.source_token');
+        $this->postJson($url, $body)->assertCreated();
+        $this->assertSame($cancelled, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $this->assertSame($labels, DB::table('pharmacy_fill_labels')->get()->toJson());
+        $this->assertSame(1, (int) $cancelled['prescription_revision']);
+        $this->assertSame(0, DB::table('invoices')->count());
+    }
+
+    public function test_amendments_cannot_rewrite_a_completed_supply_or_restricted_or_expired_orders(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->fill($rx, $lot);
+        $f = $this->act($rx, $f, 'approve', ['checks' => array_fill_keys(['identity', 'prescriber', 'therapy', 'product'], true)]);
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $f = $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic', 'counseling' => 'provided']);
+        $body = $this->amendmentBody($rx); $before = (array) DB::table('pharmacy_prescriptions')->find($rx); $fill = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/amendments", $body)->assertStatus(422);
+        $this->assertSame($before, (array) DB::table('pharmacy_prescriptions')->find($rx));
+        $this->assertSame($fill, (array) DB::table('pharmacy_fills')->find($f['id']));
+        foreach ([['controlled' => true], ['compounded' => true, 'compound_type' => 'nonsterile'], ['expires_on' => now()->subDay()->toDateString()]] as $overrides) {
+            $id = $this->rx($overrides); $body = $this->amendmentBody($id); $this->postJson("/api/pharmacy/prescriptions/$id/amendments", $body)->assertStatus(422);
+        }
+        $id = $this->rx(); $body = $this->amendmentBody($id); DB::table('pharmacy_prescriptions')->where('id', $id)->update(['discontinued_at' => now()]);
+        $body['source_token'] = $this->getJson("/api/pharmacy/prescriptions/$id/amendments")->json('data.source_token');
+        $this->postJson("/api/pharmacy/prescriptions/$id/amendments", $body)->assertStatus(422);
+        $this->assertSame(0, DB::table('pharmacy_prescription_amendments')->count());
+    }
+
+    public function test_amendments_validate_source_identity_values_roles_and_site_scope(): void
+    {
+        $rx = $this->rx(); $url = "/api/pharmacy/prescriptions/$rx/amendments"; $body = $this->amendmentBody($rx);
+        foreach (['patient_id', 'medication', 'prescriber_name', 'written_on', 'expires_on', 'quantity_unit'] as $field) {
+            $bad = $body; $bad['values'][$field] = 'changed'; $this->postJson($url, $bad)->assertStatus(422);
+        }
+        $this->postJson($url, array_replace($body, ['confirmed' => false]))->assertStatus(422);
+        $this->postJson($url, array_replace($body, ['consulted_on' => now()->subYears(2)->toDateString()]))->assertStatus(422);
+        $this->postJson($url, array_replace($body, ['source_document_id' => 99999]))->assertNotFound();
+        $source = DB::table('pharmacy_source_documents')->find($body['source_document_id']);
+        \Illuminate\Support\Facades\Storage::disk('documents')->put($source->path, 'corrupt');
+        $this->postJson($url, $body)->assertStatus(409);
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save(); $this->postJson($url, $body)->assertForbidden();
+            $this->getJson($url)->assertStatus($role === 'pharmacy_technician' ? 200 : 403);
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['valid_until' => now()->subDay()->toDateString()]);
+        $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 2; $this->actor->save(); $this->getJson($url)->assertNotFound();
+        $this->assertSame(0, DB::table('pharmacy_prescription_amendments')->count());
+    }
+
+    public function test_amendment_revisions_reject_stale_noop_and_foreign_actor_retries(): void
+    {
+        $rx = $this->rx(); $url = "/api/pharmacy/prescriptions/$rx/amendments"; $body = $this->amendmentBody($rx);
+        $original = DB::table('pharmacy_prescriptions')->find($rx); $noop = $body;
+        foreach (['strength', 'dosage_form', 'directions', 'quantity', 'refills_authorized'] as $field) $noop['values'][$field] = $original->$field;
+        $this->postJson($url, $noop)->assertStatus(422);
+        $this->postJson($url, $body)->assertCreated(); $first = (array) DB::table('pharmacy_prescription_amendments')->first();
+        $next = $body; $next['request_id'] = (string) Str::uuid(); $next['values']['directions'] = 'SYNTHETIC second correction';
+        $this->postJson($url, $next)->assertStatus(409);
+        $next['source_token'] = $this->getJson($url)->json('data.source_token');
+        $this->postJson($url, $next)->assertCreated()->assertJsonPath('data.revision', 3)
+            ->assertJsonPath('data.amendments.data.0.before_snapshot.directions', 'SYNTHETIC corrected directions');
+        $this->assertSame($first, (array) DB::table('pharmacy_prescription_amendments')->find($first['id']));
+        $reviewer = User::create(['first_name' => 'Other', 'last_name' => 'Synthetic', 'email' => 'amendment-reviewer@example.invalid', 'password' => 'synthetic-only', 'role' => 'pharmacist', 'organization_id' => 1, 'status' => 'active']);
+        $reviewer->withAccessToken(new Token(['expires_at' => now()->addHour()]));
+        DB::table('pharmacy_staff_assignments')->insert(['location_id' => $this->location, 'user_id' => $reviewer->id, 'active' => true, 'valid_until' => now()->addYear()->toDateString()]);
+        $this->actingAs($reviewer, 'api'); $this->postJson($url, $body)->assertStatus(409);
+        $this->assertSame(2, DB::table('pharmacy_prescription_amendments')->count());
+    }
+
+    public function test_amendment_audit_failure_rolls_back_values_history_and_revision(): void
+    {
+        $rx = $this->rx(); $body = $this->amendmentBody($rx); $before = (array) DB::table('pharmacy_prescriptions')->find($rx);
+        DB::connection()->beforeExecuting(function ($query) { if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) throw new \RuntimeException('Synthetic amendment audit failure'); });
+        $this->postJson("/api/pharmacy/prescriptions/$rx/amendments", $body)->assertStatus(500);
+        $this->assertSame($before, (array) DB::table('pharmacy_prescriptions')->find($rx));
+        $this->assertSame(0, DB::table('pharmacy_prescription_amendments')->count());
+    }
+
     private function rx(array $overrides = []): int
     {
         return $this->postJson('/api/pharmacy/prescriptions', $this->body($overrides))->assertCreated()->json('data.id');

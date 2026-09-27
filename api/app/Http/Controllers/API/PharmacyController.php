@@ -520,7 +520,7 @@ class PharmacyController extends Controller
             $authorization = $balance['mode'] === 'quantity' ? $balance['next_authorization_number'] : null;
             $lot = app(PharmacyStock::class)->reserve($r->user(), $rx, $d);
             $number = ((clone $q)->max('fill_number') ?? -1) + 1;
-            $fid = DB::table('pharmacy_fills')->insertGetId($d + ['authorization_number' => $authorization, 'prescription_id' => $rx->id, 'fill_number' => $number, 'request_hash' => $this->hash($d), 'created_at' => now(), 'updated_at' => now()]);
+            $fid = DB::table('pharmacy_fills')->insertGetId($d + ['prescription_revision' => $rx->amendment_revision, 'authorization_number' => $authorization, 'prescription_id' => $rx->id, 'fill_number' => $number, 'request_hash' => $this->hash($d), 'created_at' => now(), 'updated_at' => now()]);
             app(PharmacyStock::class)->event($r->user(), $lot, 'reserved', $d['quantity'], ['request_id' => $d['request_id']], $fid);
             $this->event($r, $rx, 'fill_created', ['fill_id' => $fid, 'fill_number' => $number, 'authorization_number' => $authorization, 'quantity' => $d['quantity'], 'partial_reason' => $d['partial_reason'] ?? null]);
         });
