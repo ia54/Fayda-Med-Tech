@@ -4,9 +4,9 @@ on:
   push:
     # Development branches are verified by pull_request; avoid duplicate runs.
     branches: [main]
-    paths: ['api/**', '.github/workflows/backend-checks.yml']
+    paths: ['api/**', 'deploy/production/**', '.github/workflows/backend-checks.yml']
   pull_request:
-    paths: ['api/**', '.github/workflows/backend-checks.yml']
+    paths: ['api/**', 'deploy/production/**', '.github/workflows/backend-checks.yml']
   workflow_dispatch:
 
 permissions:
@@ -114,3 +114,25 @@ jobs:
         run: |
           client=$(docker exec "$FAYDAMED_CI_DB_CONTAINER" sh -c 'if command -v mariadb >/dev/null 2>&1; then echo mariadb; else echo mysql; fi')
           printf 'SHOW FULL PROCESSLIST; SHOW ENGINE INNODB STATUS;\n' | docker exec -i -e MYSQL_PWD="$DB_PASSWORD" "$FAYDAMED_CI_DB_CONTAINER" "$client" -uroot
+
+  source-release:
+    name: Pinned source release package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Archive integrity and isolation tests
+        run: python3 -m unittest discover -s deploy/production/tests -p 'test_*.py' -v
+      - name: Prepare and verify the exact checked-out source
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          output = Path(os.environ['RUNNER_TEMP']) / ('faydamed-source-' + commit + '.tar.gz')
+          result = json.loads(subprocess.check_output(['python3', 'deploy/production/release_package.py', 'build', '--commit', commit, '--output', str(output)], text=True))
+          subprocess.run(['python3', 'deploy/production/release_package.py', 'verify', '--archive', str(output), '--sha256', result['sha256'], '--commit', commit], check=True)
+          print(json.dumps(result, sort_keys=True))
+          PY

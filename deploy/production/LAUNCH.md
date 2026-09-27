@@ -4,7 +4,7 @@ Target only 144.126.132.98 and api.faydamed.tech, admin.faydamed.tech, faydamed.
 
 ## Current decision
 
-24 September 2026: all three production origins answer HTTPS 200, but root SSH rejected both available-key and supplied-password authentication. Production backup/restore, current configuration and data upgrade remain unverified. Do not cut over while any of these remain unverified. Existing local admin builds use localhost API URLs and cannot be deployed as production artifacts.
+The September 24 origin checks returned HTTPS 200, but they are historical availability evidence only. September 27 credential-free SSH diagnostics reached TCP 22 and key exchange on the authorized host, then stopped at unverified host identity before authentication. No current successful authenticated server access is established. Production backup/restore, current configuration and data upgrade remain unverified. Do not cut over while any of these remain unverified. Existing local admin builds use localhost API URLs and cannot be deployed as production artifacts.
 
 ## Before changes
 
@@ -15,7 +15,7 @@ Target only 144.126.132.98 and api.faydamed.tech, admin.faydamed.tech, faydamed.
 
 ## Prepare release
 
-5. Pin the reviewed branch commit and build outside live roots. Install locked dependencies and run host platform checks. Preserve existing keys/data/configuration. Configure APP_ENV=production, APP_DEBUG=false, APP_URL=https://api.faydamed.tech, FRONTEND_URL=https://admin.faydamed.tech, PUBLIC_URL=https://faydamed.tech, CORS_ALLOWED_ORIGINS=https://admin.faydamed.tech,https://faydamed.tech and secure HTTP-only cookies. Verify non-root database grants and private storage access at the web-server layer.
+5. Pin the reviewed branch commit, prepare and verify the source-only archive using SOURCE-PACKAGE.md, and build outside live roots. Match the separately recorded archive digest and exact commit before using it. Source-package verification does not clear any host, migration, recovery or pharmacy gate. Install locked dependencies and run host platform checks. Preserve existing keys/data/configuration. Configure APP_ENV=production, APP_DEBUG=false, APP_URL=https://api.faydamed.tech, FRONTEND_URL=https://admin.faydamed.tech, PUBLIC_URL=https://faydamed.tech, CORS_ALLOWED_ORIGINS=https://admin.faydamed.tech,https://faydamed.tech and secure HTTP-only cookies. Verify non-root database grants and private storage access at the web-server layer.
 6. Rebuild admin with NEXT_PUBLIC_API_URL=https://api.faydamed.tech and NEXT_PUBLIC_API_BASE_URL=https://api.faydamed.tech/api; rebuild website with VITE_BASE_URL=https://api.faydamed.tech. Verify generated assets contain the intended origins and no test credentials/local endpoints. Include standalone static/public assets. Run production:check in the configured release; its PASS covers configuration only.
 7. Inventory legacy documents with documents:privatize (dry run). Back up and validate migration using copies/checksums. Prevent direct public access before accepting patient documents. Do not remove originals until verified backup/access rules exist. Retain file/key recovery evidence.
 
