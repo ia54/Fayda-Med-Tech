@@ -26,7 +26,7 @@ class PharmacyRecallController extends Controller
     }
     public function show(Request $r, $id)
     {
-        $r->validate(['stock_page' => 'nullable|integer|min:1', 'fill_page' => 'nullable|integer|min:1']);
+        $r->validate(['stock_page' => 'nullable|integer|min:1', 'fill_page' => 'nullable|integer|min:1', 'follow_up' => 'nullable|in:not_started,open,completed']);
         $n = DB::table('pharmacy_recall_notices')->where('organization_id', $this->org($r))->where('id', $id)->first(); abort_unless($n, 404);
         unset($n->request_id, $n->request_hash, $n->lot_key); $n->ndcs = json_decode($n->ndcs, true);
         // Matching needs the retained key, but it is not an API/display identifier.
@@ -37,7 +37,10 @@ class PharmacyRecallController extends Controller
         $fills = DB::table('pharmacy_fills as f')->join('pharmacy_stock_lots as stock', 'stock.id', '=', 'f.stock_lot_id')
             ->join('pharmacy_prescriptions as rx', 'rx.id', '=', 'f.prescription_id')->where('rx.organization_id', $n->organization_id)->whereColumn('rx.location_id', 'stock.location_id');
         app(PharmacyRecall::class)->matchNotice($fills, $match); app(PharmacyAccess::class)->scope($fills, $r->user(), 'stock.location_id');
-        $n->fills = $fills->select('f.id', 'f.prescription_id', 'rx.rx_number', 'stock.id as stock_lot_id', 'stock.location_id', 'f.fill_number', 'f.quantity', 'stock.quantity_unit', 'f.fulfillment_status', 'f.created_at')->orderByDesc('f.id')->paginate(25, ['*'], 'fill_page');
+        $fills->leftJoin('pharmacy_recall_follow_ups as follow', function ($join) use ($n) { $join->on('follow.fill_id', '=', 'f.id')->where('follow.notice_id', $n->id); });
+        if ($r->input('follow_up') === 'not_started') { $fills->whereNull('follow.id'); }
+        elseif ($r->filled('follow_up')) { $fills->where('follow.status', $r->input('follow_up')); }
+        $n->fills = $fills->selectRaw("COALESCE(follow.status, 'not_started') as follow_up_status")->addSelect('f.id', 'f.prescription_id', 'rx.rx_number', 'stock.id as stock_lot_id', 'stock.location_id', 'f.fill_number', 'f.quantity', 'stock.quantity_unit', 'f.fulfillment_status', 'f.created_at')->orderByDesc('f.id')->paginate(25, ['*'], 'fill_page');
         return response()->json(['data' => $n]);
     }
     public function store(Request $r)

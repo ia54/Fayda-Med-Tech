@@ -712,6 +712,98 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(0, DB::table('pharmacy_recall_codes')->count());
     }
 
+    private function followUpBody(array $changes = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'version' => 0, 'action' => 'assessment', 'occurred_on' => now()->toDateString(), 'note' => 'Synthetic pharmacist follow-up evidence', 'evidence' => 'SYNTHETIC QA ONLY'], $changes);
+    }
+
+    public function test_recall_follow_up_retains_facts_and_requires_pharmacist_completion_after_reservations_resolve(): void
+    {
+        $lot = $this->lot(); $rx = $this->rx(); $f = $this->fill($rx, $lot);
+        $notice = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/recall-notices/$notice/fills/{$f['id']}/follow-up";
+        $this->getJson($url)->assertOk()->assertJsonPath('data.status', 'not_started')->assertJsonPath('data.version', 0);
+        $body = $this->followUpBody();
+        $this->postJson("$url/events", $body)->assertCreated()->assertJsonPath('data.status', 'open')->assertJsonPath('data.version', 1);
+        $this->postJson("$url/events", $body)->assertOk()->assertJsonPath('data.events.total', 1);
+        $this->postJson("$url/events", array_replace($body, ['note' => 'changed']))->assertStatus(409);
+        $this->postJson("$url/events", $this->followUpBody())->assertStatus(409);
+        $this->postJson("$url/events", $this->followUpBody(['version' => 1, 'action' => 'complete']))->assertStatus(422);
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $attempt = $this->followUpBody(['version' => 1, 'action' => 'contact_attempt', 'method' => 'phone', 'note' => 'Synthetic call attempt only; no actual communication']);
+        $this->postJson("$url/events", $attempt)->assertCreated()->assertJsonPath('data.version', 2)->assertJsonPath('data.status', 'open');
+        foreach (['assessment', 'complete', 'reopen'] as $action) {
+            $this->postJson("$url/events", $this->followUpBody(['version' => 2, 'action' => $action]))->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save(); $this->act($rx, $f, 'cancel');
+        $stock = DB::table('pharmacy_stock_lots')->get()->toJson(); $fills = DB::table('pharmacy_fills')->get()->toJson(); $events = DB::table('pharmacy_stock_events')->get()->toJson();
+        $complete = $this->followUpBody(['version' => 2, 'action' => 'complete', 'note' => 'Synthetic cancelled fill reviewed. No handover occurred.']);
+        $this->postJson("$url/events", $complete)->assertCreated()->assertJsonPath('data.status', 'completed');
+        $this->postJson("$url/events", $this->followUpBody(['version' => 3, 'action' => 'follow_up']))->assertStatus(422);
+        $this->postJson("$url/events", $this->followUpBody(['version' => 3, 'action' => 'reopen']))->assertCreated()->assertJsonPath('data.status', 'open')->assertJsonPath('data.events.total', 4);
+        $this->postJson("$url/events", $complete)->assertOk()->assertJsonPath('data.status', 'open')->assertJsonPath('data.events.total', 4);
+        $this->assertSame($stock, DB::table('pharmacy_stock_lots')->get()->toJson());
+        $this->assertSame($fills, DB::table('pharmacy_fills')->get()->toJson());
+        $this->assertSame($events, DB::table('pharmacy_stock_events')->get()->toJson());
+        $this->getJson("/api/pharmacy/stock/$lot")->assertOk()->assertJsonPath('data.recall_notices.0.id', $notice);
+        $this->deleteJson("$url/events/1")->assertNotFound();
+    }
+
+    public function test_recall_follow_up_worklist_filters_and_completed_handover_history_are_retained(): void
+    {
+        $lot = $this->lot(); $rx = $this->rx(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $otherRx = $this->rx(); $other = $this->fill($otherRx, $lot);
+        $notice = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/recall-notices/$notice/fills/{$f['id']}/follow-up";
+        $before = DB::table('pharmacy_fills')->get()->toJson(); $stock = DB::table('pharmacy_stock_lots')->get()->toJson();
+        $this->postJson("$url/events", $this->followUpBody(['action' => 'response', 'method' => 'secure_message']))->assertCreated()->assertJsonPath('data.status', 'open');
+        $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=not_started")->assertOk()->assertJsonPath('data.fills.total', 1)->assertJsonPath('data.fills.data.0.id', $other['id']);
+        $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=open")->assertOk()->assertJsonPath('data.fills.total', 1)->assertJsonPath('data.fills.data.0.id', $f['id']);
+        $this->postJson("$url/events", $this->followUpBody(['version' => 1, 'action' => 'complete']))->assertCreated();
+        $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=completed")->assertOk()->assertJsonPath('data.fills.data.0.follow_up_status', 'completed')->assertJsonPath('data.fills.total', 1);
+        $this->assertSame($before, DB::table('pharmacy_fills')->get()->toJson()); $this->assertSame($stock, DB::table('pharmacy_stock_lots')->get()->toJson());
+    }
+
+    public function test_recall_follow_up_scope_validation_and_replay_actor_boundaries(): void
+    {
+        $lot = $this->lot(); $rx = $this->rx(); $f = $this->fill($rx, $lot);
+        $notice = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        $unmatched = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody(['lot_number' => 'OTHER']))->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/recall-notices/$notice/fills/{$f['id']}/follow-up";
+        $this->getJson("/api/pharmacy/recall-notices/$unmatched/fills/{$f['id']}/follow-up")->assertNotFound();
+        foreach ([['action' => 'contact_attempt'], ['occurred_on' => now()->addDay()->toDateString()], ['occurred_on' => '1900-01-01'], ['action' => 'reopen'], ['note' => ''], ['evidence' => '']] as $bad) {
+            $this->postJson("$url/events", $this->followUpBody($bad))->assertStatus(422);
+        }
+        $body = $this->followUpBody(); $this->postJson("$url/events", $body)->assertCreated();
+        $this->actingAs($this->independentReviewer(), 'api'); $this->postJson("$url/events", $body)->assertStatus(409);
+        $this->actingAs($this->actor, 'api');
+        foreach (['medical_biller', 'admin', 'client'] as $role) {
+            $this->actor->role = $role; $this->actor->save(); $this->getJson($url)->assertForbidden(); $this->postJson("$url/events", $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound(); $this->postJson("$url/events", $body)->assertNotFound();
+        $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=open")->assertOk()->assertJsonPath('data.fills.total', 0);
+        $this->actor->organization_id = 2; $this->actor->save(); $this->getJson($url)->assertNotFound(); $this->postJson("$url/events", $body)->assertNotFound();
+    }
+
+    public function test_recall_follow_up_history_is_paginated_and_failed_writes_roll_back(): void
+    {
+        $lot = $this->lot(); $rx = $this->rx(); $f = $this->fill($rx, $lot);
+        $notice = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/recall-notices/$notice/fills/{$f['id']}/follow-up";
+        for ($i=0; $i<27; $i++) { $this->postJson("$url/events", $this->followUpBody(['version' => $i, 'action' => 'follow_up']))->assertCreated(); }
+        $this->getJson($url)->assertOk()->assertJsonPath('data.events.total', 27)->assertJsonCount(25, 'data.events.data')->assertJsonMissingPath('data.events.data.0.request_hash');
+        $this->getJson("$url?page=2")->assertOk()->assertJsonCount(2, 'data.events.data')->assertJsonPath('data.events.data.1.version', 1);
+        $this->getJson("$url?page=0")->assertStatus(422);
+        $second = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        DB::connection()->beforeExecuting(function ($query) { if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_recall_follow_up_events')) { throw new \RuntimeException('Synthetic follow-up audit failure'); } });
+        $this->postJson("$url/events", $this->followUpBody(['version' => 27]))->assertStatus(500);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.version', 27)->assertJsonPath('data.events.total', 27);
+        $this->postJson("/api/pharmacy/recall-notices/$second/fills/{$f['id']}/follow-up/events", $this->followUpBody())->assertStatus(500);
+        $this->assertSame(1, DB::table('pharmacy_recall_follow_ups')->count());
+    }
+
     private function stopPrescription(int $rx, array $changes = [])
     {
         return $this->postJson("/api/pharmacy/prescriptions/$rx/discontinue", array_replace(['request_id' => (string) Str::uuid(), 'reason' => 'Synthetic discontinuation', 'reference' => 'SYNTHETIC authority record'], $changes));
