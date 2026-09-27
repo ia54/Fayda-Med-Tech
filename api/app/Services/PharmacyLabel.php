@@ -51,7 +51,7 @@ class PharmacyLabel
         return ['id' => $label->id, 'revision' => $label->revision, 'sha256' => $label->sha256, 'intact' => $intact,
             'fresh' => $intact && hash_equals($label->source_token, $this->token($this->context($rx, $fill))),
             'dispensed_on' => $data['decisions']['dispensed_on'] ?? null, 'use_by' => $data['decisions']['use_by'] ?? null,
-            'barcode_supported' => (bool) $label->barcode_code, 'print_count' => DB::table('pharmacy_label_prints')->where('label_id', $label->id)->count()];
+            'barcode_supported' => (bool) $label->barcode_code, 'print_count' => DB::table('pharmacy_label_prints')->where('label_id', $label->id)->where('purpose', 'dispensing_label')->count()];
     }
 
     public function requireCurrent(object $rx, object $fill, int $labelId): object
@@ -79,6 +79,17 @@ class PharmacyLabel
         abort_unless($stock, 404);
         app(PharmacyStock::class)->assertUsable($stock);
         return $context;
+    }
+
+    public function recordCopy(object $label): string
+    {
+        abort_unless($this->intact($label), 409, 'The retained label failed its integrity check.');
+        // Derive an explicitly marked copy from the retained bytes, never current patient/product data.
+        $notice = '<header style="border:3px solid #111;padding:12px;margin-bottom:16px;font-weight:bold;overflow-wrap:anywhere">RECORD COPY — NOT A DISPENSING LABEL<br>Retained label #'.(int) $label->id.' · revision '.(int) $label->revision.'<br>Historical information may be outdated. Do not attach to a medication container.<br>Original SHA-256: '.e($label->sha256).'</header>';
+        $style = '<style>body:before{content:"RECORD COPY — NOT FOR DISPENSING";display:block;font-weight:bold;margin-bottom:12px}svg,[aria-label="Internal label barcode"]{display:none!important}@media print{body:after{content:"RECORD COPY — NOT FOR DISPENSING";display:block;font-weight:bold}}</style>';
+        $copy = preg_replace('/<body(\s[^>]*)?>/i', '$0'.$style.$notice, $label->document, 1, $count);
+        abort_unless($count === 1 && is_string($copy), 409, 'This historical document format cannot produce a marked record copy.');
+        return $copy;
     }
 
     public function document(array $snapshot, int $revision): string

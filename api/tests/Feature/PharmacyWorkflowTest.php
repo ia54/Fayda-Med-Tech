@@ -1678,6 +1678,82 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson($url)->assertForbidden();
     }
 
+    public function test_label_record_copies_preserve_historical_bytes_and_never_satisfy_dispensing_print_checks(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels";
+        $label = $this->postJson($url, $this->labelBody($rx, $f))->assertCreated()->json('data.current');
+        $saved = (array) DB::table('pharmacy_fill_labels')->find($label['id']);
+        $f = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.fills.0');
+        $file = "$url/{$label['id']}/file?purpose=record_copy";
+        $copy = $this->get($file)->assertOk()->assertHeader('Content-Disposition', 'attachment; filename="record-copy-'.$label['id'].'.html"')->getContent();
+        $this->assertStringContainsString('RECORD COPY — NOT A DISPENSING LABEL', $copy);
+        $this->assertStringContainsString($saved['sha256'], $copy);
+        $this->assertStringContainsString('display:none!important', $copy);
+        $body = $this->printBody(['purpose' => 'record_copy']);
+        $this->postJson("$url/{$label['id']}/prints", $body)->assertCreated()->assertJsonPath('data.data.0.purpose', 'record_copy')->assertJsonPath('data.data.0.document_sha256', hash('sha256', $copy));
+        $this->getJson($url)->assertJsonPath('data.current.print_count', 0);
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => $label['id']], 422);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+        // Existing callers without a purpose still record dispensing evidence; exact retries survive.
+        $print = $this->printBody();
+        $this->postJson("$url/{$label['id']}/prints", $print)->assertCreated()->assertJsonPath('data.data.0.purpose', 'dispensing_label');
+        $this->postJson("$url/{$label['id']}/prints", $print)->assertOk();
+        $this->getJson($url)->assertJsonPath('data.current.print_count', 1);
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => $label['id']]);
+        $this->assertSame($saved, (array) DB::table('pharmacy_fill_labels')->find($label['id']));
+        $this->assertSame($saved['document'], $this->get("$url/{$label['id']}/file")->assertOk()->getContent());
+    }
+
+    public function test_label_record_copies_remain_available_after_completion_and_source_changes_without_mutation(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $labelId = $f['current_label']['id']; $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels/$labelId";
+        $first = $this->get("$url/file?purpose=record_copy")->assertOk()->getContent();
+        DB::table('pharmacy_locations')->where('id', $this->location)->update(['name' => 'SYNTHETIC later pharmacy name']);
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['expires_on' => now()->subDay()->toDateString(), 'discontinued_at' => now(), 'controlled' => true]);
+        $before = [];
+        foreach (['pharmacy_prescriptions','pharmacy_fills','pharmacy_stock_lots','pharmacy_stock_events','pharmacy_fill_labels','invoices','payments'] as $table) { $before[$table] = DB::table($table)->get(); }
+        $this->assertSame($first, $this->get("$url/file?purpose=record_copy")->assertOk()->getContent());
+        $body = $this->printBody(['purpose' => 'record_copy']);
+        $this->postJson("$url/prints", $body)->assertCreated();
+        $this->postJson("$url/prints", $body)->assertOk();
+        $this->postJson("$url/prints", array_replace($body, ['purpose' => 'dispensing_label']))->assertStatus(409);
+        $this->postJson("$url/prints", $this->printBody(['purpose' => 'dispensing_label']))->assertUnprocessable();
+        $this->postJson("$url/prints", $this->printBody(['purpose' => 'unknown']))->assertUnprocessable();
+        $this->postJson("$url/prints", $this->printBody(['purpose' => 'record_copy', 'occurred_on' => now()->subDay()->toDateString()]))->assertUnprocessable();
+        foreach ($before as $table => $rows) { $this->assertEquals($rows, DB::table($table)->get(), $table); }
+        $this->assertSame(1, DB::table('pharmacy_label_prints')->where('purpose', 'record_copy')->count());
+        $this->assertSame(1, DB::table('pharmacy_label_prints')->where('purpose', 'dispensing_label')->count());
+    }
+
+    public function test_label_record_copies_enforce_access_integrity_and_transactional_evidence(): void
+    {
+        $rx = $this->rx(); $f = $this->complete($rx, $this->fill($rx, $this->lot())); $id = $f['current_label']['id'];
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels/$id"; $body = $this->printBody(['purpose' => 'record_copy']);
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->get("$url/file?purpose=record_copy")->assertOk();
+        $this->postJson("$url/prints", $body)->assertCreated();
+        $this->actor->role = 'medical_biller'; $this->actor->save();
+        $this->getJson("$url/file?purpose=record_copy")->assertForbidden(); $this->postJson("$url/prints", $body)->assertForbidden();
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson("$url/file?purpose=record_copy")->assertNotFound(); $this->postJson("$url/prints", $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson("$url/file?purpose=record_copy")->assertNotFound(); $this->postJson("$url/prints", $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $label = DB::table('pharmacy_fill_labels')->find($id);
+        DB::table('pharmacy_fill_labels')->where('id', $id)->update(['document' => 'corrupt']);
+        $this->getJson("$url/file?purpose=record_copy")->assertStatus(409);
+        $this->postJson("$url/prints", $this->printBody(['purpose' => 'record_copy']))->assertStatus(409);
+        DB::table('pharmacy_fill_labels')->where('id', $id)->update(['document' => $label->document]);
+        $count = DB::table('pharmacy_label_prints')->count(); $events = DB::table('pharmacy_events')->count();
+        DB::connection()->beforeExecuting(function ($query) { if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) { throw new \RuntimeException('Synthetic copy audit failure'); } });
+        $this->postJson("$url/prints", $this->printBody(['purpose' => 'record_copy']))->assertStatus(500);
+        $this->assertSame($count, DB::table('pharmacy_label_prints')->count()); $this->assertSame($events, DB::table('pharmacy_events')->count());
+    }
+
     public function test_current_label_and_print_evidence_are_required_for_preparation_and_handover(): void
     {
         $rx = $this->rx(); $f = $this->act($rx, $this->fill($rx, $this->lot()), 'approve', $this->checks());

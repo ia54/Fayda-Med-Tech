@@ -93,8 +93,11 @@ class PharmacyLabelController extends Controller
         $label = DB::table('pharmacy_fill_labels')->where('fill_id', $fillId)->where('id', $labelId)->first();
         abort_unless($label, 404);
         abort_unless(app(PharmacyLabel::class)->intact($label), 409, 'The retained label failed its integrity check.');
-        return response($label->document, 200, ['Content-Type' => 'text/html; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="synthetic-label-'.$label->id.'.html"', 'Cache-Control' => 'private, no-store',
+        $v = $r->validate(['purpose' => 'nullable|in:record_copy']);
+        $copy = ($v['purpose'] ?? null) === 'record_copy';
+        $document = $copy ? app(PharmacyLabel::class)->recordCopy($label) : $label->document;
+        return response($document, 200, ['Content-Type' => 'text/html; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.($copy ? 'record-copy-' : 'synthetic-label-').$label->id.'.html"', 'Cache-Control' => 'private, no-store',
             'X-Content-Type-Options' => 'nosniff', 'Content-Security-Policy' => "sandbox; default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"]);
     }
 
@@ -103,7 +106,7 @@ class PharmacyLabelController extends Controller
         $this->records($r, $id, $fillId);
         abort_unless(DB::table('pharmacy_fill_labels')->where('fill_id', $fillId)->where('id', $labelId)->exists(), 404);
         $r->validate(['page' => 'nullable|integer|min:1']);
-        return response()->json(['data' => DB::table('pharmacy_label_prints')->where('label_id', $labelId)->select('id', 'created_by', 'copies', 'occurred_on', 'reason', 'reference', 'created_at')->orderByDesc('id')->paginate(10)]);
+        return response()->json(['data' => DB::table('pharmacy_label_prints')->where('label_id', $labelId)->select('id', 'created_by', 'copies', 'occurred_on', 'reason', 'reference', 'created_at', 'purpose', 'document_sha256')->orderByDesc('id')->paginate(10)]);
     }
 
     public function recordPrint(Request $r, $id, $fillId, $labelId)
@@ -111,7 +114,7 @@ class PharmacyLabelController extends Controller
         [$rx, $fill] = $this->records($r, $id, $fillId);
         $label = DB::table('pharmacy_fill_labels')->where('fill_id', $fillId)->where('id', $labelId)->first();
         abort_unless($label, 404);
-        $d = $r->validate(['request_id' => 'required|uuid', 'copies' => 'required|integer|min:1|max:20',
+        $d = $r->validate(['purpose' => 'sometimes|required|in:dispensing_label,record_copy', 'request_id' => 'required|uuid', 'copies' => 'required|integer|min:1|max:20',
             'occurred_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'reason' => 'required|string|max:2000',
             'reference' => 'required|string|max:2000', 'confirmed' => 'required|accepted']);
         ksort($d); $hash = hash('sha256', json_encode($d, JSON_THROW_ON_ERROR));
@@ -120,12 +123,18 @@ class PharmacyLabelController extends Controller
             abort_unless((int) $old->created_by === (int) $r->user()->id && hash_equals($old->request_hash, $hash), 409, 'This request identifier belongs to another print record.');
             return $this->prints($r, $id, $fillId, $labelId);
         }
-        app(PharmacyLabel::class)->assertCanLabel($rx, $fill);
-        app(PharmacyLabel::class)->requireCurrent($rx, $fill, (int) $labelId);
+        $purpose = $d['purpose'] ?? 'dispensing_label';
+        if ($purpose === 'record_copy') {
+            $document = app(PharmacyLabel::class)->recordCopy($label);
+        } else {
+            app(PharmacyLabel::class)->assertCanLabel($rx, $fill);
+            app(PharmacyLabel::class)->requireCurrent($rx, $fill, (int) $labelId);
+            $document = $label->document;
+        }
         abort_if($d['occurred_on'] < substr($label->created_at, 0, 10), 422, 'A print cannot predate the retained label.');
         unset($d['confirmed']);
-        $printId = DB::table('pharmacy_label_prints')->insertGetId($d + ['label_id' => $labelId, 'created_by' => $r->user()->id, 'request_hash' => $hash, 'created_at' => now()]);
-        $this->event($r, $rx, 'label_print_recorded', ['fill_id' => $fillId, 'label_id' => $labelId, 'print_id' => $printId]);
+        $printId = DB::table('pharmacy_label_prints')->insertGetId($d + ['purpose' => $purpose, 'document_sha256' => hash('sha256', $document), 'label_id' => $labelId, 'created_by' => $r->user()->id, 'request_hash' => $hash, 'created_at' => now()]);
+        $this->event($r, $rx, 'label_print_recorded', ['fill_id' => $fillId, 'label_id' => $labelId, 'print_id' => $printId, 'purpose' => $purpose, 'document_sha256' => hash('sha256', $document)]);
         return $this->prints($r, $id, $fillId, $labelId)->setStatusCode(201);
     }
 }

@@ -679,7 +679,7 @@ class PharmacyController extends Controller
                 $priorFulfillment = $this->json($f->fulfillment);
                 $labelId = $a === 'ready' ? (int) ($d['label_id'] ?? 0) : (int) ($priorFulfillment['prepared_label_id'] ?? 0);
                 $label = app(PharmacyLabel::class)->requireCurrent($rx, $f, $labelId);
-                abort_unless(DB::table('pharmacy_label_prints')->where('label_id', $labelId)->exists(), 422, 'Record label print evidence before the final product and label check.');
+                abort_unless(DB::table('pharmacy_label_prints')->where('label_id', $labelId)->where('purpose', 'dispensing_label')->exists(), 422, 'Record label print evidence before the final product and label check.');
                 $scan = app(\App\Services\PharmacyBarcode::class)->verify($d['scan'] ?? [], $rx, $f, $label, $a, (int) $r->user()->id);
                 $labelData = $this->json($label->snapshot);
                 if ($a === 'ready') {
