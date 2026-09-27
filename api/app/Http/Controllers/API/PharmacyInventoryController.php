@@ -55,7 +55,9 @@ class PharmacyInventoryController extends Controller
             $q->where(fn ($q) => $q->where('ndc', 'like', '%'.$d['search'].'%')->orWhere('medication', 'like', '%'.$d['search'].'%')->orWhere('lot_number', 'like', '%'.$d['search'].'%')->orWhere('recall_reference', 'like', '%'.$d['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('id', 'location_id', 'ndc', 'medication', 'lot_number', 'quantity_unit', 'expires_on', 'on_hand', 'reserved', 'status', 'version', 'receipt_reference', 'recall_reference')->orderBy('expires_on')->orderBy('id')->paginate(50)]);
+        $page = $q->select('id', 'organization_id', 'source_transfer_id', 'location_id', 'ndc', 'medication', 'lot_number', 'quantity_unit', 'expires_on', 'on_hand', 'reserved', 'status', 'version', 'receipt_reference', 'recall_reference')->orderBy('expires_on')->orderBy('id')->paginate(50);
+        $page->getCollection()->transform(function ($lot) { $lot->custody_hold = app(PharmacyStock::class)->custodyHold($lot); unset($lot->organization_id); return $lot; });
+        return response()->json(['data' => $page]);
     }
 
     public function show(Request $r, $id)
@@ -66,6 +68,7 @@ class PharmacyInventoryController extends Controller
         abort_unless($lot, 404);
         app(PharmacyAccess::class)->requireLocation($r->user(), $lot->location_id);
         unset($lot->request_id, $lot->request_hash, $lot->recall_request_id);
+        $lot->custody_hold = app(PharmacyStock::class)->custodyHold($lot);
         $lot->trace = DB::table('pharmacy_fills as f')->join('pharmacy_prescriptions as rx', 'rx.id', '=', 'f.prescription_id')
             ->where('f.stock_lot_id', $id)->where('rx.organization_id', $lot->organization_id)->where('rx.location_id', $lot->location_id)
             ->select('f.id', 'f.prescription_id', 'rx.rx_number', 'f.fill_number', 'f.quantity', 'f.fulfillment_status', 'f.created_at')

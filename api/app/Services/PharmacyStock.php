@@ -39,6 +39,12 @@ class PharmacyStock
         }
     }
 
+    public function custodyHold($lot): ?string
+    {
+        try { $this->assertReleaseAllowed($lot); return null; }
+        catch (ValidationException $e) { return $e->errors()['stock'][0] ?? 'Stock custody requires investigation.'; }
+    }
+
     /** Transfer receipts retain their source history, including later recalls. */
     public function assertReleaseAllowed($lot): void
     {
@@ -51,7 +57,12 @@ class PharmacyStock
             $seen[$lot->id] = true;
             if ($lot->source_transfer_id === null) { return; }
             $transfer = DB::table('pharmacy_stock_transfers')->where('organization_id', $organization)->where('id', $lot->source_transfer_id)->first();
-            if (! $transfer || $transfer->status !== 'received' || (int) $transfer->destination_lot_id !== (int) $lot->id || (int) $transfer->destination_location_id !== (int) $lot->location_id || self::milli($transfer->quantity) !== self::milli($transfer->received_quantity)) {
+            $verifiedReceipt = $transfer && $transfer->status === 'received' && self::milli($transfer->quantity) === self::milli($transfer->received_quantity);
+            if ($transfer && $transfer->status === 'received_corrected' && $transfer->receipt_correction_id !== null) {
+                $correction = DB::table('pharmacy_transfer_corrections')->where('id', $transfer->receipt_correction_id)->where('transfer_id', $transfer->id)->where('status', 'applied')->first();
+                $verifiedReceipt = $correction && $transfer->corrected_received_quantity !== null && self::milli($transfer->quantity) === self::milli($transfer->corrected_received_quantity);
+            }
+            if (! $verifiedReceipt || (int) $transfer->destination_lot_id !== (int) $lot->id || (int) $transfer->destination_location_id !== (int) $lot->location_id) {
                 $this->fail('Stock custody or receipt discrepancy requires reconciliation before release or use.');
             }
             $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $organization)->where('id', $transfer->source_lot_id)->first();

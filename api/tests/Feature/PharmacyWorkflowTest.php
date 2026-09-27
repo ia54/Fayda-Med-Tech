@@ -129,6 +129,118 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
     }
 
+    private function receivedDiscrepancy(User $receiver, string $received = '9.125'): array
+    {
+        $this->actingAs($this->actor, 'api'); $source = $this->lot();
+        $id = $this->postJson('/api/pharmacy/stock-transfers', $this->transferBody($source))->assertCreated()->json('data.id');
+        $this->postJson("/api/pharmacy/stock-transfers/$id/actions", $this->transferAction($id, 'dispatch'))->assertOk();
+        $this->actingAs($receiver, 'api');
+        $destination = $this->postJson("/api/pharmacy/stock-transfers/$id/actions", $this->transferAction($id, 'receive', ['received_quantity' => $received]))->assertOk()->json('data.destination_lot_id');
+        return [$id, $source, $destination];
+    }
+
+    private function correctedReceiptCount(int $lot, User $receiver): int
+    {
+        $this->actingAs($receiver, 'api');
+        $count = $this->postJson("/api/pharmacy/stock/$lot/counts", $this->stockCountBody($lot, ['counted_quantity' => '10.125']))->assertCreated()->json('data.counts.data.0.id');
+        $this->actingAs($this->actor, 'api');
+        $this->postJson("/api/pharmacy/stock/$lot/counts/$count/review", ['decision' => 'apply', 'evidence' => 'SYNTHETIC independently verified physical quantity'])->assertOk();
+        return $count;
+    }
+
+    private function correctionBody(int $transfer, int $count): array
+    {
+        return ['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_transfers')->where('id', $transfer)->value('version'), 'stock_count_id' => $count, 'evidence' => 'SYNTHETIC receipt-entry error, physical count matches original dispatch; no new stock arrived'];
+    }
+
+    public function test_receipt_correction_retains_originals_requires_source_review_and_keeps_quarantine(): void
+    {
+        $receiver = $this->receivingPharmacist();
+        foreach (['0', '9.125', '11.125'] as $received) {
+            [$id, $source, $dest] = $this->receivedDiscrepancy($receiver, $received);
+            $this->getJson("/api/pharmacy/stock/$dest")->assertOk()->assertJsonPath('data.custody_hold', 'Stock custody or receipt discrepancy requires reconciliation before release or use.');
+            $count = $this->correctedReceiptCount($dest, $receiver);
+            $this->actingAs($receiver, 'api'); $body = $this->correctionBody($id, $count); $url = "/api/pharmacy/stock-transfers/$id/corrections";
+            $c = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.correction_pending', true)->json('data.corrections.data.0.id');
+            $this->postJson($url, $body)->assertOk();
+            $this->postJson($url, array_replace($body, ['evidence' => 'Changed']))->assertStatus(409);
+            $this->postJson($url, $this->correctionBody($id, $count))->assertStatus(409);
+            $review = ['request_id' => (string) Str::uuid(), 'version' => 4, 'decision' => 'apply', 'evidence' => 'SYNTHETIC sending pharmacist confirms original dispatch and verified correction'];
+            $this->postJson("$url/$c/review", $review)->assertStatus(422);
+            $this->actingAs($this->actor, 'api');
+            $response = $this->postJson("$url/$c/review", $review)->assertOk()->assertJsonPath('data.status', 'received_corrected')->assertJsonPath('data.receipt_correction_id', $c);
+            $this->assertSame(\App\Services\PharmacyStock::milli($received), \App\Services\PharmacyStock::milli($response->json('data.received_quantity')));
+            $this->postJson("$url/$c/review", $review)->assertOk();
+            $this->postJson("$url/$c/review", array_replace($review, ['decision' => 'reject']))->assertStatus(409);
+            $this->getJson("/api/pharmacy/stock/$dest")->assertOk()->assertJsonPath('data.custody_hold', null)->assertJsonPath('data.status', 'quarantined');
+            $this->assertEquals(39.875, DB::table('pharmacy_stock_lots')->where('id', $source)->value('on_hand'));
+            $this->assertEquals(10.125, DB::table('pharmacy_stock_lots')->where('id', $dest)->value('on_hand'));
+            $this->assertSame(1, DB::table('pharmacy_stock_events')->where('stock_lot_id', $dest)->where('action', 'transfer_receipt_corrected')->count());
+            $this->putJson("/api/pharmacy/stock/$dest/status", ['version' => 3, 'status' => 'available', 'note' => 'SYNTHETIC separate release'])->assertOk();
+            $rx = $this->rx(['location_id' => $this->otherLocation]); $f = $this->fill($rx, $dest);
+            $this->recallStock($source)->assertOk();
+            $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.fills.0.stock_custody_hold', 'Stock custody or recall history requires reconciliation before release or use.');
+            $this->act($rx, $f, 'cancel');
+        }
+    }
+
+    public function test_receipt_correction_rejects_unverified_counts_changed_stock_and_recall(): void
+    {
+        $receiver = $this->receivingPharmacist(); [$id, $source, $dest] = $this->receivedDiscrepancy($receiver);
+        $url = "/api/pharmacy/stock-transfers/$id/corrections";
+        $this->postJson($url, $this->correctionBody($id, 99999))->assertStatus(409);
+        $count = $this->postJson("/api/pharmacy/stock/$dest/counts", $this->stockCountBody($dest, ['counted_quantity' => '9']))->assertCreated()->json('data.counts.data.0.id');
+        $this->postJson($url, $this->correctionBody($id, $count))->assertStatus(409);
+        $this->actingAs($this->actor, 'api');
+        $this->postJson("/api/pharmacy/stock/$dest/counts/$count/review", ['decision' => 'apply', 'evidence' => 'SYNTHETIC shortage remains'])->assertOk();
+        $this->postJson($url, $this->correctionBody($id, $count))->assertStatus(422);
+        $count = $this->correctedReceiptCount($dest, $receiver);
+        $this->actingAs($receiver, 'api');
+        $c = $this->postJson($url, $this->correctionBody($id, $count))->assertCreated()->json('data.corrections.data.0.id');
+        $this->actingAs($this->actor, 'api');
+        $this->putJson("/api/pharmacy/stock/$dest/status", ['version' => 5, 'status' => 'quarantined', 'note' => 'SYNTHETIC changed stock state'])->assertOk();
+        $review = ['request_id' => (string) Str::uuid(), 'version' => 4, 'decision' => 'apply', 'evidence' => 'SYNTHETIC'];
+        $this->postJson("$url/$c/review", $review)->assertStatus(409);
+        $this->postJson("$url/$c/review", array_replace($review, ['decision' => 'reject']))->assertOk()->assertJsonPath('data.status', 'received_discrepancy');
+        $this->recallStock($source)->assertOk();
+        // Even a fresh count cannot clear a source recall through receipt correction.
+        $count = $this->postJson("/api/pharmacy/stock/$dest/counts", $this->stockCountBody($dest, ['counted_quantity' => '9']))->assertCreated()->json('data.counts.data.0.id');
+        $this->actingAs($receiver, 'api');
+        $this->postJson("/api/pharmacy/stock/$dest/counts/$count/review", ['decision' => 'apply', 'evidence' => 'SYNTHETIC'])->assertOk();
+        $count = $this->correctedReceiptCount($dest, $receiver);
+        $this->postJson($url, $this->correctionBody($id, $count))->assertStatus(422);
+    }
+
+    public function test_receipt_correction_permissions_and_audit_rollback(): void
+    {
+        $receiver = $this->receivingPharmacist(); [$id, $source, $dest] = $this->receivedDiscrepancy($receiver); $count = $this->correctedReceiptCount($dest, $receiver);
+        $url = "/api/pharmacy/stock-transfers/$id/corrections"; $body = $this->correctionBody($id, $count);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->otherLocation)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        $this->actingAs($receiver, 'api'); $receiver->role = 'pharmacy_technician'; $receiver->save();
+        $this->postJson($url, $body)->assertForbidden(); $receiver->role = 'pharmacist'; $receiver->save();
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_stock_transfer_events')) { throw new \RuntimeException('Synthetic correction audit failure'); }
+        });
+        $this->postJson($url, $body)->assertStatus(500);
+        $this->assertSame(0, DB::table('pharmacy_transfer_corrections')->count());
+        $this->assertEquals(3, DB::table('pharmacy_stock_transfers')->where('id', $id)->value('version'));
+        $fail = false; $c = $this->postJson($url, $body)->assertCreated()->json('data.corrections.data.0.id');
+        $review = ['request_id' => (string) Str::uuid(), 'version' => 4, 'decision' => 'apply', 'evidence' => 'SYNTHETIC'];
+        DB::table('pharmacy_staff_assignments')->where('user_id', $receiver->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson("$url/$c/review", $review)->assertNotFound();
+        $this->actingAs($this->actor, 'api'); $fail = true;
+        $this->postJson("$url/$c/review", $review)->assertStatus(500);
+        $this->assertSame('pending', DB::table('pharmacy_transfer_corrections')->value('status'));
+        $this->assertSame('received_discrepancy', DB::table('pharmacy_stock_transfers')->value('status'));
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'transfer_receipt_corrected')->count());
+        $fail = false; $this->postJson("$url/$c/review", $review)->assertOk();
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson("/api/pharmacy/stock-transfers/$id")->assertNotFound();
+        $this->postJson("$url/$c/review", $review)->assertNotFound();
+    }
+
     private function transferBody(int $lot, array $changes = []): array
     {
         return array_replace(['request_id' => (string) Str::uuid(), 'source_lot_id' => $lot, 'destination_location_id' => $this->otherLocation, 'version' => (int) DB::table('pharmacy_stock_lots')->where('id', $lot)->value('version'), 'quantity' => '10.125', 'reference' => 'SYNTHETIC transfer'], $changes);
