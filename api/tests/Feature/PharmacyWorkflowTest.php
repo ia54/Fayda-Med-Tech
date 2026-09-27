@@ -1080,6 +1080,86 @@ class PharmacyWorkflowTest extends TestCase
         $this->postJson("/api/pharmacy/batch-worksheets/$b2/review", ['version' => 2, 'action' => 'reject', 'evidence' => 'Synthetic'])->assertOk();
     }
 
+    public function test_atomic_replacement_stops_original_preserves_fill_history_and_retries_once(): void
+    {
+        $original = $this->rx(); $lot = $this->lot();
+        $fill = $this->fill($original, $lot);
+        $replacement = $this->rx(['quantity' => '7.000', 'refills_authorized' => 0]);
+        $url = "/api/pharmacy/prescriptions/$original/replacement";
+        $body = ['request_id' => (string) Str::uuid(), 'replacement_id' => $replacement, 'discontinue_original' => true, 'reason' => 'Synthetic prescriber change', 'reference' => 'SYNTHETIC received replacement authority'];
+        $beforeStock = DB::table('pharmacy_stock_lots')->get();
+        $beforeFills = DB::table('pharmacy_fills')->get();
+        $beforeReplacement = DB::table('pharmacy_prescriptions')->where('id', $replacement)->first();
+        $this->getJson("/api/pharmacy/prescriptions?replacement_for=$original")->assertOk()->assertJsonPath('data.total', 1);
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.replacement.id', $replacement)->assertJsonPath('data.discontinuation_reason', $body['reason']);
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['discontinue_original' => false]))->assertStatus(409);
+        $this->postJson($url, array_replace($body, ['reference' => 'Changed']))->assertStatus(409);
+        $this->assertTrue((bool) DB::table('pharmacy_prescription_replacements')->value('discontinued_original'));
+        foreach (['prescription_discontinued', 'replacement_linked', 'original_prescription_linked'] as $action) {
+            $this->assertSame(1, DB::table('pharmacy_events')->where('action', $action)->count());
+        }
+        $this->assertEquals($beforeStock, DB::table('pharmacy_stock_lots')->get());
+        $this->assertEquals($beforeFills, DB::table('pharmacy_fills')->get());
+        $this->assertEquals($beforeReplacement, DB::table('pharmacy_prescriptions')->where('id', $replacement)->first());
+        $this->postJson("/api/pharmacy/prescriptions/$original/fills", $this->fillBody($lot))->assertUnprocessable();
+        $this->act($original, $fill, 'approve', $this->checks(), 422);
+        $this->getJson('/api/pharmacy/prescriptions?attention=discontinued_work')->assertOk()->assertJsonPath('data.total', 1);
+        $this->act($original, $fill, 'cancel');
+        $this->getJson('/api/pharmacy/prescriptions?attention=discontinued_work')->assertOk()->assertJsonPath('data.total', 0);
+    }
+
+    public function test_atomic_replacement_validation_and_access_do_not_discontinue_original(): void
+    {
+        $original = $this->rx(); $replacement = $this->rx();
+        $url = "/api/pharmacy/prescriptions/$original/replacement";
+        $body = ['request_id' => (string) Str::uuid(), 'replacement_id' => $replacement, 'discontinue_original' => true, 'reason' => 'Synthetic', 'reference' => 'Synthetic'];
+        foreach ([['discontinue_original' => false], ['discontinue_original' => 'invalid'], ['reference' => ''], ['replacement_id' => $original]] as $invalid) {
+            $this->postJson($url, array_replace($body, $invalid))->assertUnprocessable();
+        }
+        DB::table('pharmacy_prescriptions')->where('id', $replacement)->update(['expires_on' => now()->subDay()->toDateString()]);
+        $this->getJson("/api/pharmacy/prescriptions?replacement_for=$original")->assertOk()->assertJsonPath('data.total', 0);
+        $this->postJson($url, $body)->assertUnprocessable();
+        DB::table('pharmacy_prescriptions')->where('id', $replacement)->update(['expires_on' => now()->addYear()->toDateString(), 'location_id' => $this->otherLocation]);
+        $this->postJson($url, $body)->assertUnprocessable();
+        DB::table('pharmacy_prescriptions')->where('id', $replacement)->update(['location_id' => $this->location, 'organization_id' => 2]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_prescriptions')->where('id', $replacement)->update(['organization_id' => 1]);
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save();
+            $this->postJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        $this->assertNull(DB::table('pharmacy_prescriptions')->where('id', $original)->value('discontinued_at'));
+        $this->assertSame(0, DB::table('pharmacy_prescription_replacements')->count());
+        $this->assertSame(0, DB::table('pharmacy_events')->where('action', 'prescription_discontinued')->count());
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->stopPrescription($original)->assertOk();
+        $this->postJson($url, $body)->assertStatus(409);
+        $this->postJson($url, array_replace($body, ['discontinue_original' => false]))->assertOk()->assertJsonPath('data.discontinuation_reason', 'Synthetic discontinuation');
+    }
+
+    public function test_atomic_replacement_rolls_back_discontinuation_and_link_on_second_audit_failure(): void
+    {
+        $original = $this->rx(); $replacement = $this->rx();
+        $url = "/api/pharmacy/prescriptions/$original/replacement";
+        $body = ['request_id' => (string) Str::uuid(), 'replacement_id' => $replacement, 'discontinue_original' => true, 'reason' => 'Synthetic', 'reference' => 'Synthetic'];
+        $fail = true; $inserts = 0;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail, &$inserts) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events') && ++$inserts === 2) {
+                throw new \RuntimeException('Synthetic replacement audit failure');
+            }
+        });
+        $this->postJson($url, $body)->assertStatus(500); $fail = false;
+        $this->assertSame(2, $inserts);
+        $this->assertNull(DB::table('pharmacy_prescriptions')->where('id', $original)->value('discontinued_at'));
+        $this->assertSame(0, DB::table('pharmacy_prescription_replacements')->count());
+        $this->assertSame(0, DB::table('pharmacy_events')->whereIn('action', ['prescription_discontinued', 'replacement_linked', 'original_prescription_linked'])->count());
+        $this->postJson($url, $body)->assertOk();
+    }
+
     public function test_replacement_links_preserve_both_prescriptions_and_audit_once(): void
     {
         $original = $this->rx();

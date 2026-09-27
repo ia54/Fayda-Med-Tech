@@ -80,33 +80,46 @@ class PharmacyController extends Controller
             abort_unless($rx->discontinuation_request_id === $d['request_id'] && $rx->discontinuation_reason === $d['reason'] && $rx->discontinuation_reference === $d['reference'] && (int) $rx->discontinued_by === (int) $r->user()->id, 409, 'This prescription has already been discontinued. The retained evidence cannot be replaced.');
             return $this->show($r, $id);
         }
+        $this->recordDiscontinuation($r, $rx, $d);
+        return $this->show($r, $id);
+    }
+
+    private function recordDiscontinuation(Request $r, $rx, array $d): void
+    {
         DB::table('pharmacy_prescriptions')->where('id', $rx->id)->update([
             'discontinued_at' => now(), 'discontinued_by' => $r->user()->id,
             'discontinuation_reason' => $d['reason'], 'discontinuation_reference' => $d['reference'],
             'discontinuation_request_id' => $d['request_id'], 'updated_at' => now(),
         ]);
         $this->event($r, $rx, 'prescription_discontinued', ['reason' => $d['reason'], 'reference' => $d['reference']]);
-        return $this->show($r, $id);
     }
 
     public function linkReplacement(Request $r, $id)
     {
         $this->allow($r, ['pharmacist']);
         $original = $this->rx($r, $id, true);
-        $d = $r->validate(['request_id' => 'required|uuid', 'replacement_id' => 'required|integer', 'reason' => 'required|string|max:2000', 'reference' => 'required|string|max:2000']);
+        $d = $r->validate(['request_id' => 'required|uuid', 'replacement_id' => 'required|integer', 'discontinue_original' => 'sometimes|boolean', 'reason' => 'required|string|max:2000', 'reference' => 'required|string|max:2000']);
+        $stopOriginal = (bool) ($d['discontinue_original'] ?? false);
         $replacement = $this->rx($r, $d['replacement_id'], true);
         $old = DB::table('pharmacy_prescription_replacements')->where('original_id', $original->id)->first();
         if ($old) {
-            abort_unless($old->request_id === $d['request_id'] && (int) $old->replacement_id === $replacement->id && $old->reason === $d['reason'] && $old->reference === $d['reference'] && (int) $old->created_by === (int) $r->user()->id, 409, 'This prescription already has a retained replacement link.');
+            abort_unless($old->request_id === $d['request_id'] && (bool) $old->discontinued_original === $stopOriginal && (int) $old->replacement_id === $replacement->id && $old->reason === $d['reason'] && $old->reference === $d['reference'] && (int) $old->created_by === (int) $r->user()->id, 409, 'This prescription already has a retained replacement link.');
             return $this->show($r, $id);
         }
-        abort_unless($original->discontinued_at, 422, 'Discontinue the original prescription before linking its replacement.');
+        abort_unless($original->discontinued_at || $stopOriginal, 422, 'Discontinue the original first or explicitly request discontinuation with replacement.');
+        abort_if($original->discontinued_at && $stopOriginal, 409, 'The original was already discontinued. Refresh and link the replacement without changing the retained discontinuation.');
+        if ($stopOriginal) {
+            abort_if($replacement->expires_on && $replacement->expires_on < now()->toDateString(), 422, 'The replacement prescription is expired.');
+        }
         abort_if($replacement->discontinued_at, 422, 'The replacement prescription is discontinued.');
         abort_unless($replacement->id > $original->id, 422, 'Select a separately received prescription newer than the original record.');
         abort_unless((int) $replacement->episode_id === (int) $original->episode_id && (int) $replacement->location_id === (int) $original->location_id, 422, 'The replacement must belong to the same patient, accident case and pharmacy location.');
         abort_if(DB::table('pharmacy_prescription_replacements')->where('replacement_id', $replacement->id)->exists(), 409, 'This replacement is already linked to another prescription.');
+        if ($stopOriginal) {
+            $this->recordDiscontinuation($r, $original, $d);
+        }
         DB::table('pharmacy_prescription_replacements')->insert([
-            'original_id' => $original->id, 'replacement_id' => $replacement->id, 'created_by' => $r->user()->id,
+            'original_id' => $original->id, 'replacement_id' => $replacement->id, 'discontinued_original' => $stopOriginal, 'created_by' => $r->user()->id,
             'request_id' => $d['request_id'], 'reason' => $d['reason'], 'reference' => $d['reference'], 'created_at' => now(),
         ]);
         $details = ['original_id' => $original->id, 'replacement_id' => $replacement->id, 'reason' => $d['reason'], 'reference' => $d['reference']];
@@ -211,7 +224,9 @@ class PharmacyController extends Controller
         if (! empty($v['replacement_for'])) {
             $this->allow($r, ['pharmacist']);
             $original = $this->rx($r, $v['replacement_for']);
-            abort_unless($original->discontinued_at, 422, 'Discontinue the original prescription first.');
+            if (! $original->discontinued_at) {
+                $q->where(fn ($q) => $q->whereNull('rx.expires_on')->orWhere('rx.expires_on', '>=', now()->toDateString()));
+            }
             $q->where('rx.episode_id', $original->episode_id)->where('rx.location_id', $original->location_id)->where('rx.id', '>', $original->id)->whereNull('rx.discontinued_at')
                 ->whereNotIn('rx.id', DB::table('pharmacy_prescription_replacements')->select('replacement_id'));
         }
