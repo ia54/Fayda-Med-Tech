@@ -86,6 +86,32 @@ class PharmacyController extends Controller
         return $this->show($r, $id);
     }
 
+    public function linkReplacement(Request $r, $id)
+    {
+        $this->allow($r, ['pharmacist']);
+        $original = $this->rx($r, $id, true);
+        $d = $r->validate(['request_id' => 'required|uuid', 'replacement_id' => 'required|integer', 'reason' => 'required|string|max:2000', 'reference' => 'required|string|max:2000']);
+        $replacement = $this->rx($r, $d['replacement_id'], true);
+        $old = DB::table('pharmacy_prescription_replacements')->where('original_id', $original->id)->first();
+        if ($old) {
+            abort_unless($old->request_id === $d['request_id'] && (int) $old->replacement_id === $replacement->id && $old->reason === $d['reason'] && $old->reference === $d['reference'] && (int) $old->created_by === (int) $r->user()->id, 409, 'This prescription already has a retained replacement link.');
+            return $this->show($r, $id);
+        }
+        abort_unless($original->discontinued_at, 422, 'Discontinue the original prescription before linking its replacement.');
+        abort_if($replacement->discontinued_at, 422, 'The replacement prescription is discontinued.');
+        abort_unless($replacement->id > $original->id, 422, 'Select a separately received prescription newer than the original record.');
+        abort_unless((int) $replacement->episode_id === (int) $original->episode_id && (int) $replacement->location_id === (int) $original->location_id, 422, 'The replacement must belong to the same patient, accident case and pharmacy location.');
+        abort_if(DB::table('pharmacy_prescription_replacements')->where('replacement_id', $replacement->id)->exists(), 409, 'This replacement is already linked to another prescription.');
+        DB::table('pharmacy_prescription_replacements')->insert([
+            'original_id' => $original->id, 'replacement_id' => $replacement->id, 'created_by' => $r->user()->id,
+            'request_id' => $d['request_id'], 'reason' => $d['reason'], 'reference' => $d['reference'], 'created_at' => now(),
+        ]);
+        $details = ['original_id' => $original->id, 'replacement_id' => $replacement->id, 'reason' => $d['reason'], 'reference' => $d['reference']];
+        $this->event($r, $original, 'replacement_linked', $details);
+        $this->event($r, $replacement, 'original_prescription_linked', $details);
+        return $this->show($r, $id);
+    }
+
     public function sources(Request $r, $id)
     {
         $this->allow($r, ['pharmacist', 'pharmacy_technician']);
@@ -159,7 +185,7 @@ class PharmacyController extends Controller
 
     public function index(Request $r)
     {
-        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'search' => 'nullable|string|max:100']);
+        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'search' => 'nullable|string|max:100']);
         $q = DB::table('pharmacy_prescriptions as rx')->join('pharmacy_episodes as ep', 'ep.id', '=', 'rx.episode_id')->leftJoin('users as patient', 'patient.id', '=', 'ep.patient_id')->leftJoin('pharmacy_patients as chart', 'chart.id', '=', 'ep.pharmacy_patient_id')->join('cases', 'cases.id', '=', 'ep.case_id')->where('rx.organization_id', $this->org($r));
         app(PharmacyAccess::class)->scope($q, $r->user(), 'rx.location_id');
         $latest = DB::table('pharmacy_fills')->selectRaw('prescription_id, MAX(id) AS latest_fill_id')->groupBy('prescription_id');
@@ -170,6 +196,13 @@ class PharmacyController extends Controller
             } else {
                 $q->where('fill.fulfillment_status', $v['stage']);
             }
+        }
+        if (! empty($v['replacement_for'])) {
+            $this->allow($r, ['pharmacist']);
+            $original = $this->rx($r, $v['replacement_for']);
+            abort_unless($original->discontinued_at, 422, 'Discontinue the original prescription first.');
+            $q->where('rx.episode_id', $original->episode_id)->where('rx.location_id', $original->location_id)->where('rx.id', '>', $original->id)->whereNull('rx.discontinued_at')
+                ->whereNotIn('rx.id', DB::table('pharmacy_prescription_replacements')->select('replacement_id'));
         }
         if (! empty($v['status'])) {
             $v['status'] === 'discontinued' ? $q->whereNotNull('rx.discontinued_at') : $q->whereNull('rx.discontinued_at');
@@ -206,6 +239,11 @@ class PharmacyController extends Controller
 
             return $f;
         });
+        foreach (['replacement' => ['original_id', 'replacement_id'], 'replaces' => ['replacement_id', 'original_id']] as $key => [$from, $to]) {
+            $rx->$key = DB::table('pharmacy_prescription_replacements as link')->join('pharmacy_prescriptions as related', 'related.id', '=', 'link.'.$to)
+                ->where('link.'.$from, $rx->id)->where('related.organization_id', $this->org($r))->where('related.location_id', $rx->location_id)
+                ->first(['related.id', 'related.rx_number', 'related.medication', 'link.reason', 'link.reference', 'link.created_by', 'link.created_at']);
+        }
         $rx->events = DB::table('pharmacy_events')->where('prescription_id', $rx->id)->orderByDesc('id')->limit(100)->get()->map(function ($e) {
             $e->details = $this->json($e->details);
 

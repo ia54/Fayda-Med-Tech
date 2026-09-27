@@ -209,6 +209,74 @@ class PharmacyWorkflowTest extends TestCase
         $this->postJson("/api/pharmacy/batch-worksheets/$b2/review", ['version' => 2, 'action' => 'reject', 'evidence' => 'Synthetic'])->assertOk();
     }
 
+    public function test_replacement_links_preserve_both_prescriptions_and_audit_once(): void
+    {
+        $original = $this->rx();
+        $replacement = $this->rx(['quantity' => '7.000', 'refills_authorized' => 0]);
+        $url = "/api/pharmacy/prescriptions/$original/replacement";
+        $body = ['request_id' => (string) Str::uuid(), 'replacement_id' => $replacement, 'reason' => 'Synthetic replacement', 'reference' => 'SYNTHETIC authority'];
+        $this->postJson($url, $body)->assertUnprocessable();
+        $this->stopPrescription($original)->assertOk();
+        $before = DB::table('pharmacy_prescriptions')->orderBy('id')->get();
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.replacement.id', $replacement);
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['reason' => 'Changed']))->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_prescription_replacements')->count());
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'replacement_linked')->count());
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'original_prescription_linked')->count());
+        $this->assertEquals($before, DB::table('pharmacy_prescriptions')->orderBy('id')->get());
+        $this->getJson("/api/pharmacy/prescriptions/$replacement")->assertOk()->assertJsonPath('data.replaces.id', $original)->assertJsonPath('data.refills_authorized', 0);
+        $this->deleteJson($url)->assertStatus(405);
+        $this->putJson($url, $body)->assertStatus(405);
+        $this->postJson("/api/pharmacy/prescriptions/$original/fills", $this->fillBody($this->lot()))->assertUnprocessable();
+        $this->getJson("/api/pharmacy/prescriptions?replacement_for=$original")->assertOk()->assertJsonPath('data.total', 0);
+    }
+
+    public function test_replacement_link_access_patient_and_location_boundaries(): void
+    {
+        $original = $this->rx(); $this->stopPrescription($original)->assertOk();
+        $replacement = $this->rx();
+        $url = "/api/pharmacy/prescriptions/$original/replacement";
+        $body = ['request_id' => (string) Str::uuid(), 'replacement_id' => $replacement, 'reason' => 'Synthetic', 'reference' => 'Synthetic'];
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save();
+            $this->postJson($url, $body)->assertForbidden();
+            $this->getJson("/api/pharmacy/prescriptions?replacement_for=$original")->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        DB::table('pharmacy_prescriptions')->where('id', $replacement)->update(['organization_id' => 2]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_prescriptions')->where('id', $replacement)->update(['organization_id' => 1, 'location_id' => $this->otherLocation]);
+        $this->postJson($url, $body)->assertUnprocessable();
+        $otherPatient = User::create(['first_name' => 'Another', 'last_name' => 'Synthetic', 'email' => 'other-syn@example.invalid', 'password' => 'synthetic-only', 'role' => 'client', 'organization_id' => 1, 'status' => 'active']);
+        CaseParty::create(['case_id' => $this->case->id, 'user_id' => $otherPatient->id, 'role_in_case' => 'client']);
+        $otherRx = $this->rx(['patient_id' => $otherPatient->id]);
+        $this->postJson($url, array_replace($body, ['replacement_id' => $otherRx]))->assertUnprocessable();
+        $this->getJson("/api/pharmacy/prescriptions?replacement_for=$original")->assertOk()->assertJsonPath('data.total', 0);
+        $this->assertSame(0, DB::table('pharmacy_prescription_replacements')->count());
+    }
+
+    public function test_replacement_links_reject_reuse_stopped_targets_and_backward_chains(): void
+    {
+        $first = $this->rx(); $second = $this->rx(); $third = $this->rx();
+        foreach ([$first, $second] as $id) { $this->stopPrescription($id)->assertOk(); }
+        $body = ['request_id' => (string) Str::uuid(), 'replacement_id' => $third, 'reason' => 'Synthetic', 'reference' => 'Synthetic'];
+        $this->postJson("/api/pharmacy/prescriptions/$first/replacement", array_replace($body, ['replacement_id' => $second]))->assertUnprocessable();
+        $this->postJson("/api/pharmacy/prescriptions/$first/replacement", array_replace($body, ['replacement_id' => $first]))->assertUnprocessable();
+        $this->postJson("/api/pharmacy/prescriptions/$second/replacement", $body)->assertOk();
+        $this->postJson("/api/pharmacy/prescriptions/$first/replacement", $body)->assertStatus(409);
+        $this->stopPrescription($third)->assertOk();
+        // A stopped successor remains part of the retained history and exact retries remain safe.
+        $this->postJson("/api/pharmacy/prescriptions/$second/replacement", $body)->assertOk();
+        $fourth = $this->rx();
+        $this->postJson("/api/pharmacy/prescriptions/$third/replacement", array_replace($body, ['replacement_id' => $fourth]))->assertOk();
+        $this->getJson("/api/pharmacy/prescriptions/$third")->assertOk()->assertJsonPath('data.replaces.id', $second)->assertJsonPath('data.replacement.id', $fourth);
+        $this->assertSame(2, DB::table('pharmacy_prescription_replacements')->count());
+    }
+
     private function body(array $overrides = []): array
     {
         if (! empty($overrides['compounded']) && ! array_key_exists('compound_type', $overrides)) {

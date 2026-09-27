@@ -2,6 +2,12 @@
 
 Decision recorded September 24, 2026. Pharmacy is the core product, not an optional provider portal. Build the pharmacy-management and dispensing system inside FaydaMedTech. Support multiple potential pharmacy locations, controlled substances, and compounded preparations. On September 25 the owner confirmed BOTH sterile and nonsterile compounding. The owner will confirm an AI account, most likely GLM; no account, endpoint, contractual approval or patient-data processing has been verified.
 
+## Retained replacement prescription links
+
+An assigned pharmacist can link a separately received, later prescription to a discontinued original. Both must have the same patient/accident episode and pharmacy location. The replacement cannot be discontinued or already assigned as another original's replacement. Each original has at most one successor; each successor has at most one predecessor, and increasing record IDs prevent cycles. Later replacements can form a navigable retained chain.
+
+The link retains reason, authority reference, pharmacist and time, with audit events on both records and exact-retry protection. It cannot be overwritten or deleted through this workflow. It does not reactivate the original or copy prescription values, files, approvals, refills, invoices or stock. Receiving and independently verifying the new prescription remains necessary. This is record continuity, not prescribing, an authorized electronic transfer, external cancellation, or automated renewal.
+
 ## Prescription discontinuation
 
 An assigned pharmacist can record a one-way discontinuation with reason and supporting authority reference. Exact retries retain a single event; a later request cannot overwrite the decision. Worklists filter prescriptions that are or are not discontinued and show the stop on the prescription and linked worksheet.
