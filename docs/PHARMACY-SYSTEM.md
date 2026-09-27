@@ -2,6 +2,12 @@
 
 Decision recorded September 24, 2026. Pharmacy is the core product, not an optional provider portal. Build the pharmacy-management and dispensing system inside FaydaMedTech. Support multiple potential pharmacy locations, controlled substances, and compounded preparations. On September 25 the owner confirmed BOTH sterile and nonsterile compounding. The owner will confirm an AI account, most likely GLM; no account, endpoint, contractual approval or patient-data processing has been verified.
 
+## Prescription discontinuation
+
+An assigned pharmacist can record a one-way discontinuation with reason and supporting authority reference. Exact retries retain a single event; a later request cannot overwrite the decision. Worklists filter prescriptions that are or are not discontinued and show the stop on the prescription and linked worksheet.
+
+The backend blocks new fills, approval, final preparation and handover, new compounding worksheets, worksheet approval, ingredient reservation and execution. Open fills/reservations are retained for explicit cancellation or release; discontinuation does not claim stock was returned. Existing completed fills, source files, executions and financial history are preserved. Billing for completed fills and historical document review remain available. There is no automatic prescriber/patient notification, transfer, amendment, reactivation or renewal; those require separate workflows. These controls are synthetic-preview functionality and do not independently establish clinical authority.
+
 ## Original prescription evidence
 
 Assigned pharmacists and pharmacy technicians can append PDF, PNG or JPEG source files (up to 10 MB) to a prescription. Separate private storage and prescription-location checks apply to listing, uploading and downloading; these attachments are not exposed through the general organization document area. Each file retains its original bytes, SHA-256, receipt reference, actor and time. Download verifies the checksum and uses authenticated, non-cached responses. Exact upload retries return the existing record; conflicting request reuse is rejected. Failed writes remove newly stored files.

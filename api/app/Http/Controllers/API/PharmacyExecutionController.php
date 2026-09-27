@@ -39,6 +39,7 @@ class PharmacyExecutionController extends Controller
         $record = json_decode($batch->record, true, 512, JSON_THROW_ON_ERROR);
         abort_unless($formula && $formula->status === 'reviewed' && $record['planned_on'] === $d['prepared_on'], 422, 'Use a current reviewed formulation and a worksheet planned for today.');
         $rx = DB::table('pharmacy_prescriptions')->where('id', $batch->prescription_id)->first();
+        abort_if($rx?->discontinued_at, 422, 'The linked prescription is discontinued. Release unused reservations; no further preparation is allowed.');
         abort_unless($rx && $rx->expires_on >= $d['prepared_on'], 422, 'Prescription is no longer current.');
         abort_if($formula->preparation_type === 'sterile' && empty($d['environment_reference']), 422, 'Sterile preparation requires environmental and aseptic process evidence.');
         abort_if($formula->hazardous && empty($d['hazard_control_reference']), 422, 'Hazardous preparation requires containment and handling evidence.');

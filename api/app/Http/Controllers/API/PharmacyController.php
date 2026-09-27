@@ -68,6 +68,24 @@ class PharmacyController extends Controller
         abort_unless((int) $record->version === (int) $data['version'], 409, 'This record changed. Refresh before trying again.');
     }
 
+    public function discontinue(Request $r, $id)
+    {
+        $this->allow($r, ['pharmacist']);
+        $rx = $this->rx($r, $id, true);
+        $d = $r->validate(['request_id' => 'required|uuid', 'reason' => 'required|string|max:2000', 'reference' => 'required|string|max:2000']);
+        if ($rx->discontinued_at) {
+            abort_unless($rx->discontinuation_request_id === $d['request_id'] && $rx->discontinuation_reason === $d['reason'] && $rx->discontinuation_reference === $d['reference'] && (int) $rx->discontinued_by === (int) $r->user()->id, 409, 'This prescription has already been discontinued. The retained evidence cannot be replaced.');
+            return $this->show($r, $id);
+        }
+        DB::table('pharmacy_prescriptions')->where('id', $rx->id)->update([
+            'discontinued_at' => now(), 'discontinued_by' => $r->user()->id,
+            'discontinuation_reason' => $d['reason'], 'discontinuation_reference' => $d['reference'],
+            'discontinuation_request_id' => $d['request_id'], 'updated_at' => now(),
+        ]);
+        $this->event($r, $rx, 'prescription_discontinued', ['reason' => $d['reason'], 'reference' => $d['reference']]);
+        return $this->show($r, $id);
+    }
+
     public function sources(Request $r, $id)
     {
         $this->allow($r, ['pharmacist', 'pharmacy_technician']);
@@ -141,7 +159,7 @@ class PharmacyController extends Controller
 
     public function index(Request $r)
     {
-        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'search' => 'nullable|string|max:100']);
+        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'search' => 'nullable|string|max:100']);
         $q = DB::table('pharmacy_prescriptions as rx')->join('pharmacy_episodes as ep', 'ep.id', '=', 'rx.episode_id')->leftJoin('users as patient', 'patient.id', '=', 'ep.patient_id')->leftJoin('pharmacy_patients as chart', 'chart.id', '=', 'ep.pharmacy_patient_id')->join('cases', 'cases.id', '=', 'ep.case_id')->where('rx.organization_id', $this->org($r));
         app(PharmacyAccess::class)->scope($q, $r->user(), 'rx.location_id');
         $latest = DB::table('pharmacy_fills')->selectRaw('prescription_id, MAX(id) AS latest_fill_id')->groupBy('prescription_id');
@@ -153,6 +171,9 @@ class PharmacyController extends Controller
                 $q->where('fill.fulfillment_status', $v['stage']);
             }
         }
+        if (! empty($v['status'])) {
+            $v['status'] === 'discontinued' ? $q->whereNotNull('rx.discontinued_at') : $q->whereNull('rx.discontinued_at');
+        }
         if (! empty($v['location_id'])) {
             $q->where('rx.location_id', $v['location_id']);
         }
@@ -160,7 +181,7 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('rx.id', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
+        return response()->json(['data' => $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
     }
 
     public function show(Request $r, $id)
@@ -274,6 +295,7 @@ class PharmacyController extends Controller
 
                 return;
             }
+            abort_if($rx->discontinued_at, 422, 'This prescription is discontinued. No new fill can be created.');
             if ($rx->expires_on < now()->toDateString()) {
                 $this->fail('Prescription has expired. Obtain an updated prescription.');
             }
@@ -306,6 +328,7 @@ class PharmacyController extends Controller
             abort_unless($f, 404);
             $this->version($f, $d);
             $a = $d['action'];
+            abort_if($rx->discontinued_at && in_array($a, ['approve', 'ready', 'collected', 'delivered'], true), 422, 'This prescription is discontinued. Cancel the open fill to release its stock reservation.');
             $update = [];
             $ep = DB::table('pharmacy_episodes')->where('id', $rx->episode_id)->lockForUpdate()->first();
             if ($a === 'record_maps') {

@@ -206,6 +206,7 @@ class PharmacyIngredientController extends Controller
             $record = json_decode($batch->record, true, 512, JSON_THROW_ON_ERROR);
             $specs = collect(json_decode($formula->record, true, 512, JSON_THROW_ON_ERROR)['ingredients'])->keyBy('key');
             $rx = DB::table('pharmacy_prescriptions')->where('id', $batch->prescription_id)->first();
+            abort_if($rx?->discontinued_at, 422, 'The linked prescription is discontinued. Release unused reservations; no further preparation is allowed.');
             abort_unless($record['planned_on'] >= now()->toDateString() && $rx && $rx->expires_on >= $record['planned_on'], 422, 'The planned date or prescription is no longer current.');
             $selections = collect($d['lots'])->keyBy('key');
             abort_unless($selections->count() === count($record['ingredients']), 422, 'Select stock for every ingredient.');

@@ -129,6 +129,86 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
     }
 
+    private function stopPrescription(int $rx, array $changes = [])
+    {
+        return $this->postJson("/api/pharmacy/prescriptions/$rx/discontinue", array_replace(['request_id' => (string) Str::uuid(), 'reason' => 'Synthetic discontinuation', 'reference' => 'SYNTHETIC authority record'], $changes));
+    }
+
+    public function test_discontinuation_blocks_fills_and_handover_preserves_stock_and_is_append_only(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $key = (string) Str::uuid();
+        $this->stopPrescription($rx, ['request_id' => $key])->assertOk()->assertJsonPath('data.discontinuation_reason', 'Synthetic discontinuation');
+        $this->stopPrescription($rx, ['request_id' => $key])->assertOk();
+        $this->stopPrescription($rx, ['request_id' => $key, 'reason' => 'Changed'])->assertStatus(409);
+        $this->stopPrescription($rx)->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'prescription_discontinued')->count());
+        $this->assertEquals(10, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        foreach (['approve', 'ready', 'collected', 'delivered'] as $action) {
+            $this->act($rx, $f, $action, $this->checks() + ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic', 'counseling' => 'provided'], 422);
+        }
+        $this->act($rx, $f, 'cancel');
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertUnprocessable();
+        $this->getJson('/api/pharmacy/prescriptions?status=discontinued')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/pharmacy/prescriptions?status=active')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/prescriptions?status=invalid')->assertUnprocessable();
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+    }
+
+    public function test_discontinuation_requires_assigned_pharmacist_and_preserves_completed_fill_billing(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->complete($rx, $this->fill($rx, $lot));
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save();
+            $this->stopPrescription($rx)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->stopPrescription($rx)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->stopPrescription($rx)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $this->stopPrescription($rx, ['reference' => ''])->assertUnprocessable();
+        $before = DB::table('pharmacy_fills')->where('id', $f['id'])->first();
+        $this->stopPrescription($rx)->assertOk();
+        $this->assertEquals($before, DB::table('pharmacy_fills')->where('id', $f['id'])->first());
+        $this->actor->role = 'medical_biller'; $this->actor->save();
+        $this->putJson("/api/pharmacy/prescriptions/$rx/coverage", ['version' => 1, 'status' => 'verified', 'payer' => 'Synthetic payer', 'claim_number' => 'SYN-PIP', 'coordination' => 'Synthetic coordination', 'evidence' => 'Synthetic verification', 'verified_on' => now()->toDateString()])->assertOk();
+        $this->act($rx, $f, 'prepare_claim', ['amount' => '25.00', 'reference' => 'Synthetic pricing']);
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+    }
+
+    public function test_discontinuation_blocks_compounding_but_allows_unused_reservations_to_release(): void
+    {
+        [$b, $lot] = $this->reservedWorksheet();
+        $batch = DB::table('pharmacy_batch_worksheets')->where('id', $b)->first();
+        $rx = $batch->prescription_id;
+        $this->stopPrescription($rx)->assertOk();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $this->executionBody())->assertUnprocessable();
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+        $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(2, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('reserved'));
+        $record = json_decode($batch->record, true);
+        $this->postJson('/api/pharmacy/batch-worksheets', $record + ['request_id' => (string) Str::uuid(), 'prescription_id' => $rx, 'formulation_id' => $batch->formulation_id, 'batch_number' => 'STOPPED'])->assertUnprocessable();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/allocation", ['version' => 3, 'action' => 'release', 'evidence' => 'Synthetic discontinuation'])->assertOk();
+        $this->assertEquals(0, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('reserved'));
+        // Separate unallocated worksheet exercises the stop gate before any stock mutation.
+        $b2 = $this->reviewedWorksheet();
+        $rx2 = DB::table('pharmacy_batch_worksheets')->where('id', $b2)->value('prescription_id');
+        $this->stopPrescription($rx2)->assertOk();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b2/allocation", ['version' => 2, 'action' => 'reserve', 'evidence' => 'Synthetic', 'lots' => [['key' => 'A', 'lot_id' => $lot]]])->assertUnprocessable();
+        DB::table('pharmacy_batch_worksheets')->where('id', $b2)->update(['status' => 'draft']);
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/batch-worksheets/$b2/review", ['version' => 2, 'action' => 'review', 'evidence' => 'Synthetic'])->assertUnprocessable();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b2/review", ['version' => 2, 'action' => 'reject', 'evidence' => 'Synthetic'])->assertOk();
+    }
+
     private function body(array $overrides = []): array
     {
         if (! empty($overrides['compounded']) && ! array_key_exists('compound_type', $overrides)) {

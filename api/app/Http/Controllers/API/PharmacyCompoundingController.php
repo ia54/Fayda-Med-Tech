@@ -149,6 +149,7 @@ class PharmacyCompoundingController extends Controller
         }
         $b->output_status = $b->execution ? 'quarantined' : 'not_prepared';
         $b->production_release_enabled = false;
+        $b->prescription_discontinued_at = DB::table('pharmacy_prescriptions')->where('id', $b->prescription_id)->value('discontinued_at');
 
         return response()->json(['data' => $b]);
     }
@@ -173,6 +174,7 @@ class PharmacyCompoundingController extends Controller
         $rx = DB::table('pharmacy_prescriptions')->where('organization_id', $org)->where('id', $d['prescription_id'])->first();
         abort_unless($rx, 404);
         app(PharmacyAccess::class)->requireLocation($r->user(), $rx->location_id);
+        abort_if($rx->discontinued_at, 422, 'The linked prescription is discontinued.');
         $f = $this->formula($r, $d['formulation_id']);
         abort_unless($rx->compounded && $rx->compound_type === $f->preparation_type && $f->status === 'reviewed', 422, 'Use a reviewed formulation matching the prescription preparation type.');
         abort_if($rx->expires_on < $d['planned_on'], 422, 'Prescription expires before the planned date.');
@@ -204,6 +206,7 @@ class PharmacyCompoundingController extends Controller
             abort_if((int) $b->created_by === (int) $r->user()->id, 422, 'An independent pharmacist must review the worksheet.');
             abort_unless($b->formula->status === 'reviewed', 422, 'The formulation has been retired.');
             $rx = DB::table('pharmacy_prescriptions')->where('id', $b->prescription_id)->first();
+            abort_if($rx?->discontinued_at, 422, 'The linked prescription is discontinued.');
             abort_unless($rx && $rx->expires_on >= now()->toDateString() && $b->record->planned_on >= now()->toDateString(), 422, 'The planned date or prescription is no longer current.');
             foreach ($b->record->ingredients as $line) {
                 abort_if($line->expires_on < now()->toDateString(), 422, 'An ingredient has expired.');
