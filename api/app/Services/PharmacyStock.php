@@ -51,6 +51,7 @@ class PharmacyStock
         $seen = [];
         $organization = (int) $lot->organization_id;
         while (true) {
+            if (app(PharmacyRecall::class)->held($lot)) { $this->fail('This product and lot are covered by an organization recall notice. Review the recall register before any release or use.'); }
             if (isset($seen[$lot->id]) || (int) $lot->organization_id !== $organization || $lot->recall_reference !== null || $lot->status === 'recalled') {
                 $this->fail('Stock custody or recall history requires reconciliation before release or use.');
             }

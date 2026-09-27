@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Services\PharmacyStock;
+use App\Services\PharmacyRecall;
 use App\Services\PharmacyAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -69,6 +70,7 @@ class PharmacyInventoryController extends Controller
         app(PharmacyAccess::class)->requireLocation($r->user(), $lot->location_id);
         unset($lot->request_id, $lot->request_hash, $lot->recall_request_id);
         $lot->custody_hold = app(PharmacyStock::class)->custodyHold($lot);
+        $lot->recall_notices = app(PharmacyRecall::class)->notices($lot)->orderByDesc('n.id')->limit(50)->get(['n.id', 'n.reference', 'n.product_description']);
         $lot->trace = DB::table('pharmacy_fills as f')->join('pharmacy_prescriptions as rx', 'rx.id', '=', 'f.prescription_id')
             ->where('f.stock_lot_id', $id)->where('rx.organization_id', $lot->organization_id)->where('rx.location_id', $lot->location_id)
             ->select('f.id', 'f.prescription_id', 'rx.rx_number', 'f.fill_number', 'f.quantity', 'f.fulfillment_status', 'f.created_at')
@@ -103,7 +105,7 @@ class PharmacyInventoryController extends Controller
         }
         abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh and recount.');
         abort_if(DB::table('pharmacy_stock_counts')->where('stock_lot_id', $id)->where('status', 'pending')->exists(), 409, 'A discrepancy is already awaiting review.');
-        abort_if($lot->recall_reference !== null, 422, 'Recalled stock requires a separate disposition workflow; do not adjust it through a physical count.');
+        abort_if($lot->recall_reference !== null || app(PharmacyRecall::class)->held($lot), 422, 'Recalled stock requires a separate disposition workflow; do not adjust it through a physical count.');
         $counted = PharmacyStock::milli($d['counted_quantity']);
         $recorded = PharmacyStock::milli($lot->on_hand);
         abort_if($counted === $recorded, 422, 'There is no quantity discrepancy to reconcile.');
@@ -129,7 +131,7 @@ class PharmacyInventoryController extends Controller
         abort_if((int) $count->created_by === (int) $r->user()->id, 422, 'A different pharmacist must review this discrepancy.');
         $delta = 0;
         if ($d['decision'] === 'apply') {
-            abort_unless((int) $lot->version === (int) $count->lot_version && $lot->status === 'quarantined' && $lot->recall_reference === null, 409, 'Stock changed after this count. Reject this proposal and record a fresh count.');
+            abort_unless((int) $lot->version === (int) $count->lot_version && $lot->status === 'quarantined' && $lot->recall_reference === null && ! app(PharmacyRecall::class)->held($lot), 409, 'Stock changed after this count. Reject this proposal and record a fresh count.');
             $counted = PharmacyStock::milli($count->counted_quantity);
             abort_unless($counted >= PharmacyStock::milli($lot->reserved), 422, 'Count is below reserved stock. Resolve fill reservations, reject this proposal and recount.');
             $delta = $counted - PharmacyStock::milli($lot->on_hand);
@@ -194,10 +196,12 @@ class PharmacyInventoryController extends Controller
             }
             abort_unless(DB::table('pharmacy_locations')->where('id', $d['location_id'])->where('organization_id', $org)->where('active', true)->exists(), 404);
             $quantity = PharmacyStock::decimal(PharmacyStock::milli($d['quantity']));
-            $row = $d;
+            $row = $d + PharmacyRecall::keys($d['ndc'], $d['lot_number']);
+            $held = app(PharmacyRecall::class)->held((object) ['organization_id' => $org, 'ndc' => $d['ndc'], 'lot_number' => $d['lot_number']]);
+            if ($held) { $row['status'] = 'quarantined'; }
             unset($row['quantity']);
             $id = DB::table('pharmacy_stock_lots')->insertGetId($row + ['organization_id' => $org, 'request_hash' => $hash, 'on_hand' => $quantity, 'created_by' => $r->user()->id, 'created_at' => now(), 'updated_at' => now()]);
-            app(PharmacyStock::class)->event($r->user(), (object) ['id' => $id], 'received', $quantity, ['receipt_reference' => $d['receipt_reference']]);
+            app(PharmacyStock::class)->event($r->user(), (object) ['id' => $id], 'received', $quantity, ['receipt_reference' => $d['receipt_reference'], 'organization_recall_hold' => $held]);
 
             return $id;
         });
