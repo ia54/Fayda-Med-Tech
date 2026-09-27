@@ -277,6 +277,42 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('pharmacy_prescription_replacements')->count());
     }
 
+    public function test_discontinued_work_queue_clears_only_after_explicit_fill_cancellation(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->fill($rx, $lot);
+        $url = '/api/pharmacy/prescriptions?attention=discontinued_work';
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 0);
+        $this->stopPrescription($rx)->assertOk();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.open_fill_count', 1)->assertJsonPath('data.data.0.reserved_batch_count', 0);
+        $this->getJson($url.'&location_id='.$this->otherLocation)->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson($url.'&status=active')->assertOk()->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->act($rx, $f, 'cancel');
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 0);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->getJson('/api/pharmacy/prescriptions?attention=invalid')->assertUnprocessable();
+    }
+
+    public function test_discontinued_work_queue_counts_distinct_reserved_batches_and_retains_history(): void
+    {
+        [$b, $lot] = $this->reservedWorksheet(true);
+        $rx = DB::table('pharmacy_batch_worksheets')->where('id', $b)->value('prescription_id');
+        $this->stopPrescription($rx)->assertOk();
+        $url = '/api/pharmacy/prescriptions?attention=discontinued_work';
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.open_fill_count', 0)->assertJsonPath('data.data.0.reserved_batch_count', 1);
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonCount(1, 'data.reserved_batches')->assertJsonPath('data.reserved_batches.0.id', $b);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 0);
+        $this->actor->organization_id = 1; $this->actor->save();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/allocation", ['version' => 3, 'action' => 'release', 'evidence' => 'Synthetic discontinuation resolution'])->assertOk();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonCount(0, 'data.reserved_batches');
+        $this->assertSame(2, DB::table('pharmacy_ingredient_allocations')->where('batch_id', $b)->where('status', 'released')->count());
+        $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+    }
+
     private function body(array $overrides = []): array
     {
         if (! empty($overrides['compounded']) && ! array_key_exists('compound_type', $overrides)) {

@@ -185,11 +185,19 @@ class PharmacyController extends Controller
 
     public function index(Request $r)
     {
-        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'search' => 'nullable|string|max:100']);
+        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'attention' => 'nullable|in:discontinued_work', 'search' => 'nullable|string|max:100']);
         $q = DB::table('pharmacy_prescriptions as rx')->join('pharmacy_episodes as ep', 'ep.id', '=', 'rx.episode_id')->leftJoin('users as patient', 'patient.id', '=', 'ep.patient_id')->leftJoin('pharmacy_patients as chart', 'chart.id', '=', 'ep.pharmacy_patient_id')->join('cases', 'cases.id', '=', 'ep.case_id')->where('rx.organization_id', $this->org($r));
         app(PharmacyAccess::class)->scope($q, $r->user(), 'rx.location_id');
         $latest = DB::table('pharmacy_fills')->selectRaw('prescription_id, MAX(id) AS latest_fill_id')->groupBy('prescription_id');
         $q->leftJoinSub($latest, 'latest_fill', fn ($join) => $join->on('latest_fill.prescription_id', '=', 'rx.id'))->leftJoin('pharmacy_fills as fill', 'fill.id', '=', 'latest_fill.latest_fill_id');
+        $openFills = DB::table('pharmacy_fills')->selectRaw('prescription_id, COUNT(*) AS open_fill_count')->whereIn('fulfillment_status', ['pending', 'ready'])->groupBy('prescription_id');
+        $reservedBatches = DB::table('pharmacy_batch_worksheets as b')->join('pharmacy_ingredient_allocations as a', 'a.batch_id', '=', 'b.id')
+            ->where('b.organization_id', $this->org($r))->where('a.status', 'reserved')->selectRaw('b.prescription_id, b.location_id, COUNT(DISTINCT b.id) AS reserved_batch_count')->groupBy('b.prescription_id', 'b.location_id');
+        $q->leftJoinSub($openFills, 'open_fills', fn ($join) => $join->on('open_fills.prescription_id', '=', 'rx.id'))
+            ->leftJoinSub($reservedBatches, 'reserved_batches', fn ($join) => $join->on('reserved_batches.prescription_id', '=', 'rx.id')->on('reserved_batches.location_id', '=', 'rx.location_id'));
+        if (! empty($v['attention'])) {
+            $q->whereNotNull('rx.discontinued_at')->where(fn ($q) => $q->where('open_fills.open_fill_count', '>', 0)->orWhere('reserved_batches.reserved_batch_count', '>', 0));
+        }
         if (! empty($v['stage'])) {
             if ($v['stage'] === 'intake') {
                 $q->whereNull('fill.id');
@@ -214,7 +222,7 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
+        return response()->json(['data' => $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
     }
 
     public function show(Request $r, $id)
@@ -239,6 +247,9 @@ class PharmacyController extends Controller
 
             return $f;
         });
+        $rx->reserved_batches = DB::table('pharmacy_batch_worksheets as b')->join('pharmacy_ingredient_allocations as a', 'a.batch_id', '=', 'b.id')
+            ->where('b.organization_id', $this->org($r))->where('b.location_id', $rx->location_id)->where('b.prescription_id', $rx->id)->where('a.status', 'reserved')
+            ->select('b.id', 'b.batch_number')->distinct()->orderBy('b.id')->get();
         foreach (['replacement' => ['original_id', 'replacement_id'], 'replaces' => ['replacement_id', 'original_id']] as $key => [$from, $to]) {
             $rx->$key = DB::table('pharmacy_prescription_replacements as link')->join('pharmacy_prescriptions as related', 'related.id', '=', 'link.'.$to)
                 ->where('link.'.$from, $rx->id)->where('related.organization_id', $this->org($r))->where('related.location_id', $rx->location_id)

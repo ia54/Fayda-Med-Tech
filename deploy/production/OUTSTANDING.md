@@ -2,6 +2,8 @@
 
 Production has not been switched. A passing build is not release approval.
 
+**Current consolidated checklist:** [RELEASE-STATUS.md](RELEASE-STATUS.md). Sections below retain historical evidence; later entries supersede older implementation counts and hosting observations.
+
 ## September 27 receipt-specific recall holds
 
 Assigned pharmacists can record immutable recall notice/evidence, actor/time and a recalled stock status on an individual ingredient receipt. Stock quantities and original batch records are preserved. Ordinary receiving/status review cannot clear the hold, new count adjustments are blocked, and existing pending counts cannot be applied after the recall changes the stock version. A pending count may be rejected without clearing the recall. Reservation release remains available and does not return consumed ingredients.
@@ -75,7 +77,7 @@ Audit counts differ across tools: npm counts affected package entries; pnpm coun
 
 - Authorized host: 144.126.132.98 only; sites api.faydamed.tech, admin.faydamed.tech, faydamed.tech only. Never use the discarded 66.94.122.48 host.
 - Working SSH/provider terminal remains unavailable. CyberPanel sign-in works but is not shell access.
-- CyberPanel API backup reports 635 MB; contents/database/keys/isolated restore unverified. Admin and website backups report zero size; do not rely on them.
+- The September 24 follow-up below supersedes the earlier zero-size observation: panel metadata reported completed backups for API (635 MB), admin (392 MB) and website (255 MB). Contents/database/keys, actual admin-tree coverage and isolated restore remain unverified.
 - Back up the actual admin tree /var/www/admin-faydamed-tech in addition to site home folders. Verify encryption and OAuth keys, database, private uploads and process configuration; rehearse isolated recovery.
 - Verify installed Linux dependencies/extensions, database grants, permissions, queue/scheduler behavior and production configuration on the exact host.
 - Rehearse reviewed migrations and all six role journeys with synthetic data before production cutover. Do not seed/reset production or regenerate existing keys.

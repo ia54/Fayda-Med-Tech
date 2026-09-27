@@ -2,6 +2,10 @@
 
 Decision recorded September 24, 2026. Pharmacy is the core product, not an optional provider portal. Build the pharmacy-management and dispensing system inside FaydaMedTech. Support multiple potential pharmacy locations, controlled substances, and compounded preparations. On September 25 the owner confirmed BOTH sterile and nonsterile compounding. The owner will confirm an AI account, most likely GLM; no account, endpoint, contractual approval or patient-data processing has been verified.
 
+## Discontinuation follow-up worklist
+
+The prescription queue can filter discontinued records that still have pending/ready fills or ingredient reservations. Counts include all open fills and distinct reserved worksheets, not just the latest fill or number of ingredient lines. Tenant and location access apply before results are returned. Detail links lead to the exact fill or worksheet. Explicit cancellation/release removes the resolved item from this worklist without deleting history or claiming a physical return/disposal. Consumed ingredients and quarantined output require their own follow-up; this filter is not a complete recall or manufacturing exception queue.
+
 ## Retained replacement prescription links
 
 An assigned pharmacist can link a separately received, later prescription to a discontinued original. Both must have the same patient/accident episode and pharmacy location. The replacement cannot be discontinued or already assigned as another original's replacement. Each original has at most one successor; each successor has at most one predecessor, and increasing record IDs prevent cycles. Later replacements can form a navigable retained chain.
