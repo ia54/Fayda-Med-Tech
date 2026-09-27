@@ -591,6 +591,49 @@ class PharmacyWorkflowTest extends TestCase
         $this->postJson("$url/$count/review", ['decision' => 'apply', 'evidence' => 'Synthetic'])->assertNotFound();
     }
 
+    public function test_recall_blocks_stock_use_and_preserves_trace_and_quantities(): void
+    {
+        [$b, $lot] = $this->reservedWorksheet();
+        $version = DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('version');
+        $body = ['version' => $version, 'reference' => 'SYN-RECALL', 'evidence' => 'Synthetic receipt match'];
+        $url = "/api/pharmacy/ingredient-lots/$lot";
+        $this->actor->role = 'pharmacy_technician';
+        $this->postJson("$url/recall", $body)->assertForbidden();
+        $this->actor->role = 'pharmacist';
+        $this->postJson("$url/recall", $body)->assertOk()->assertJsonPath('data.status', 'recalled')->assertJsonPath('data.trace.0.batch_id', $b)->assertJsonPath('data.trace.0.status', 'reserved');
+        $this->postJson("$url/recall", $body)->assertStatus(409);
+        $this->postJson("$url/status", ['version' => $version + 1, 'status' => 'available', 'evidence' => 'Bypass attempt'])->assertUnprocessable();
+        $this->postJson("$url/status", ['version' => $version + 1, 'status' => 'quarantined', 'evidence' => 'Bypass attempt'])->assertUnprocessable();
+        $this->postJson("$url/counts", ['version' => $version + 1, 'request_id' => (string) Str::uuid(), 'counted_quantity' => '4', 'reason' => 'physical_count', 'evidence' => 'Synthetic'])->assertUnprocessable();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $this->executionBody())->assertUnprocessable();
+        $this->getJson("/api/pharmacy/batch-worksheets/$b")->assertOk()->assertJsonPath('data.allocations.0.lot_status', 'recalled');
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/allocation", ['version' => 3, 'action' => 'release', 'evidence' => 'Synthetic recall'])->assertOk();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.status', 'recalled')->assertJsonPath('data.trace.0.status', 'released');
+        $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(0, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('reserved'));
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'recall_hold_recorded')->count());
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->postJson("$url/recall", $body)->assertNotFound();
+    }
+
+    public function test_recall_traces_consumed_batches_and_invalidates_pending_count(): void
+    {
+        [$b, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $this->executionBody())->assertCreated();
+        $original = DB::table('pharmacy_batch_executions')->value('record');
+        $version = DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('version');
+        $url = "/api/pharmacy/ingredient-lots/$lot";
+        $count = $this->postJson("$url/counts", ['version' => $version, 'request_id' => (string) Str::uuid(), 'counted_quantity' => '2', 'reason' => 'physical_count', 'evidence' => 'Synthetic'])->assertCreated()->json('data.counts.0.id');
+        $this->postJson("$url/recall", ['version' => $version + 1, 'reference' => 'SYN-RECALL', 'evidence' => 'Synthetic'])->assertOk()->assertJsonPath('data.trace.0.status', 'consumed');
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("$url/counts/$count/review", ['decision' => 'apply', 'evidence' => 'Synthetic'])->assertStatus(409);
+        $this->postJson("$url/counts/$count/review", ['decision' => 'reject', 'evidence' => 'Recalled receipt'])->assertOk()->assertJsonPath('data.status', 'recalled');
+        $this->assertSame($original, DB::table('pharmacy_batch_executions')->value('record'));
+        $this->assertEquals(3, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->getJson("/api/pharmacy/batch-worksheets/$b")->assertOk()->assertJsonPath('data.output_status', 'quarantined')->assertJsonPath('data.production_release_enabled', false);
+    }
+
     private function reservedWorksheet(bool $two = false): array
     {
         $b = $this->reviewedWorksheet($two);

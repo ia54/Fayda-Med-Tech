@@ -18,7 +18,7 @@ export function IngredientCounts({lot}:{lot:IngredientLot}) {
  return <section className="border-t pt-4 space-y-4"><h3 className="font-semibold">Physical count and discrepancy review</h3>
   <p className="text-sm">Record the physical quantity remaining in this receipt, including reserved stock. A discrepancy immediately quarantines the lot. A different pharmacist must review it before the recorded balance changes. Include physically present damaged stock; quarantine and disposal are separate. This does not document disposal, satisfy controlled-substance reporting, or correct previous batch measurements.</p>
   {error&&<p role="alert">{error}</p>}
-  {!pending?<form onSubmit={e=>submit(e)} className="space-y-3">
+  {lot.recall_reference?<p>Recall hold active. New physical-count adjustments are blocked; existing proposals may only be rejected.</p>:!pending?<form onSubmit={e=>submit(e)} className="space-y-3">
    <Field name="counted_quantity" label={`Physical quantity remaining (${lot.quantity_unit})`} type="number" min="0" max="999999.999" step="0.001"/>
    <Choice name="reason" label="Discrepancy category" options={['physical_count','observed_loss']}/>
    <Field name="evidence" label="Count evidence, findings and source reference" maxLength={5000}/>
@@ -31,7 +31,7 @@ export function IngredientCounts({lot}:{lot:IngredientLot}) {
    <p className="whitespace-pre-wrap text-sm">{c.evidence}</p>
    {c.reviewed_by&&<p className="text-sm whitespace-pre-wrap">Reviewer {c.reviewed_by} · {c.reviewed_at}: {c.review_evidence}</p>}
    {c.status==='pending'&&user?.role==='pharmacist'&&(Number(user.id)===c.created_by?<p>A different pharmacist must review this count.</p>:<form onSubmit={e=>submit(e,c.id)} className="space-y-3">
-    <Choice name="decision" label={`Count ${c.id} review decision`} options={['reject','apply']}/>
+    <Choice name="decision" label={`Count ${c.id} review decision`} options={lot.recall_reference?['reject']:['reject','apply']}/>
     <Field name="evidence" label={`Count ${c.id} independent review evidence`} maxLength={5000}/>
     <p className="text-sm">Applying replaces the recorded on-hand balance with this count. It cannot reduce stock below reservations. Stock changes after the count require rejection and recount. The lot remains quarantined after either decision.</p>
     <Button disabled={isLoading} className="whitespace-normal h-auto">Save count review</Button>

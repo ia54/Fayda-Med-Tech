@@ -67,6 +67,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/ingredient-lots', [$ingredient, 'index']);
         Route::post('/ingredient-lots', [$ingredient, 'store']);
         Route::get('/ingredient-lots/{id}', [$ingredient, 'show']);
+        Route::post('/ingredient-lots/{id}/recall', [$ingredient, 'recall']);
         Route::post('/ingredient-lots/{id}/counts', [$ingredient, 'count']);
         Route::post('/ingredient-lots/{id}/counts/{countId}/review', [$ingredient, 'reviewCount']);
         Route::post('/ingredient-lots/{id}/status', [$ingredient, 'status']);

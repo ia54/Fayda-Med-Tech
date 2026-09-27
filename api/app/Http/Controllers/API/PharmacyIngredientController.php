@@ -53,6 +53,10 @@ class PharmacyIngredientController extends Controller
     {
         $lot = $this->lot($r, $id);
         unset($lot->request_id,$lot->request_hash);
+        $lot->trace = DB::table('pharmacy_ingredient_allocations as a')
+            ->join('pharmacy_batch_worksheets as b', 'b.id', '=', 'a.batch_id')
+            ->where('a.ingredient_lot_id', $id)->where('b.organization_id', $lot->organization_id)->where('b.location_id', $lot->location_id)
+            ->select('b.id as batch_id', 'b.batch_number', 'a.ingredient_key', 'a.quantity', 'a.status')->orderBy('b.id')->orderBy('a.id')->get();
         $lot->counts = DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)
             ->select('id', 'created_by', 'recorded_quantity', 'counted_quantity', 'lot_version', 'reason', 'evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at')->orderByDesc('id')->get();
         $lot->events = DB::table('pharmacy_ingredient_events')->where('ingredient_lot_id', $id)->orderByDesc('id')->limit(100)->get();
@@ -96,6 +100,7 @@ class PharmacyIngredientController extends Controller
         $d = $r->validate(['version' => 'required|integer|min:1', 'status' => 'required|in:available,quarantined', 'evidence' => 'required|string|max:5000']);
         abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh before reviewing.');
         abort_if($d['status'] === 'available' && DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)->where('status', 'pending')->exists(), 422, 'Resolve the pending stock discrepancy before releasing quarantine.');
+        abort_if($lot->recall_reference !== null, 422, 'A recalled receipt cannot be released or cleared through a stock status change.');
         abort_if($d['status'] === $lot->status, 422, 'Status is unchanged.');
         abort_if($d['status'] === 'available' && $lot->expires_on < now()->toDateString(), 422, 'Expired ingredients cannot be released from quarantine.');
         DB::table('pharmacy_ingredient_lots')->where('id', $id)->update(['status' => $d['status'], 'version' => $lot->version + 1, 'updated_at' => now()]);
@@ -118,6 +123,7 @@ class PharmacyIngredientController extends Controller
         }
         abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh and recount.');
         abort_if(DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)->where('status', 'pending')->exists(), 409, 'A discrepancy is already awaiting review.');
+        abort_if($lot->recall_reference !== null, 422, 'Recalled stock requires a separate disposition workflow; do not adjust it through a physical count.');
         $counted = PharmacyStock::milli($d['counted_quantity']);
         $recorded = PharmacyStock::milli($lot->on_hand);
         abort_if($counted === $recorded, 422, 'There is no quantity discrepancy to reconcile.');
@@ -152,7 +158,22 @@ class PharmacyIngredientController extends Controller
         DB::table('pharmacy_ingredient_counts')->where('id', $countId)->update(['status' => $d['decision'] === 'apply' ? 'applied' : 'rejected', 'reviewed_by' => $r->user()->id, 'review_evidence' => $d['evidence'], 'reviewed_at' => now()]);
         $signed = ($delta < 0 ? '-' : '').PharmacyStock::decimal(abs($delta));
         $this->event($r, $id, null, $d['decision'] === 'apply' ? 'count_adjustment_applied' : 'count_adjustment_rejected', $signed,
-            ['count_id' => (int) $countId, 'before' => $lot->on_hand, 'after' => $d['decision'] === 'apply' ? $count->counted_quantity : $lot->on_hand, 'evidence' => $d['evidence'], 'status' => 'quarantined']);
+            ['count_id' => (int) $countId, 'before' => $lot->on_hand, 'after' => $d['decision'] === 'apply' ? $count->counted_quantity : $lot->on_hand, 'evidence' => $d['evidence'], 'status' => $lot->status]);
+        return $this->show($r, $id);
+    }
+
+    public function recall(Request $r, $id)
+    {
+        $this->org($r, true);
+        $lot = $this->lot($r, $id);
+        $d = $r->validate(['version' => 'required|integer|min:1', 'reference' => 'required|string|max:2000', 'evidence' => 'required|string|max:5000']);
+        abort_if($lot->recall_reference !== null, 409, 'A recall hold is already recorded for this receipt.');
+        abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh before recording the recall.');
+        DB::table('pharmacy_ingredient_lots')->where('id', $id)->update([
+            'status' => 'recalled', 'recall_reference' => $d['reference'], 'recall_evidence' => $d['evidence'],
+            'recalled_by' => $r->user()->id, 'recalled_at' => now(), 'version' => $lot->version + 1, 'updated_at' => now(),
+        ]);
+        $this->event($r, $id, null, 'recall_hold_recorded', '0.000', ['reference' => $d['reference'], 'evidence' => $d['evidence'], 'previous_status' => $lot->status, 'status' => 'recalled']);
         return $this->show($r, $id);
     }
 

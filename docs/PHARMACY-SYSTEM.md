@@ -2,6 +2,12 @@
 
 Decision recorded September 24, 2026. Pharmacy is the core product, not an optional provider portal. Build the pharmacy-management and dispensing system inside FaydaMedTech. Support multiple potential pharmacy locations, controlled substances, and compounded preparations. On September 25 the owner confirmed BOTH sterile and nonsterile compounding. The owner will confirm an AI account, most likely GLM; no account, endpoint, contractual approval or patient-data processing has been verified.
 
+## September 27 receipt-specific recall holds
+
+Assigned pharmacists can record immutable recall notice/evidence, actor/time and a recalled stock status on an individual ingredient receipt. Stock quantities and original batch records are preserved. Ordinary receiving/status review cannot clear the hold, new count adjustments are blocked, and existing pending counts cannot be applied after the recall changes the stock version. A pending count may be rejected without clearing the recall. Reservation release remains available and does not return consumed ingredients.
+
+Receipt detail traces each allocation to its worksheet, distinguishing reserved, consumed and released records. Worksheets warn when reserved or consumed ingredients are recalled. Existing stock-status checks block new reservation and execution; all produced output remains quarantined. This is a receipt-specific internal hold and provenance view, not organization-wide recall matching, notification, patient exposure determination, disposition, recall closure or regulatory reporting. Other receipts/locations must be checked separately against the notice. No new production permission is enabled.
+
 ## September 27 ingredient discrepancy reconciliation
 
 Assigned pharmacy staff can record a physical count or observed-loss discrepancy against an ingredient receipt. A count retains the original ledger balance, actual counted balance, evidence, author/time and stock version. It immediately quarantines the lot without altering on-hand or reserved quantities. One pending discrepancy is allowed per receipt; retries do not duplicate the record.
