@@ -1569,6 +1569,9 @@ class PharmacyWorkflowTest extends TestCase
             $f = $this->labelFixture($rx, $f);
             $extra['label_id'] = $f['current_label']['id'];
         }
+        if (in_array($a, ['collected', 'delivered'], true)) {
+            $extra += ['handover' => $this->handoverEvidence($a)];
+        }
         $result = $this->postJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions", array_replace(['version' => $f['version'], 'product_id' => $f['current_product']['id'] ?? null, 'action' => $a, 'note' => 'Synthetic evidence'], $extra))->assertStatus($status);
 
         return $status === 200 ? collect($result->json('data.fills'))->firstWhere('id', $f['id']) : $f;
@@ -1783,6 +1786,122 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson($url)->assertOk()->assertJsonPath('data.current.fresh', false);
         $this->postJson("$url/$labelId/prints", $this->printBody())->assertStatus(422);
         $this->get("$url/$labelId/file")->assertOk();
+    }
+
+    private function handoverEvidence(string $action = 'collected', array $overrides = []): array
+    {
+        return array_replace(['recipient_type' => 'patient', 'recipient_name' => 'Synthetic Patient',
+            'identity_reference' => 'SYNTHETIC two-identifier check; no actual ID collected',
+            'counseling_reference' => 'SYNTHETIC counseling evidence only', 'confirmed' => true]
+            + ($action === 'delivered' ? ['delivery_method' => 'tracked_carrier', 'delivery_reference' => 'SYNTHETIC carrier and recipient receipt confirmation'] : []), $overrides);
+    }
+
+    private function handoverBody(array $fill, string $action = 'collected', array $overrides = []): array
+    {
+        return array_replace(['version' => $fill['version'], 'action' => $action, 'note' => 'SYNTHETIC completed handover',
+            'occurred_on' => now()->toDateString(), 'reference' => 'SYNTHETIC receipt', 'counseling' => 'provided',
+            'handover' => $this->handoverEvidence($action)], $overrides);
+    }
+
+    public function test_handover_requires_explicit_recipient_checks_and_rejects_unsupported_evidence(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions";
+        $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        $saved = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $events = DB::table('pharmacy_stock_events')->count();
+        $this->postJson($url, $this->handoverBody($f, 'collected', ['handover' => null]))->assertUnprocessable();
+        foreach (['recipient_type', 'recipient_name', 'identity_reference', 'counseling_reference', 'confirmed'] as $field) {
+            $this->postJson($url, $this->handoverBody($f, 'collected', ['handover' => $this->handoverEvidence('collected', [$field => null])]))->assertUnprocessable()->assertJsonValidationErrors("handover.$field");
+        }
+        foreach ([['confirmed' => false], ['recipient_type' => 'carrier'], ['recipient_name' => '   '], ['recorded_by' => 999], ['relationship' => 'friend'], ['delivery_method' => 'tracked_carrier']] as $invalid) {
+            $this->postJson($url, $this->handoverBody($f, 'collected', ['handover' => $this->handoverEvidence('collected', $invalid)]))->assertUnprocessable();
+        }
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $this->assertSame($saved, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $this->assertSame($events, DB::table('pharmacy_stock_events')->count());
+        $body = $this->handoverBody($f);
+        $r = $this->postJson($url, $body)->assertOk();
+        $evidence = collect($r->json('data.fills'))->firstWhere('id', $f['id'])['fulfillment']['handover'];
+        $this->assertSame($this->actor->id, $evidence['recorded_by']);
+        $this->assertSame('Synthetic Patient', $evidence['recipient_name']);
+        $this->assertNotEmpty($evidence['recorded_at']);
+        $this->assertArrayNotHasKey('confirmed', $evidence);
+        $this->postJson($url, $body)->assertStatus(409); // stale retry cannot deduct twice
+        $done = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $this->postJson($url, array_replace($body, ['version' => $done['version'], 'handover' => $this->handoverEvidence('collected', ['recipient_name' => 'overwrite'])]))->assertUnprocessable();
+        $this->assertSame($done, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertSame(0, DB::table('invoices')->count());
+    }
+
+    public function test_handover_to_representative_requires_authority_and_confirmed_delivery(): void
+    {
+        Http::preventStrayRequests();
+        $rx = $this->rx(); $f = $this->act($rx, $this->fill($rx, $this->lot()), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions";
+        $evidence = $this->handoverEvidence('delivered', ['recipient_type' => 'representative', 'recipient_name' => 'SYNTHETIC Representative', 'relationship' => 'SYNTHETIC authorized caregiver', 'authority_reference' => 'SYNTHETIC patient authority reviewed']);
+        foreach (['relationship', 'authority_reference', 'delivery_method', 'delivery_reference', 'counseling_reference'] as $field) {
+            $this->postJson($url, $this->handoverBody($f, 'delivered', ['handover' => array_replace($evidence, [$field => null])]))->assertUnprocessable()->assertJsonValidationErrors("handover.$field");
+        }
+        $this->postJson($url, $this->handoverBody($f, 'delivered', ['handover' => array_replace($evidence, ['delivery_method' => 'unattended'])]))->assertUnprocessable();
+        $r = $this->postJson($url, $this->handoverBody($f, 'delivered', ['handover' => $evidence, 'counseling' => 'documented_remote']))->assertOk();
+        $done = collect($r->json('data.fills'))->firstWhere('id', $f['id']);
+        $this->assertSame('delivered', $done['fulfillment_status']);
+        $this->assertSame($evidence['authority_reference'], $done['fulfillment']['handover']['authority_reference']);
+        $this->assertSame($evidence['delivery_reference'], $done['fulfillment']['handover']['delivery_reference']);
+        $this->assertSame('documented_remote', $done['fulfillment']['counseling']);
+        $this->assertSame($f['fulfillment']['prepared_label_id'], $done['fulfillment']['prepared_label_id']);
+        Http::assertNothingSent();
+    }
+
+    public function test_handover_date_cannot_precede_final_preparation_or_have_missing_preparation_evidence(): void
+    {
+        $rx = $this->rx(['written_on' => now()->subDays(2)->toDateString()]); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $labels = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels";
+        $label = $this->postJson($labels, $this->labelBody($rx, $f, ['dispensed_on' => now()->subDay()->toDateString()]))->assertCreated()->json('data.current');
+        $this->postJson("$labels/{$label['id']}/prints", $this->printBody())->assertCreated();
+        $f = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.fills.0');
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => $label['id']]);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions";
+        $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        $this->postJson($url, $this->handoverBody($f, 'collected', ['occurred_on' => now()->subDay()->toDateString()]))->assertUnprocessable()->assertJsonPath('message', 'Handover cannot predate final preparation.');
+        $this->postJson($url, $this->handoverBody($f, 'collected', ['occurred_on' => now()->addDay()->toDateString()]))->assertUnprocessable();
+        $old = $f['fulfillment']; unset($old['prepared_at']);
+        DB::table('pharmacy_fills')->where('id', $f['id'])->update(['fulfillment' => json_encode($old)]);
+        $this->postJson($url, $this->handoverBody($f))->assertUnprocessable()->assertJsonPath('message', 'Final preparation evidence is missing. Cancel this open fill and prepare a new one.');
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+    }
+
+    public function test_handover_evidence_preserves_access_controls_and_rolls_back_on_audit_failure(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions"; $body = $this->handoverBody($f);
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save(); $this->postJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save(); $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $saved = (array) DB::table('pharmacy_fills')->find($f['id']); $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        $count = DB::table('pharmacy_stock_events')->count();
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) { throw new \RuntimeException('SYNTHETIC handover audit failure'); }
+        });
+        $this->postJson($url, $body)->assertStatus(500);
+        $this->assertSame($saved, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $this->assertSame($count, DB::table('pharmacy_stock_events')->count());
     }
 
     private function checks(): array

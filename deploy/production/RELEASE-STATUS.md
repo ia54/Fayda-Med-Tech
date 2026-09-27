@@ -62,3 +62,7 @@ Erroneous closure records can be independently reviewed and corrected before any
 ### Erroneous recall-entry correction increment
 
 Internal recall notices entered in error now support retained correction requests and independent pharmacist decisions. Pending review preserves the active hold. Application withdraws that entry while quarantining all existing matching organization receipts; original notice scope, overlapping/receipt recalls, balances, custody and patient follow-up remain retained. Separate location-level release is still required. Register filters and paginated correction history expose pending and withdrawn records. External source authentication, actual recall changes/termination and operating acceptance remain outstanding; synthetic validation is recorded with the published increment.
+
+### Recipient handover evidence increment
+
+New pickup/delivery completion requires retained recipient identity-check and counseling evidence, representative authority when applicable, and confirmed recipient delivery evidence. Handover dates cannot precede final preparation. The recording pharmacist, timestamp and prepared label remain linked; failed audit writes roll back inventory and completion together. Historical records gain no inferred checks. Physical identity/barcode/delivery procedures, failed-delivery custody, completed-record correction and professional acceptance remain outstanding. Local, CI and synthetic browser evidence is recorded with the published increment.
