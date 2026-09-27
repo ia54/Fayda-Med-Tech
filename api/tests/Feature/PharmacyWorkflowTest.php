@@ -129,6 +129,104 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
     }
 
+    private function recallStock(int $lot, array $changes = [])
+    {
+        return $this->postJson("/api/pharmacy/stock/$lot/recall", array_replace(['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_lots')->where('id', $lot)->value('version'), 'reference' => 'SYNTHETIC recall notice', 'evidence' => 'Synthetic product and lot match'], $changes));
+    }
+
+    public function test_stock_recall_blocks_use_preserves_prior_handover_and_allows_explicit_release(): void
+    {
+        $lot = $this->lot(); $oldRx = $this->rx();
+        $done = $this->complete($oldRx, $this->fill($oldRx, $lot));
+        $rx = $this->rx(); $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $key = (string) Str::uuid(); $version = (int) DB::table('pharmacy_stock_lots')->where('id', $lot)->value('version');
+        $body = ['request_id' => $key, 'version' => $version];
+        $result = $this->recallStock($lot, $body)->assertOk()->assertJsonPath('data.status', 'recalled')->assertJsonPath('data.trace.total', 2)->assertJsonMissingPath('data.recall_request_id');
+        $this->assertEquals(40, $result->json('data.on_hand')); $this->assertEquals(10, $result->json('data.reserved'));
+        $this->recallStock($lot, $body)->assertOk();
+        $this->recallStock($lot, $body + ['evidence' => 'changed'])->assertStatus(409);
+        $this->recallStock($lot)->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'recall_hold_recorded')->count());
+        $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic handover', 'counseling' => 'provided'], 422);
+        $otherRx = $this->rx();
+        $this->postJson("/api/pharmacy/prescriptions/$otherRx/fills", $this->fillBody($lot))->assertStatus(422);
+        $this->putJson("/api/pharmacy/stock/$lot/status", ['version' => $version + 1, 'status' => 'available', 'note' => 'Synthetic release'])->assertStatus(422);
+        $this->putJson("/api/pharmacy/stock/$lot/status", ['version' => $version + 1, 'status' => 'quarantined', 'note' => 'Synthetic downgrade'])->assertStatus(422);
+        $this->act($rx, $f, 'cancel');
+        $this->recallStock($lot, $body)->assertOk(); // exact retry survives later stock version changes
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->assertSame('collected', DB::table('pharmacy_fills')->where('id', $done['id'])->value('fulfillment_status'));
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.fills.0.stock_recall_reference', 'SYNTHETIC recall notice')->assertJsonPath('data.fills.0.stock_status', 'recalled');
+        $this->getJson("/api/pharmacy/stock/$lot")->assertOk()->assertJsonPath('data.trace.data.0.fulfillment_status', 'cancelled')->assertJsonPath('data.trace.data.1.fulfillment_status', 'collected');
+        $this->getJson('/api/pharmacy/stock?status=recalled&search=SYNTHETIC%20recall')->assertOk()->assertJsonPath('data.total', 1)->assertJsonMissingPath('data.data.0.recall_evidence');
+        $this->getJson('/api/pharmacy/stock?status=available')->assertOk()->assertJsonPath('data.total', 0);
+    }
+
+    public function test_stock_recall_trace_access_and_stale_versions_are_enforced(): void
+    {
+        $lot = $this->lot(); $rx = $this->rx(); $f = $this->fill($rx, $lot);
+        $this->recallStock($lot, ['version' => 1])->assertStatus(409);
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->getJson("/api/pharmacy/stock/$lot")->assertOk();
+        $this->recallStock($lot)->assertForbidden();
+        foreach (['medical_biller', 'admin', 'client'] as $role) {
+            $this->actor->role = $role; $this->actor->save();
+            $this->getJson("/api/pharmacy/stock/$lot")->assertForbidden();
+            $this->recallStock($lot)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson("/api/pharmacy/stock/$lot")->assertNotFound(); $this->recallStock($lot)->assertNotFound();
+        $this->getJson('/api/pharmacy/stock')->assertOk()->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson("/api/pharmacy/stock/$lot")->assertNotFound(); $this->recallStock($lot)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $this->getJson('/api/pharmacy/stock?status=invalid')->assertStatus(422);
+        $this->getJson("/api/pharmacy/stock/$lot?fill_page=0")->assertStatus(422);
+        $this->recallStock($lot)->assertOk();
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true]], 422);
+        $this->deleteJson("/api/pharmacy/stock/$lot/recall")->assertStatus(405);
+    }
+
+    public function test_stock_trace_paginates_history_and_filters_inconsistent_location_links(): void
+    {
+        $lot = $this->lot(); $rx = $this->rx(); $this->fill($rx, $lot);
+        $fill = (array) DB::table('pharmacy_fills')->first(); unset($fill['id']);
+        for ($i = 2; $i <= 31; $i++) {
+            DB::table('pharmacy_fills')->insert(array_replace($fill, ['fill_number' => $i, 'request_id' => (string) Str::uuid(), 'fulfillment_status' => 'cancelled']));
+        }
+        $other = $this->rx(['location_id' => $this->otherLocation]);
+        DB::table('pharmacy_fills')->insert(array_replace($fill, ['prescription_id' => $other, 'request_id' => (string) Str::uuid()]));
+        $this->getJson("/api/pharmacy/stock/$lot")->assertOk()->assertJsonPath('data.trace.total', 31)->assertJsonCount(30, 'data.trace.data')->assertJsonMissingPath('data.request_hash');
+        $this->getJson("/api/pharmacy/stock/$lot?fill_page=2")->assertOk()->assertJsonCount(1, 'data.trace.data')->assertJsonPath('data.trace.data.0.fill_number', (int) $fill['fill_number']);
+        for ($i = 0; $i < 31; $i++) {
+            DB::table('pharmacy_stock_events')->insert(['stock_lot_id' => $lot, 'actor_id' => $this->actor->id, 'action' => 'synthetic_history', 'quantity' => '0.000', 'details' => '{}', 'created_at' => now()]);
+        }
+        $this->getJson("/api/pharmacy/stock/$lot?event_page=2")->assertOk()->assertJsonPath('data.events.total', 33)->assertJsonCount(3, 'data.events.data');
+        $this->recallStock($lot)->assertOk();
+        // A retained hold independently blocks use even if legacy status is inconsistent.
+        DB::table('pharmacy_stock_lots')->where('id', $lot)->update(['status' => 'available']);
+        $newRx = $this->rx();
+        $this->postJson("/api/pharmacy/prescriptions/$newRx/fills", $this->fillBody($lot))->assertStatus(422);
+    }
+
+    public function test_stock_recall_rolls_back_if_audit_write_fails(): void
+    {
+        $lot = $this->lot();
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_stock_events')) {
+                throw new \RuntimeException('Synthetic recall audit failure');
+            }
+        });
+        $this->recallStock($lot)->assertStatus(500);
+        $row = DB::table('pharmacy_stock_lots')->where('id', $lot)->first();
+        $this->assertSame('available', $row->status); $this->assertNull($row->recall_reference); $this->assertSame(1, (int) $row->version);
+    }
+
     private function stopPrescription(int $rx, array $changes = [])
     {
         return $this->postJson("/api/pharmacy/prescriptions/$rx/discontinue", array_replace(['request_id' => (string) Str::uuid(), 'reason' => 'Synthetic discontinuation', 'reference' => 'SYNTHETIC authority record'], $changes));

@@ -130,6 +130,14 @@ Compounding adds a versioned formulation and a production batch between prescrip
 
 Intake supports independent pharmacy patient charts and the legacy case-party/client path. Patients using a pharmacy chart do not require a portal login. Keep a stable link to existing case/client identifiers rather than merging patients by email.
 
+## Medication stock recall holds and fill trace
+
+Assigned pharmacists can record a retained recall hold on a specific medication receipt, with notice reference, receipt-match evidence, actor and time. Exact retries return the retained record without duplicate stock events; conflicting or stale submissions fail. The hold and stock event commit together. Ordinary quarantine/release cannot clear a recall hold. Recorded on-hand and reserved quantities remain unchanged until explicit existing stock actions occur.
+
+New reservations, final preparation and handover reject recalled stock. Pharmacists can cancel open fills to release reservations; completed handovers and billing history remain retained. The receipt detail exposes paginated fill links and stock events to assigned pharmacists/technicians only. Organization and location checks apply to each request. Inventory search covers NDC, product, manufacturer lot and recall reference with status filters. Unreserved quantity is labelled as such rather than implying that quarantined or recalled units are available for use.
+
+This is receipt-level containment and traceability, not an organization-wide recall campaign. Matching notices across receipts/locations (including future receipts), patient outreach, external reporting, physical returns/destruction, reconciliation and recall closure remain required. A link to a completed fill identifies recorded use, not confirmed patient exposure or a completed clinical follow-up. No operational drug handling is enabled by this preview.
+
 ## Required work before pharmacy operational launch
 
 | Area | Next implementation | Acceptance evidence |

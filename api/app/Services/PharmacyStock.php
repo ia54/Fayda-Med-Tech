@@ -33,8 +33,8 @@ class PharmacyStock
 
     private function usable($lot): void
     {
-        if ($lot->status !== 'available' || $lot->expires_on < now()->toDateString()) {
-            $this->fail('This stock is expired or quarantined. Cancel the fill to release its reservation and select usable stock.');
+        if ($lot->recall_reference !== null || $lot->status !== 'available' || $lot->expires_on < now()->toDateString()) {
+            $this->fail('This stock is expired, quarantined or recalled. Cancel the fill to release its reservation and select usable stock.');
         }
     }
 

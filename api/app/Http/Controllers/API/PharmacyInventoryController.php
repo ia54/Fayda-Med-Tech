@@ -44,17 +44,59 @@ class PharmacyInventoryController extends Controller
 
     public function index(Request $r)
     {
-        $d = $r->validate(['location_id' => 'nullable|integer', 'page' => 'nullable|integer|min:1', 'search' => 'nullable|string|max:100']);
+        $d = $r->validate(['location_id' => 'nullable|integer', 'page' => 'nullable|integer|min:1', 'search' => 'nullable|string|max:100', 'status' => 'nullable|in:available,quarantined,recalled']);
         $q = DB::table('pharmacy_stock_lots')->where('organization_id', $this->org($r));
         app(PharmacyAccess::class)->scope($q, $r->user());
         if (! empty($d['location_id'])) {
             $q->where('location_id', $d['location_id']);
         }
+        if (! empty($d['status'])) { $q->where('status', $d['status']); }
         if (! empty($d['search'])) {
-            $q->where(fn ($q) => $q->where('ndc', 'like', '%'.$d['search'].'%')->orWhere('medication', 'like', '%'.$d['search'].'%'));
+            $q->where(fn ($q) => $q->where('ndc', 'like', '%'.$d['search'].'%')->orWhere('medication', 'like', '%'.$d['search'].'%')->orWhere('lot_number', 'like', '%'.$d['search'].'%')->orWhere('recall_reference', 'like', '%'.$d['search'].'%'));
         }
 
-        return response()->json(['data' => $q->orderBy('expires_on')->orderBy('id')->paginate(50)]);
+        return response()->json(['data' => $q->select('id', 'location_id', 'ndc', 'medication', 'lot_number', 'quantity_unit', 'expires_on', 'on_hand', 'reserved', 'status', 'version', 'receipt_reference', 'recall_reference')->orderBy('expires_on')->orderBy('id')->paginate(50)]);
+    }
+
+    public function show(Request $r, $id)
+    {
+        abort_unless(in_array($r->user()->role, ['pharmacist', 'pharmacy_technician'], true), 403);
+        $r->validate(['fill_page' => 'nullable|integer|min:1', 'event_page' => 'nullable|integer|min:1']);
+        $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $this->org($r))->where('id', $id)->first();
+        abort_unless($lot, 404);
+        app(PharmacyAccess::class)->requireLocation($r->user(), $lot->location_id);
+        unset($lot->request_id, $lot->request_hash, $lot->recall_request_id);
+        $lot->trace = DB::table('pharmacy_fills as f')->join('pharmacy_prescriptions as rx', 'rx.id', '=', 'f.prescription_id')
+            ->where('f.stock_lot_id', $id)->where('rx.organization_id', $lot->organization_id)->where('rx.location_id', $lot->location_id)
+            ->select('f.id', 'f.prescription_id', 'rx.rx_number', 'f.fill_number', 'f.quantity', 'f.fulfillment_status', 'f.created_at')
+            ->orderByDesc('f.id')->paginate(30, ['*'], 'fill_page');
+        $lot->events = DB::table('pharmacy_stock_events')->where('stock_lot_id', $id)
+            ->select('id', 'fill_id', 'actor_id', 'action', 'quantity', 'details', 'created_at')->orderByDesc('id')->paginate(30, ['*'], 'event_page');
+        return response()->json(['data' => $lot]);
+    }
+
+    public function recall(Request $r, $id)
+    {
+        abort_unless($r->user()->role === 'pharmacist', 403);
+        $d = $r->validate(['request_id' => 'required|uuid', 'version' => 'required|integer|min:1', 'reference' => 'required|string|max:2000', 'evidence' => 'required|string|max:5000']);
+        DB::transaction(function () use ($r, $id, $d) {
+            $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $this->org($r))->where('id', $id)->lockForUpdate()->first();
+            abort_unless($lot, 404);
+            app(PharmacyAccess::class)->requireLocation($r->user(), $lot->location_id);
+            if ($lot->recall_request_id === $d['request_id']) {
+                abort_unless($lot->recall_reference === $d['reference'] && $lot->recall_evidence === $d['evidence'] && (int) $lot->recalled_by === (int) $r->user()->id, 409, 'Recall retry differs from the retained record.');
+                return;
+            }
+            abort_if($lot->recall_reference !== null, 409, 'A recall hold is already recorded for this receipt.');
+            abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh before recording the recall.');
+            DB::table('pharmacy_stock_lots')->where('id', $id)->update([
+                'status' => 'recalled', 'recall_reference' => $d['reference'], 'recall_evidence' => $d['evidence'],
+                'recall_request_id' => $d['request_id'], 'recalled_by' => $r->user()->id, 'recalled_at' => now(),
+                'version' => $lot->version + 1, 'updated_at' => now(),
+            ]);
+            app(PharmacyStock::class)->event($r->user(), $lot, 'recall_hold_recorded', '0.000', ['reference' => $d['reference'], 'evidence' => $d['evidence'], 'previous_status' => $lot->status, 'status' => 'recalled']);
+        });
+        return $this->show($r, $id);
     }
 
     public function store(Request $r)
@@ -104,6 +146,7 @@ class PharmacyInventoryController extends Controller
             $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $this->org($r))->where('id', $id)->lockForUpdate()->first();
             abort_unless($lot, 404);
             app(PharmacyAccess::class)->requireLocation($r->user(), $lot->location_id);
+            abort_if($lot->recall_reference !== null, 422, 'A recalled receipt cannot be cleared through a stock status change.');
             abort_unless((int) $lot->version === (int) $d['version'], 409, 'Stock changed. Refresh before trying again.');
             abort_if($d['status'] === 'available' && $lot->expires_on < now()->toDateString(), 422, 'Expired stock cannot be released.');
             DB::table('pharmacy_stock_lots')->where('id', $id)->update(['status' => $d['status'], 'version' => $lot->version + 1, 'updated_at' => now()]);

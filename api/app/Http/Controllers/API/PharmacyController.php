@@ -236,7 +236,7 @@ class PharmacyController extends Controller
             : User::where('organization_id', $this->org($r))->findOrFail($ep->patient_id)->only(['id', 'first_name', 'last_name']);
         $rx->case = CaseModel::where('organization_id', $this->org($r))->findOrFail($ep->case_id)->only(['id', 'case_number', 'accident_date']);
         $rx->location = DB::table('pharmacy_locations')->where('id', $rx->location_id)->first(['id', 'name', 'address']);
-        $rx->fills = DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->orderBy('fill_number')->get()->map(function ($f) {
+        $rx->fills = DB::table('pharmacy_fills as f')->leftJoin('pharmacy_stock_lots as stock', fn ($join) => $join->on('stock.id', '=', 'f.stock_lot_id')->where('stock.organization_id', $rx->organization_id)->where('stock.location_id', $rx->location_id))->where('f.prescription_id', $rx->id)->select('f.*', 'stock.status as stock_status', 'stock.recall_reference as stock_recall_reference')->orderBy('f.fill_number')->get()->map(function ($f) {
             foreach (['review', 'fulfillment', 'claim'] as $k) {
                 $f->$k = $this->json($f->$k);
             }
