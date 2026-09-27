@@ -30,7 +30,7 @@ export function ExecutionAddenda({batch}:{batch:CompoundBatch}) {
    <p className="text-sm">User {a.created_by} · {a.created_at} · Execution version {a.execution_version}</p>
    <dl className="text-sm space-y-2">{[['Correction / additional statement',a.statement],['Reason',a.reason],['Evidence reference',a.evidence]].map(([label,value])=><div key={label}><dt className="font-medium">{label}</dt><dd className="whitespace-pre-wrap">{value}</dd></div>)}</dl>
   </article>)}
-  {user?.role==='pharmacist'&&<><Button variant="outline" onClick={()=>{setOpen(!open);setError('');if(!open)setRequestId(crypto.randomUUID())}}>{open?'Close addendum form':'Add correction or evidence'}</Button>
+  {user?.role==='pharmacist'&&<><Button variant="outline" className="hover:text-foreground" onClick={()=>{setOpen(!open);setError('');if(!open)setRequestId(crypto.randomUUID())}}>{open?'Close addendum form':'Add correction or evidence'}</Button>
   {open&&<form onSubmit={submit} className="space-y-3">
    <Choice name="section" label="Record section" options={['personnel','equipment','process','quality_results','measurements','yield','deviations','environment','hazard_controls','other']}/>
    <label className="grid gap-1 text-sm">Correction or additional statement<textarea name="statement" required maxLength={5000} rows={4} className="border rounded p-2 bg-background"/></label>
