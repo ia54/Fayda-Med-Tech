@@ -142,6 +142,7 @@ class PharmacyInventoryController extends Controller
         abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh and recount.');
         abort_if(DB::table('pharmacy_stock_counts')->where('stock_lot_id', $id)->where('status', 'pending')->exists(), 409, 'A discrepancy is already awaiting review.');
         abort_if($lot->recall_reference !== null || app(PharmacyRecall::class)->held($lot), 422, 'Recalled stock requires a separate disposition workflow; do not adjust it through a physical count.');
+        abort_if(app(\App\Services\PharmacyDisposition::class)->pending((int) $id), 422, 'Resolve the pending disposition before a physical count adjustment.');
         $counted = PharmacyStock::milli($d['counted_quantity']);
         $recorded = PharmacyStock::milli($lot->on_hand);
         abort_if($counted === $recorded, 422, 'There is no quantity discrepancy to reconcile.');
@@ -167,6 +168,7 @@ class PharmacyInventoryController extends Controller
         abort_if((int) $count->created_by === (int) $r->user()->id, 422, 'A different pharmacist must review this discrepancy.');
         $delta = 0;
         if ($d['decision'] === 'apply') {
+            abort_if(app(\App\Services\PharmacyDisposition::class)->pending((int) $id), 422, 'Resolve the pending disposition before applying a count.');
             abort_unless((int) $lot->version === (int) $count->lot_version && $lot->status === 'quarantined' && $lot->recall_reference === null && ! app(PharmacyRecall::class)->held($lot), 409, 'Stock changed after this count. Reject this proposal and record a fresh count.');
             $counted = PharmacyStock::milli($count->counted_quantity);
             abort_unless($counted >= PharmacyStock::milli($lot->reserved), 422, 'Count is below reserved stock. Resolve fill reservations, reject this proposal and recount.');
@@ -253,6 +255,7 @@ class PharmacyInventoryController extends Controller
             $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $this->org($r))->where('id', $id)->lockForUpdate()->first();
             abort_unless($lot, 404);
             app(PharmacyAccess::class)->requireLocation($r->user(), $lot->location_id);
+            abort_if(app(\App\Services\PharmacyDisposition::class)->pending((int) $id), 422, 'Resolve the pending disposition before changing stock status.');
             abort_if(DB::table('pharmacy_stock_counts')->where('stock_lot_id', $id)->where('status', 'pending')->exists(), 422, 'Resolve the pending count discrepancy before changing stock status.');
             abort_if($lot->recall_reference !== null, 422, 'A recalled receipt cannot be cleared through a stock status change.');
             abort_unless((int) $lot->version === (int) $d['version'], 409, 'Stock changed. Refresh before trying again.');

@@ -48,6 +48,7 @@ class PharmacyStock
     /** Transfer receipts retain their source history, including later recalls. */
     public function assertReleaseAllowed($lot): void
     {
+        if (app(PharmacyDisposition::class)->pending((int) $lot->id)) { $this->fail('A stock disposition is awaiting independent review. Stock cannot be released or used.'); }
         $seen = [];
         $organization = (int) $lot->organization_id;
         while (true) {

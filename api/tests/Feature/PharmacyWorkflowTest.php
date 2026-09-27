@@ -391,6 +391,198 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('pharmacy_stock_lots')->count());
     }
 
+    private function dispositionBody(int $lot, array $changes = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_lots')->where('id', $lot)->value('version'),
+            'product_id' => (int) DB::table('pharmacy_stock_products')->where('stock_lot_id', $lot)->max('id'),
+            'quantity' => '2.125', 'kind' => 'supplier_return', 'occurred_on' => now()->toDateString(), 'destination' => 'SYNTHETIC receiving supplier',
+            'classification_evidence' => 'SYNTHETIC manufactured noncontrolled nonhazardous stock', 'authority_reference' => 'SYNTHETIC return instructions',
+            'completion_reference' => 'SYNTHETIC completed receipt, no actual transport', 'reason' => 'Synthetic acceptance', 'scope_confirmed' => true], $changes);
+    }
+
+    private function dispositionReview(array $changes = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'decision' => 'apply', 'evidence' => 'SYNTHETIC independently verified classification, source, quantity and completed event', 'confirmed' => true], $changes);
+    }
+
+    public function test_disposition_holds_then_independently_deducts_once_without_clearing_recall(): void
+    {
+        $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/dispositions";
+        $this->recallStock($lot)->assertOk();
+        $body = $this->dispositionBody($lot);
+        $id = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.pending', true)->json('data.records.data.0.id');
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.records.total', 1);
+        $this->postJson($url, array_replace($body, ['quantity' => '3']))->assertStatus(409);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+        $this->assertSame('recalled', DB::table('pharmacy_stock_lots')->find($lot)->status);
+        $this->postJson($url, $this->dispositionBody($lot))->assertStatus(422);
+        $this->putJson("/api/pharmacy/stock/$lot/status", ['version' => 3, 'status' => 'available', 'note' => 'Synthetic'])->assertStatus(422);
+        $review = $this->dispositionReview();
+        $this->postJson("$url/$id/review", $review)->assertStatus(422);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("$url/$id/review", $review)->assertOk()->assertJsonPath('data.pending', false)->assertJsonPath('data.records.data.0.status', 'applied');
+        $this->postJson("$url/$id/review", $review)->assertOk();
+        $this->postJson("$url/$id/review", array_replace($review, ['evidence' => 'changed']))->assertStatus(409);
+        $this->assertEquals(47.875, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+        $this->assertSame('recalled', DB::table('pharmacy_stock_lots')->find($lot)->status);
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'disposition_applied')->count());
+        $this->assertEquals(-2.125, DB::table('pharmacy_stock_events')->where('action', 'disposition_applied')->value('quantity'));
+        $this->getJson($url)->assertOk()->assertJsonMissingPath('data.records.data.0.source_snapshot')->assertJsonMissingPath('data.records.data.0.request_hash');
+        $this->deleteJson("$url/$id")->assertNotFound(); $this->putJson("$url/$id", ['quantity' => '1'])->assertNotFound();
+        $this->actingAs($this->actor, 'api'); $this->postJson($url, $body)->assertOk();
+        $this->assertSame(0, DB::table('payments')->count()); $this->assertSame(0, DB::table('invoices')->count());
+    }
+
+    public function test_disposition_pending_blocks_use_counts_and_stock_release_then_rejection_keeps_quarantine(): void
+    {
+        $lot = $this->lot(); $rx = $this->rx(); $url = "/api/pharmacy/stock/$lot/dispositions";
+        $id = $this->postJson($url, $this->dispositionBody($lot))->assertCreated()->json('data.records.data.0.id');
+        $this->postJson("/api/pharmacy/stock/$lot/counts", $this->stockCountBody($lot))->assertStatus(422);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertStatus(422);
+        $this->postJson('/api/pharmacy/stock-transfers', $this->transferBody($lot))->assertStatus(422);
+        // Even an out-of-band status change cannot bypass the pending disposition check.
+        DB::table('pharmacy_stock_lots')->where('id', $lot)->update(['status' => 'available']);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertStatus(422);
+        DB::table('pharmacy_stock_lots')->where('id', $lot)->update(['status' => 'quarantined']);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $review = $this->dispositionReview(['decision' => 'reject']);
+        $this->postJson("$url/$id/review", $review)->assertOk()->assertJsonPath('data.records.data.0.status', 'rejected');
+        $this->postJson("$url/$id/review", $review)->assertOk();
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+        $this->assertSame('quarantined', DB::table('pharmacy_stock_lots')->find($lot)->status);
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'disposition_applied')->count());
+    }
+
+    public function test_disposition_validation_reservations_counts_and_restricted_product_scope(): void
+    {
+        $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/dispositions";
+        foreach (['0', '-1', '50.001', '1.0001'] as $quantity) { $this->postJson($url, $this->dispositionBody($lot, ['quantity' => $quantity]))->assertStatus(422); }
+        foreach (['occurred_on' => now()->addDay()->toDateString(), 'kind' => 'patient_return', 'scope_confirmed' => false, 'completion_reference' => '', 'classification_evidence' => ''] as $k => $v) {
+            $this->postJson($url, $this->dispositionBody($lot, [$k => $v]))->assertStatus(422);
+        }
+        $this->postJson($url, $this->dispositionBody($lot, ['version' => 99]))->assertStatus(409);
+        $this->postJson($url, $this->dispositionBody($lot, ['product_id' => 99]))->assertStatus(409);
+        $rx = $this->rx(); $fill = $this->fill($rx, $lot);
+        $this->postJson($url, $this->dispositionBody($lot))->assertStatus(422);
+        $this->act($rx, $fill, 'cancel');
+        $count = $this->postJson("/api/pharmacy/stock/$lot/counts", $this->stockCountBody($lot))->assertCreated()->json('data.counts.data.0.id');
+        $this->postJson($url, $this->dispositionBody($lot))->assertStatus(422);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("/api/pharmacy/stock/$lot/counts/$count/review", ['decision' => 'reject', 'evidence' => 'Synthetic'])->assertOk();
+        $this->actingAs($this->actor, 'api');
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['controlled' => true]);
+        $this->postJson($url, $this->dispositionBody($lot))->assertStatus(422);
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['controlled' => false, 'compounded' => true]);
+        $this->postJson($url, $this->dispositionBody($lot))->assertStatus(422);
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['compounded' => false]);
+        DB::table('pharmacy_stock_lots')->where('id', $lot)->update(['created_at' => now()->addDay()]);
+        $this->postJson($url, $this->dispositionBody($lot))->assertStatus(422);
+        $other = $this->lot([], false);
+        $this->postJson("/api/pharmacy/stock/$other/dispositions", $this->dispositionBody($other, ['product_id' => 1]))->assertStatus(422);
+        $this->assertSame(0, DB::table('pharmacy_stock_dispositions')->count());
+    }
+
+    public function test_disposition_stale_stock_product_and_recall_evidence_cannot_be_applied(): void
+    {
+        $reviewer = $this->independentReviewer();
+        foreach (['version', 'product', 'notice', 'corruption'] as $change) {
+            $this->actingAs($this->actor, 'api'); $lot = $this->lot(['lot_number' => 'SYN-'.$change]); $url = "/api/pharmacy/stock/$lot/dispositions";
+            $id = $this->postJson($url, $this->dispositionBody($lot))->assertCreated()->json('data.records.data.0.id');
+            if ($change === 'version') { DB::table('pharmacy_stock_lots')->where('id', $lot)->increment('version'); }
+            if ($change === 'product') { $this->postJson("/api/pharmacy/stock/$lot/product", $this->productBody(['revision' => 1]))->assertCreated(); }
+            if ($change === 'notice') { $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody(['reference' => 'SYN-disposition', 'lot_number' => 'SYN-notice']))->assertCreated(); }
+            if ($change === 'corruption') { DB::table('pharmacy_stock_dispositions')->where('id', $id)->update(['source_snapshot' => '{}']); }
+            $this->actingAs($reviewer, 'api');
+            $this->postJson("$url/$id/review", $this->dispositionReview())->assertStatus(409);
+            $this->postJson("$url/$id/review", $this->dispositionReview(['decision' => 'reject']))->assertOk();
+            $this->assertEquals(50, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+        }
+    }
+
+    public function test_disposition_scope_and_actor_bound_retries(): void
+    {
+        $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/dispositions"; $body = $this->dispositionBody($lot);
+        $id = $this->postJson($url, $body)->assertCreated()->json('data.records.data.0.id');
+        foreach (['admin', 'medical_biller', 'client'] as $role) {
+            $this->actor->role = $role; $this->actor->save();
+            $this->getJson($url)->assertForbidden(); $this->postJson($url, $body)->assertForbidden(); $this->postJson("$url/$id/review", $this->dispositionReview())->assertForbidden();
+        }
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->getJson($url)->assertOk(); $this->postJson($url, $body)->assertForbidden(); $this->postJson("$url/$id/review", $this->dispositionReview())->assertForbidden();
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save(); $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $this->postJson($url, $body)->assertStatus(409);
+        $review = $this->dispositionReview(); $this->postJson("$url/$id/review", $review)->assertOk();
+        $this->actingAs($this->actor, 'api'); $this->postJson("$url/$id/review", $review)->assertStatus(409);
+        $other = $this->lot(); $this->postJson("/api/pharmacy/stock/$other/dispositions/$id/review", $review)->assertNotFound();
+    }
+
+    public function test_disposition_audit_failure_rolls_back_hold_and_quantity_deduction(): void
+    {
+        $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/dispositions"; $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) { if ($fail && str_contains(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_stock_events')) { throw new \RuntimeException('Synthetic audit failure'); } });
+        $this->postJson($url, $this->dispositionBody($lot))->assertStatus(500);
+        $this->assertSame(0, DB::table('pharmacy_stock_dispositions')->count());
+        $this->assertSame('available', DB::table('pharmacy_stock_lots')->find($lot)->status);
+        $fail = false; $id = $this->postJson($url, $this->dispositionBody($lot))->assertCreated()->json('data.records.data.0.id');
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api'); $fail = true;
+        $this->postJson("$url/$id/review", $this->dispositionReview())->assertStatus(500);
+        $this->assertSame('pending', DB::table('pharmacy_stock_dispositions')->find($id)->status);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+        $fail = false; $this->postJson("$url/$id/review", $this->dispositionReview())->assertOk();
+        $this->assertEquals(47.875, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+    }
+
+    public function test_disposition_requires_reconciled_transfer_custody_and_preserves_upstream_recalls(): void
+    {
+        $receiver = $this->receivingPharmacist();
+        [$transfer, $source, $dest] = $this->receivedDiscrepancy($receiver);
+        $this->postJson("/api/pharmacy/stock/$dest/product", $this->productBody())->assertCreated();
+        $url = "/api/pharmacy/stock/$dest/dispositions";
+        $this->postJson($url, $this->dispositionBody($dest))->assertStatus(422);
+        $count = $this->correctedReceiptCount($dest, $receiver);
+        $this->actingAs($receiver, 'api');
+        $c = $this->postJson("/api/pharmacy/stock-transfers/$transfer/corrections", $this->correctionBody($transfer, $count))->assertCreated()->json('data.corrections.data.0.id');
+        $this->actingAs($this->actor, 'api');
+        $this->postJson("/api/pharmacy/stock-transfers/$transfer/corrections/$c/review", ['request_id' => (string) Str::uuid(), 'version' => 4, 'decision' => 'apply', 'evidence' => 'SYNTHETIC receipt correction'])->assertOk();
+        $this->recallStock($source)->assertOk();
+        $this->actingAs($receiver, 'api');
+        $id = $this->postJson($url, $this->dispositionBody($dest, ['kind' => 'disposal']))->assertCreated()->json('data.records.data.0.id');
+        $this->actingAs($this->actor, 'api');
+        $this->postJson("$url/$id/review", $this->dispositionReview())->assertOk();
+        $this->assertEquals(8, DB::table('pharmacy_stock_lots')->find($dest)->on_hand);
+        $this->assertEquals(39.875, DB::table('pharmacy_stock_lots')->find($source)->on_hand);
+        $this->assertSame('received_corrected', DB::table('pharmacy_stock_transfers')->find($transfer)->status);
+        $this->putJson("/api/pharmacy/stock/$dest/status", ['version' => (int) DB::table('pharmacy_stock_lots')->find($dest)->version, 'status' => 'available', 'note' => 'Synthetic'])->assertStatus(422);
+    }
+
+    public function test_disposition_pagination_and_revoked_review_cannot_leak_or_mutate_records(): void
+    {
+        $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/dispositions"; $reviewer = $this->independentReviewer();
+        for ($i = 0; $i < 11; $i++) {
+            $this->actingAs($this->actor, 'api');
+            $id = $this->postJson($url, $this->dispositionBody($lot))->assertCreated()->json('data.records.data.0.id');
+            $this->actingAs($reviewer, 'api');
+            $this->postJson("$url/$id/review", $this->dispositionReview(['decision' => 'reject']))->assertOk();
+        }
+        $this->getJson($url)->assertOk()->assertJsonCount(10, 'data.records.data')->assertJsonPath('data.records.total', 11);
+        $this->getJson($url.'?page=2')->assertOk()->assertJsonCount(1, 'data.records.data');
+        $this->getJson($url.'?page=0')->assertStatus(422);
+        $this->actingAs($this->actor, 'api');
+        $id = $this->postJson($url, $this->dispositionBody($lot))->assertCreated()->json('data.records.data.0.id');
+        $this->actingAs($reviewer, 'api');
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['valid_until' => now()->subDay()->toDateString()]);
+        $this->postJson("$url/$id/review", $this->dispositionReview())->assertNotFound();
+        $this->getJson($url)->assertNotFound();
+        $this->assertSame('pending', DB::table('pharmacy_stock_dispositions')->find($id)->status);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+    }
+
     private function stockCountBody(int $lot, array $changes = []): array
     {
         return array_replace(['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_lots')->where('id', $lot)->value('version'), 'counted_quantity' => '49.875', 'reason' => 'physical_count', 'evidence' => 'SYNTHETIC count evidence'], $changes);
