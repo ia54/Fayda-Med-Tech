@@ -85,6 +85,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'store']);
         Route::get('/patients/{id}', [\App\Http\Controllers\API\PharmacyPatientController::class, 'show']);
         Route::put('/patients/{id}/clinical', [\App\Http\Controllers\API\PharmacyPatientController::class, 'clinical']);
+        Route::put('/patients/{id}/demographics', [\App\Http\Controllers\API\PharmacyPatientController::class, 'demographics']);
         Route::get('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'index']);
         Route::put('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'save']);
         $handoverAddenda = \App\Http\Controllers\API\PharmacyHandoverAddendumController::class;

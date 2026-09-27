@@ -2923,6 +2923,80 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson('/api/pharmacy/cases')->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_patient_demographic_correction_preserves_identity_history_and_invalidates_prepared_fill(): void
+    {
+        $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-CORRECT-1', 'location_id' => $this->location,
+            'first_name' => 'Synthetic', 'last_name' => 'Original', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic intake'];
+        $p = $this->postJson('/api/pharmacy/patients', $intake)->assertCreated()->json('data');
+        $url = "/api/pharmacy/patients/{$p['id']}";
+        $review = ['version' => 1, 'allergies_status' => 'none_reported', 'medications_status' => 'none_reported',
+            'reviewed_on' => now()->toDateString(), 'source_reference' => 'Synthetic interview'];
+        $clinical = $this->putJson("$url/clinical", $review)->assertOk()->json('data.clinical');
+        $rx = $this->rx(['patient_id' => null, 'pharmacy_patient_id' => $p['id']]);
+        $f = $this->fill($rx, $this->lot());
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $before = (array) DB::table('pharmacy_patients')->where('id', $p['id'])->first();
+        $body = ['version' => 2, 'first_name' => 'Synthetic', 'last_name' => 'Corrected', 'date_of_birth' => '1980-02-01',
+            'phone' => null, 'address' => 'Synthetic address', 'reason' => 'Transcription correction',
+            'identity_reference' => 'Synthetic same-person evidence', 'same_patient_confirmed' => true,
+            'record_number' => 'MUST-NOT-CHANGE', 'location_id' => $this->otherLocation, 'clinical' => ['allergies_status' => 'unknown']];
+        $changed = $this->putJson("$url/demographics", $body)->assertOk()->assertJsonPath('data.version', 3)
+            ->assertJsonPath('data.last_name', 'Corrected')->assertJsonPath('data.record_number', 'SYN-CORRECT-1')->json('data');
+        $this->assertSame($clinical, $changed['clinical']);
+        $event = $changed['history'][0];
+        $this->assertSame($this->actor->id, $event['actor_id']);
+        $this->assertSame('Original', $event['details']['previous']['last_name']);
+        $this->assertSame('Corrected', $event['details']['recorded']['last_name']);
+        $this->assertSame('Synthetic same-person evidence', $event['details']['identity_reference']);
+        $after = (array) DB::table('pharmacy_patients')->where('id', $p['id'])->first();
+        foreach (['request_id', 'request_hash', 'organization_id', 'record_number', 'created_at', 'clinical'] as $field) {
+            $this->assertSame($before[$field], $after[$field]);
+        }
+        $this->assertSame([$this->location], DB::table('pharmacy_patient_locations')->where('patient_id', $p['id'])->pluck('location_id')->all());
+        $this->putJson("$url/demographics", $body)->assertConflict();
+        $this->putJson("$url/demographics", array_replace($body, ['version' => 3]))->assertUnprocessable();
+        $this->assertSame(3, DB::table('pharmacy_patient_events')->count());
+        $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic', 'counseling' => 'provided'], 422);
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+    }
+
+    public function test_patient_demographic_correction_checks_role_scope_validation_and_audit_atomicity(): void
+    {
+        $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-CORRECT-2', 'location_id' => $this->location,
+            'first_name' => 'Synthetic', 'last_name' => 'Original', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic intake'];
+        $id = $this->postJson('/api/pharmacy/patients', $intake)->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/patients/$id/demographics";
+        $body = ['version' => 1, 'first_name' => 'Synthetic', 'last_name' => 'Corrected', 'date_of_birth' => '1980-01-01',
+            'reason' => 'Synthetic correction', 'identity_reference' => 'Synthetic identity', 'same_patient_confirmed' => true];
+        foreach (['pharmacy_technician', 'medical_biller', 'admin', 'firm_admin', 'attorney', 'client', 'provider'] as $role) {
+            $this->actor->role = $role;
+            $this->putJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist';
+        foreach ([['same_patient_confirmed' => false], ['reason' => ''], ['identity_reference' => ''],
+            ['date_of_birth' => now()->addDay()->toDateString()], ['first_name' => '']] as $invalid) {
+            $this->putJson($url, array_replace($body, $invalid))->assertUnprocessable();
+        }
+        $this->actor->organization_id = 2;
+        $this->putJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->putJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $before = (array) DB::table('pharmacy_patients')->where('id', $id)->first();
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_patient_events')) {
+                throw new \RuntimeException('Synthetic patient audit failure');
+            }
+        });
+        $this->putJson($url, $body)->assertStatus(500); $fail = false;
+        $this->assertSame($before, (array) DB::table('pharmacy_patients')->where('id', $id)->first());
+        $this->assertSame(1, DB::table('pharmacy_patient_events')->count());
+        $this->putJson($url, $body)->assertOk()->assertJsonPath('data.version', 2);
+    }
+
     public function test_independent_patient_chart_is_private_idempotent_and_invalidates_fill_review(): void
     {
         $body = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-CHART-1', 'location_id' => $this->location,

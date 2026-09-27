@@ -69,6 +69,35 @@ class PharmacyPatientController extends Controller
         return $this->show($r, $id)->setStatusCode(201);
     }
 
+    public function demographics(Request $r, $id)
+    {
+        abort_unless($r->user()->role === 'pharmacist', 403);
+        $p = $this->query($r)->where('id', $id)->lockForUpdate()->first();
+        abort_unless($p, 404);
+        $d = $r->validate([
+            'version' => 'required|integer|min:1',
+            'first_name' => 'required|string|max:100', 'last_name' => 'required|string|max:100',
+            'date_of_birth' => 'required|date_format:Y-m-d|before_or_equal:today',
+            'phone' => 'nullable|string|max:50', 'address' => 'nullable|string|max:255',
+            'reason' => 'required|string|max:2000', 'identity_reference' => 'required|string|max:2000',
+            'same_patient_confirmed' => 'required|accepted',
+        ]);
+        abort_unless((int) $p->version === $d['version'], 409, 'Patient record changed. Refresh before saving.');
+        $previous = $recorded = [];
+        foreach (['first_name', 'last_name', 'date_of_birth', 'phone', 'address'] as $field) {
+            $previous[$field] = $p->{$field};
+            $recorded[$field] = $d[$field] ?? null;
+        }
+        abort_if($previous === $recorded, 422, 'No patient details changed.');
+        // The shared patient version makes prior fill reviews and labels stale.
+        // Never change record identity, location access or the clinical record here.
+        DB::table('pharmacy_patients')->where('id', $id)->update($recorded + ['version' => $p->version + 1, 'updated_at' => now()]);
+        $this->event($r, $id, ['action' => 'demographics_corrected', 'previous' => $previous,
+            'recorded' => $recorded, 'reason' => $d['reason'], 'identity_reference' => $d['identity_reference'],
+            'same_patient_confirmed' => true, 'version' => $p->version + 1]);
+        return $this->show($r, $id);
+    }
+
     public function clinical(Request $r, $id)
     {
         abort_unless($r->user()->role === 'pharmacist', 403);
