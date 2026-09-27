@@ -61,6 +61,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
     Route::middleware(['role:pharmacist,pharmacy_technician,medical_biller,admin', \App\Http\Middleware\PharmacyPreviewOnly::class, \App\Http\Middleware\PharmacyWriteTransaction::class])->prefix('pharmacy')->group(function () {
         $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;
         Route::post('/batch-worksheets/{id}/execution', [$execution, 'store']);
+        Route::post('/batch-worksheets/{id}/execution/addenda', [$execution, 'addendum']);
         Route::post('/batch-worksheets/{id}/execution/review', [$execution, 'review']);
         $ingredient = \App\Http\Controllers\API\PharmacyIngredientController::class;
         Route::get('/ingredient-lots', [$ingredient, 'index']);

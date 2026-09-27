@@ -579,6 +579,55 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(0, DB::table('pharmacy_fills')->count());
     }
 
+    public function test_execution_addenda_retain_original_reset_review_and_never_change_stock(): void
+    {
+        [$b, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $this->executionBody())->assertCreated();
+        $original = DB::table('pharmacy_batch_executions')->where('batch_id', $b)->value('record');
+        $reviewer = $this->independentReviewer();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution/review", ['version' => 1, 'decision' => 'document_reviewed', 'evidence' => 'Synthetic review'])->assertOk();
+        $this->actingAs($this->actor, 'api');
+        $body = ['version' => 2, 'request_id' => (string) Str::uuid(), 'section' => 'equipment', 'statement' => 'Synthetic corrected equipment reference', 'reason' => 'Transcription correction', 'evidence' => 'Synthetic source'];
+        $url = "/api/pharmacy/batch-worksheets/$b/execution/addenda";
+        $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.execution.status', 'quarantined')->assertJsonPath('data.execution.version', 3)->assertJsonCount(1, 'data.execution.addenda')->assertJsonPath('data.output_status', 'quarantined');
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['statement' => 'changed']))->assertStatus(409);
+        $this->postJson($url, array_replace($body, ['request_id' => (string) Str::uuid()]))->assertStatus(409);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution/review", ['version' => 3, 'decision' => 'document_reviewed', 'evidence' => 'Self review'])->assertUnprocessable();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution/review", ['version' => 2, 'decision' => 'document_reviewed', 'evidence' => 'Stale review'])->assertStatus(409);
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution/review", ['version' => 3, 'decision' => 'rejected', 'evidence' => 'Synthetic rejection'])->assertOk();
+        $this->postJson($url, array_replace($body, ['version' => 4, 'request_id' => (string) Str::uuid()]))->assertCreated()->assertJsonPath('data.execution.status', 'rejected');
+        $this->assertSame($original, DB::table('pharmacy_batch_executions')->where('batch_id', $b)->value('record'));
+        $this->assertEquals(3, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'consumed_in_preparation')->count());
+        $this->assertSame(2, DB::table('pharmacy_execution_addenda')->count());
+        $this->assertSame(0, DB::table('pharmacy_stock_lots')->count());
+    }
+
+    public function test_addendum_contributors_cannot_review_and_access_is_scoped(): void
+    {
+        [$b] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $this->executionBody())->assertCreated();
+        $reviewer = $this->independentReviewer();
+        $this->actingAs($reviewer, 'api');
+        $url = "/api/pharmacy/batch-worksheets/$b/execution/addenda";
+        $body = ['version' => 1, 'request_id' => (string) Str::uuid(), 'section' => 'other', 'statement' => 'Synthetic clarification', 'reason' => 'Additional evidence', 'evidence' => 'Synthetic'];
+        $this->postJson($url, array_replace($body, ['reason' => '']))->assertUnprocessable();
+        $this->postJson($url, $body)->assertCreated();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution/review", ['version' => 2, 'decision' => 'document_reviewed', 'evidence' => 'Contributor review'])->assertUnprocessable();
+        $reviewer->role = 'pharmacy_technician';
+        $this->postJson($url, $body)->assertForbidden();
+        $reviewer->role = 'pharmacist';
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        $this->getJson("/api/pharmacy/batch-worksheets/$b")->assertForbidden();
+        $reviewer->organization_id = 2;
+        $this->postJson($url, $body)->assertNotFound();
+        $this->assertSame(1, DB::table('pharmacy_execution_addenda')->count());
+    }
+
     public function test_execution_rechecks_custody_and_rolls_back_partial_consumption(): void
     {
         [$b,$lot] = $this->reservedWorksheet(true);

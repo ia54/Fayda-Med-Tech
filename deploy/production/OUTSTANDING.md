@@ -2,6 +2,12 @@
 
 Production has not been switched. A passing build is not release approval.
 
+## September 27 documentary corrections
+
+Append-only execution addenda are implemented with author/time/version, reason and evidence; original records and old reviews are retained. Amendments reset a reviewed document to quarantine for fresh independent review, while rejected records remain rejected. Preparers and addendum contributors cannot review their own amended record. No inventory or product-release change is performed. Documentary addenda no longer remain wholly unimplemented; quantity/deviation reconciliation, losses/destruction and other pharmacy launch gates still do.
+
+September 26/27 Chrome acceptance covers execution, independent review, account-cache isolation, reload/navigation, custody references and the worksheet at measured 390px width. Earlier broad statements that all new compounding UI acceptance is outstanding are superseded only for those tested paths. Full formulation/receiving/worksheet creation acceptance remains open.
+
 ## Compounding planning increment
 
 Formulation revisions and prescription-linked batch planning worksheets are implemented with independent pharmacist review, immutable source details, ingredient-source references, location restrictions and audit history. Ingredient receipts, quarantine and explicit worksheet reservations are now implemented in a subsequent custody increment. Manufacturing, BUD assignment, quality-result acceptance and finished-product release remain outstanding. See docs/PHARMACY-SYSTEM.md. This increment does not close the operational compounding launch gate. Local full regression passed 143 tests / 1,569 assertions; the final expanded pharmacy test run passed 12 tests / 246 assertions. All 3,104 role decisions and 27 protected pharmacy route declaration checks pass. Frontend type checking passes. Browser acceptance of the new compounding screens remains outstanding.

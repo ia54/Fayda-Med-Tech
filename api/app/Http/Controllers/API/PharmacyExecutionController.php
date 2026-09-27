@@ -70,6 +70,35 @@ class PharmacyExecutionController extends Controller
         return app(PharmacyCompoundingController::class)->showBatch($r, $id)->setStatusCode(201);
     }
 
+    public function addendum(Request $r, $id)
+    {
+        $batch = $this->batch($r, $id);
+        $d = $r->validate(['version' => 'required|integer|min:1', 'request_id' => 'required|uuid',
+            'section' => 'required|in:personnel,equipment,process,quality_results,measurements,yield,deviations,environment,hazard_controls,other',
+            'statement' => 'required|string|max:5000', 'reason' => 'required|string|max:2000', 'evidence' => 'required|string|max:5000']);
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $id)->first();
+        abort_unless($execution, 404);
+        $hash = hash('sha256', json_encode($d, JSON_THROW_ON_ERROR));
+        $old = DB::table('pharmacy_execution_addenda')->where('execution_id', $execution->id)->where('request_id', $d['request_id'])->first();
+        if ($old) {
+            abort_unless((int) $old->created_by === (int) $r->user()->id && hash_equals($old->request_hash, $hash), 409, 'This request identifier belongs to another addendum.');
+            return app(PharmacyCompoundingController::class)->showBatch($r, $id);
+        }
+        abort_unless((int) $execution->version === $d['version'], 409, 'Execution record changed. Refresh before adding a correction.');
+        $version = $execution->version + 1;
+        $addendum = DB::table('pharmacy_execution_addenda')->insertGetId([
+            'execution_id' => $execution->id, 'created_by' => $r->user()->id, 'request_id' => $d['request_id'], 'request_hash' => $hash,
+            'section' => $d['section'], 'statement' => $d['statement'], 'reason' => $d['reason'], 'evidence' => $d['evidence'],
+            'execution_version' => $version, 'created_at' => now(),
+        ]);
+        // Corrections never erase the original, reverse stock, or rehabilitate a rejected record.
+        DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update([
+            'version' => $version, 'status' => $execution->status === 'rejected' ? 'rejected' : 'quarantined', 'updated_at' => now(),
+        ]);
+        $this->event($r, $batch, 'execution_addendum_recorded', ['addendum_id' => $addendum, 'execution_version' => $version, 'previous_document_status' => $execution->status, 'output_status' => 'quarantined']);
+        return app(PharmacyCompoundingController::class)->showBatch($r, $id)->setStatusCode(201);
+    }
+
     public function review(Request $r, $id)
     {
         $batch = $this->batch($r, $id);
@@ -78,9 +107,9 @@ class PharmacyExecutionController extends Controller
         abort_unless($execution, 404);
         abort_unless((int) $execution->version === $d['version'], 409, 'Execution record changed. Refresh before reviewing.');
         abort_unless($execution->status === 'quarantined', 422, 'This review is already recorded.');
-        abort_if((int) $execution->created_by === (int) $r->user()->id, 422, 'A different pharmacist must review the execution record.');
+        abort_if((int) $execution->created_by === (int) $r->user()->id || DB::table('pharmacy_execution_addenda')->where('execution_id', $execution->id)->where('created_by', $r->user()->id)->exists(), 422, 'Review requires a pharmacist who did not create this execution or any addendum.');
         DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update(['status' => $d['decision'], 'version' => $execution->version + 1, 'updated_at' => now()]);
-        $this->event($r, $batch, 'execution_'.$d['decision'], ['evidence' => $d['evidence'], 'output_status' => 'quarantined', 'production_release_enabled' => false]);
+        $this->event($r, $batch, 'execution_'.$d['decision'], ['evidence' => $d['evidence'], 'reviewed_execution_version' => $execution->version, 'output_status' => 'quarantined', 'production_release_enabled' => false]);
 
         return app(PharmacyCompoundingController::class)->showBatch($r, $id);
     }
