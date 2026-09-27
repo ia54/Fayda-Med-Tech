@@ -322,6 +322,7 @@ class PharmacyWorkflowTest extends TestCase
         $f = $this->fill($rx, $dest);
         $this->act($rx, $f, 'approve', $this->checks(), 422); // source verification is not inherited
         $this->postJson("/api/pharmacy/stock/$dest/product", $this->productBody())->assertCreated();
+        $f = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json("data.fills.0");
         $f = $this->act($rx, $f, 'approve', $this->checks());
         $this->actingAs($this->actor, 'api');
         $this->recallStock($lot)->assertOk();
@@ -1086,10 +1087,14 @@ class PharmacyWorkflowTest extends TestCase
         $f = $this->fill($rx, $lot);
         $this->act($rx, $f, 'approve', $this->checks(), 422);
         $first = $this->postJson($url, $this->productBody())->assertCreated()->json('data.product');
+        $this->act($rx, $f, 'approve', $this->checks(), 409); // stale screen cannot attest to newly verified details
+        $f = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.fills.0');
         $f = $this->act($rx, $f, 'approve', $this->checks());
         $this->assertSame($first['id'], $f['reviewed_product']['id']);
         $this->postJson($url, $this->productBody(['revision' => 1, 'reason' => 'SYNTHETIC correction']))->assertCreated();
         $this->act($rx, $f, 'ready', ['checks' => ['label' => true]], 422);
+        $this->act($rx, $f, 'approve', $this->checks(), 409);
+        $f = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.fills.0');
         $f = $this->act($rx, $f, 'approve', $this->checks());
         $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
         $this->postJson($url, $this->productBody(['revision' => 2]))->assertCreated();
@@ -1124,7 +1129,7 @@ class PharmacyWorkflowTest extends TestCase
 
     private function act(int $rx, array $f, string $a, array $extra = [], $status = 200): array
     {
-        $result = $this->postJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions", array_replace(['version' => $f['version'], 'action' => $a, 'note' => 'Synthetic evidence'], $extra))->assertStatus($status);
+        $result = $this->postJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions", array_replace(['version' => $f['version'], 'product_id' => $f['current_product']['id'] ?? null, 'action' => $a, 'note' => 'Synthetic evidence'], $extra))->assertStatus($status);
 
         return $status === 200 ? collect($result->json('data.fills'))->firstWhere('id', $f['id']) : $f;
     }
