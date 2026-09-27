@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\User;
 use App\Services\PharmacyAccess;
 use App\Services\PharmacyStock;
+use App\Services\PharmacyQuantity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -249,6 +250,7 @@ class PharmacyController extends Controller
 
             return $f;
         });
+        $rx->quantity_balance = app(PharmacyQuantity::class)->balance($rx);
         $rx->reserved_batches = DB::table('pharmacy_batch_worksheets as b')->join('pharmacy_ingredient_allocations as a', 'a.batch_id', '=', 'b.id')
             ->where('b.organization_id', $this->org($r))->where('b.location_id', $rx->location_id)->where('b.prescription_id', $rx->id)->where('a.status', 'reserved')
             ->select('b.id', 'b.batch_number')->distinct()->orderBy('b.id')->get();
@@ -336,7 +338,7 @@ class PharmacyController extends Controller
     public function createFill(Request $r, $id)
     {
         $this->allow($r, ['pharmacist', 'pharmacy_technician']);
-        $d = $r->validate(['request_id' => 'required|uuid', 'stock_lot_id' => 'required|integer', 'quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'days_supply' => 'required|integer|min:1|max:365', 'ndc' => ['required', 'string', 'regex:/^(\d{10,11}|\d{4}-\d{4}-\d{2}|\d{5}-\d{3}-\d{2}|\d{5}-\d{4}-\d{1,2})$/D']]);
+        $d = $r->validate(['request_id' => 'required|uuid', 'stock_lot_id' => 'required|integer', 'partial_reason' => 'nullable|string|max:2000', 'quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'days_supply' => 'required|integer|min:1|max:365', 'ndc' => ['required', 'string', 'regex:/^(\d{10,11}|\d{4}-\d{4}-\d{2}|\d{5}-\d{3}-\d{2}|\d{5}-\d{4}-\d{1,2})$/D']]);
         DB::transaction(function () use ($r, $id, $d) {
             $rx = $this->rx($r, $id, true);
             $q = DB::table('pharmacy_fills')->where('prescription_id', $rx->id);
@@ -350,21 +352,28 @@ class PharmacyController extends Controller
             if ($rx->expires_on < now()->toDateString()) {
                 $this->fail('Prescription has expired. Obtain an updated prescription.');
             }
-            if ((float) $d['quantity'] > (float) $rx->quantity) {
+            if (PharmacyStock::milli($d['quantity']) > PharmacyStock::milli($rx->quantity)) {
                 $this->fail('Quantity exceeds the prescribed amount.');
             }
             if ((clone $q)->whereNotIn('fulfillment_status', ['collected', 'delivered', 'cancelled'])->exists()) {
                 $this->fail('Resolve the open fill before creating another.');
             }
-            $used = (clone $q)->where('fulfillment_status', '!=', 'cancelled')->count();
-            if ($used >= $rx->refills_authorized + 1) {
+            $balance = app(PharmacyQuantity::class)->balance($rx);
+            if (! $balance['next_authorization_number']) {
                 $this->fail('No authorized fills remain.');
             }
+            if (PharmacyStock::milli($d['quantity']) > PharmacyStock::milli($balance['available_quantity'])) {
+                $this->fail('Quantity exceeds the remaining amount for this original or refill allowance.');
+            }
+            if ($balance['mode'] === 'quantity' && PharmacyStock::milli($d['quantity']) < PharmacyStock::milli($balance['available_quantity']) && empty(trim($d['partial_reason'] ?? ''))) {
+                $this->fail('Record the reason for supplying less than the remaining authorized quantity.');
+            }
+            $authorization = $balance['mode'] === 'quantity' ? $balance['next_authorization_number'] : null;
             $lot = app(PharmacyStock::class)->reserve($r->user(), $rx, $d);
             $number = ((clone $q)->max('fill_number') ?? -1) + 1;
-            $fid = DB::table('pharmacy_fills')->insertGetId($d + ['prescription_id' => $rx->id, 'fill_number' => $number, 'request_hash' => $this->hash($d), 'created_at' => now(), 'updated_at' => now()]);
+            $fid = DB::table('pharmacy_fills')->insertGetId($d + ['authorization_number' => $authorization, 'prescription_id' => $rx->id, 'fill_number' => $number, 'request_hash' => $this->hash($d), 'created_at' => now(), 'updated_at' => now()]);
             app(PharmacyStock::class)->event($r->user(), $lot, 'reserved', $d['quantity'], ['request_id' => $d['request_id']], $fid);
-            $this->event($r, $rx, 'fill_created', ['fill_id' => $fid, 'fill_number' => $number]);
+            $this->event($r, $rx, 'fill_created', ['fill_id' => $fid, 'fill_number' => $number, 'authorization_number' => $authorization, 'quantity' => $d['quantity'], 'partial_reason' => $d['partial_reason'] ?? null]);
         });
 
         return $this->show($r, $id);

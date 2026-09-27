@@ -1100,6 +1100,89 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson('/api/pharmacy/prescriptions')->assertForbidden();
     }
 
+    public function test_partial_quantities_share_an_allowance_and_cannot_exceed_it(): void
+    {
+        $rx = $this->rx(['quantity' => '0.300', 'refills_authorized' => 1]);
+        $lot = $this->lot(['quantity' => '1.000']);
+        $url = "/api/pharmacy/prescriptions/$rx/fills";
+        $body = $this->fillBody($lot, ['quantity' => '0.100']);
+        $this->postJson($url, $body)->assertUnprocessable();
+        $body['partial_reason'] = 'Synthetic patient requested partial supply';
+        $first = $this->postJson($url, $body)->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '0.200')->json('data.fills.0');
+        $this->assertSame(1, $first['authorization_number']);
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['partial_reason' => 'Changed']))->assertStatus(409);
+        $this->postJson($url, $this->fillBody($lot, ['quantity' => '0.200']))->assertUnprocessable();
+        $this->complete($rx, $first);
+        $this->postJson($url, $this->fillBody($lot, ['quantity' => '0.201']))->assertUnprocessable();
+        $second = $this->postJson($url, $this->fillBody($lot, ['quantity' => '0.200']))->assertOk()->json('data.fills.1');
+        $this->assertSame(1, $second['authorization_number']);
+        $this->act($rx, $second, 'cancel');
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '0.200');
+        $second = $this->postJson($url, $this->fillBody($lot, ['quantity' => '0.200']))->assertOk()->json('data.fills.2');
+        $this->complete($rx, $second);
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()
+            ->assertJsonPath('data.quantity_balance.next_authorization_number', 2)
+            ->assertJsonPath('data.quantity_balance.allowances.0.handed_over', '0.300');
+        $third = $this->postJson($url, $this->fillBody($lot, ['quantity' => '0.300']))->assertOk()->json('data.fills.3');
+        $this->assertSame(2, $third['authorization_number']);
+        $this->complete($rx, $third);
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.next_authorization_number', null)->assertJsonPath('data.quantity_balance.available_quantity', '0.000');
+        $this->postJson($url, $this->fillBody($lot, ['quantity' => '0.001']))->assertUnprocessable();
+        $this->assertEquals(0.400, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->assertSame(3, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+    }
+
+    public function test_historical_partial_records_do_not_create_new_entitlement(): void
+    {
+        $rx = $this->rx(['refills_authorized' => 1]);
+        $lot = $this->lot();
+        $f = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '2.000', 'partial_reason' => 'Synthetic partial']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $f);
+        // Represents a retained pre-migration fill. Upgrade must not infer its remainder.
+        \Illuminate\Support\Facades\Schema::table('pharmacy_fills', function ($table) {
+            $table->dropIndex('pharmacy_fill_authorization_index');
+            $table->dropColumn(['authorization_number', 'partial_reason']);
+        });
+        $before = (array) DB::table('pharmacy_fills')->where('id', $f['id'])->first();
+        (require database_path('migrations/2026_09_27_000013_add_pharmacy_fill_quantity_accounting.php'))->up();
+        $after = (array) DB::table('pharmacy_fills')->where('id', $f['id'])->first();
+        foreach ($before as $key => $value) { $this->assertSame($value, $after[$key], $key); }
+        $this->assertNull($after['authorization_number']);
+        $this->assertNull($after['partial_reason']);
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.legacy_allowances_used', 1)->assertJsonPath('data.quantity_balance.next_authorization_number', 2);
+        $f = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertOk()->json('data.fills.1');
+        $this->assertSame(2, $f['authorization_number']);
+        $this->complete($rx, $f);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '8.000', 'partial_reason' => 'Cannot reclaim old remainder']))->assertUnprocessable();
+        $this->assertEquals(38, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+    }
+
+    public function test_partial_remainder_retains_expiry_location_and_rollback_guards(): void
+    {
+        $rx = $this->rx(['refills_authorized' => 0]);
+        $lot = $this->lot();
+        $url = "/api/pharmacy/prescriptions/$rx/fills";
+        $f = $this->postJson($url, $this->fillBody($lot, ['quantity' => '4.000', 'partial_reason' => 'Synthetic stock shortage']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $f);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson($url, $this->fillBody($lot, ['quantity' => '6.000']))->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => true]);
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['expires_on' => now()->subDay()->toDateString()]);
+        $this->postJson($url, $this->fillBody($lot, ['quantity' => '6.000']))->assertUnprocessable();
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['expires_on' => now()->addDay()->toDateString()]);
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) { throw new \RuntimeException('Synthetic quantity audit failure'); }
+        });
+        $this->postJson($url, $this->fillBody($lot, ['quantity' => '6.000']))->assertStatus(500);
+        $fail = false;
+        $this->assertSame(1, DB::table('pharmacy_fills')->where('prescription_id', $rx)->count());
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '6.000');
+    }
+
     public function test_retries_refills_stale_updates_and_cancel_release_stock(): void
     {
         $body = $this->body(['refills_authorized' => 0]);
