@@ -36,17 +36,18 @@ class PharmacyIngredientController extends Controller
 
     public function index(Request $r)
     {
-        $d = $r->validate(['location_id' => 'nullable|integer', 'search' => 'nullable|string|max:100', 'page' => 'nullable|integer|min:1']);
+        $d = $r->validate(['location_id' => 'nullable|integer', 'status' => 'nullable|in:available,quarantined,recalled', 'search' => 'nullable|string|max:100', 'page' => 'nullable|integer|min:1']);
         $q = DB::table('pharmacy_ingredient_lots')->where('organization_id', $this->org($r));
         app(PharmacyAccess::class)->scope($q, $r->user());
         if (! empty($d['location_id'])) {
             $q->where('location_id', $d['location_id']);
         }
+        if (! empty($d['status'])) { $q->where('status', $d['status']); }
         if (! empty($d['search'])) {
-            $q->where(fn ($q) => $q->where('ingredient_name', 'like', '%'.$d['search'].'%')->orWhere('lot_number', 'like', '%'.$d['search'].'%'));
+            $q->where(fn ($q) => $q->where('ingredient_name', 'like', '%'.$d['search'].'%')->orWhere('lot_number', 'like', '%'.$d['search'].'%')->orWhere('supplier', 'like', '%'.$d['search'].'%')->orWhere('recall_reference', 'like', '%'.$d['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('id', 'location_id', 'ingredient_name', 'supplier', 'lot_number', 'quantity_unit', 'expires_on', 'on_hand', 'reserved', 'status', 'version')->orderBy('expires_on')->orderBy('id')->paginate(30)]);
+        return response()->json(['data' => $q->select('id', 'location_id', 'ingredient_name', 'supplier', 'lot_number', 'quantity_unit', 'expires_on', 'on_hand', 'reserved', 'status', 'version', 'recall_reference')->orderBy('expires_on')->orderBy('id')->paginate(30)]);
     }
 
     public function show(Request $r, $id)

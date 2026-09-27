@@ -634,6 +634,25 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson("/api/pharmacy/batch-worksheets/$b")->assertOk()->assertJsonPath('data.output_status', 'quarantined')->assertJsonPath('data.production_release_enabled', false);
     }
 
+    public function test_recall_worklist_filters_and_search_preserve_location_and_organization_scope(): void
+    {
+        $lot = $this->postJson('/api/pharmacy/ingredient-lots', $this->ingredientReceipt(['supplier' => 'Unique Supplier']))->assertCreated()->json('data.id');
+        $other = $this->postJson('/api/pharmacy/ingredient-lots', $this->ingredientReceipt(['location_id' => $this->otherLocation, 'receipt_reference' => 'Other receipt', 'supplier' => 'Unique Supplier']))->assertCreated()->json('data.id');
+        foreach ([$lot, $other] as $id) {
+            $this->postJson("/api/pharmacy/ingredient-lots/$id/recall", ['version' => 1, 'reference' => 'SYN-NOTICE-42', 'evidence' => 'Synthetic'])->assertOk();
+        }
+        $this->getJson('/api/pharmacy/ingredient-lots?status=recalled&search=SYN-NOTICE-42')->assertOk()->assertJsonPath('data.total', 2);
+        $this->getJson('/api/pharmacy/ingredient-lots?search=Unique%20Supplier')->assertOk()->assertJsonPath('data.total', 2);
+        $this->getJson('/api/pharmacy/ingredient-lots?status=available')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/ingredient-lots?status=unsupported')->assertUnprocessable();
+        $reviewer = $this->independentReviewer();
+        $this->actingAs($reviewer, 'api');
+        $this->getJson('/api/pharmacy/ingredient-lots?status=recalled&search=SYN-NOTICE-42')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.id', $lot)->assertJsonPath('data.data.0.recall_reference', 'SYN-NOTICE-42');
+        $this->getJson("/api/pharmacy/ingredient-lots?status=recalled&location_id=$this->otherLocation")->assertOk()->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['organization_id' => 2]);
+        $this->getJson('/api/pharmacy/ingredient-lots?status=recalled&search=SYN-NOTICE-42')->assertOk()->assertJsonPath('data.total', 0);
+    }
+
     private function reservedWorksheet(bool $two = false): array
     {
         $b = $this->reviewedWorksheet($two);

@@ -2,6 +2,10 @@
 
 Decision recorded September 24, 2026. Pharmacy is the core product, not an optional provider portal. Build the pharmacy-management and dispensing system inside FaydaMedTech. Support multiple potential pharmacy locations, controlled substances, and compounded preparations. On September 25 the owner confirmed BOTH sterile and nonsterile compounding. The owner will confirm an AI account, most likely GLM; no account, endpoint, contractual approval or patient-data processing has been verified.
 
+## Recall worklist navigation
+
+Ingredient receipt search now covers ingredient, supplier, lot and recall-reference text, with explicit stock-status and assigned-location filters. Recalled receipts show the source reference in the list. Filtering does not grant access to unassigned or foreign-organization receipts, and text matches must still be checked against the actual notice. Batch allocation rows link directly to the exact receipt, providing navigation in both directions between recall evidence and worksheet history. No bulk recall or notification is performed.
+
 ## September 27 receipt-specific recall holds
 
 Assigned pharmacists can record immutable recall notice/evidence, actor/time and a recalled stock status on an individual ingredient receipt. Stock quantities and original batch records are preserved. Ordinary receiving/status review cannot clear the hold, new count adjustments are blocked, and existing pending counts cannot be applied after the recall changes the stock version. A pending count may be rejected without clearing the recall. Reservation release remains available and does not return consumed ingredients.
