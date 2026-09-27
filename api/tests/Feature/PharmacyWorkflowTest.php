@@ -188,7 +188,7 @@ class PharmacyWorkflowTest extends TestCase
             $this->postJson($url, $this->transferAction($id, 'dispatch'))->assertOk();
             $this->actingAs($reviewer, 'api');
             $dest = $this->postJson($url, $this->transferAction($id, 'receive', ['received_quantity' => $received]))->assertOk()->assertJsonPath('data.status', 'received_discrepancy')->json('data.destination_lot_id');
-            $this->assertEquals($received, DB::table('pharmacy_stock_lots')->where('id', $dest)->value('on_hand'));
+            $this->assertSame(\App\Services\PharmacyStock::milli($received), \App\Services\PharmacyStock::milli(DB::table('pharmacy_stock_lots')->where('id', $dest)->value('on_hand')));
             $this->putJson("/api/pharmacy/stock/$dest/status", ['version' => 1, 'status' => 'available', 'note' => 'Synthetic'])->assertStatus(422);
             $count = $this->postJson("/api/pharmacy/stock/$dest/counts", $this->stockCountBody($dest, ['counted_quantity' => '10.125']))->assertCreated()->json('data.counts.data.0.id');
             $this->actingAs($this->actor, 'api');
