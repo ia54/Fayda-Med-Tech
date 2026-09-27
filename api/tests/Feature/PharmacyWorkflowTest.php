@@ -2923,6 +2923,108 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson('/api/pharmacy/cases')->assertOk()->assertJsonCount(0, 'data');
     }
 
+    public function test_erroneous_patient_enrollment_withdrawal_preserves_history_and_denies_site_access(): void
+    {
+        $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-WITHDRAW-1', 'location_id' => $this->location,
+            'first_name' => 'Synthetic', 'last_name' => 'Withdrawal', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic intake'];
+        $id = $this->postJson('/api/pharmacy/patients', $intake)->assertCreated()->assertJsonPath('data.locations.0.enrollment_event_id', null)->json('data.id');
+        $url = "/api/pharmacy/patients/$id";
+        $sourceRx = $this->rx(['patient_id' => null, 'pharmacy_patient_id' => $id]);
+        $beforeRx = DB::table('pharmacy_prescriptions')->get()->toJson();
+        $enroll = ['version' => 1, 'source_location_id' => $this->location, 'location_id' => $this->otherLocation,
+            'reason' => 'Synthetic enrollment', 'identity_reference' => 'Synthetic identity',
+            'sharing_authority_reference' => 'Synthetic authority', 'sharing_confirmed' => true];
+        $eventId = $this->postJson("$url/locations", $enroll)->assertOk()->json('data.history.0.id');
+        $before = (array) DB::table('pharmacy_patients')->where('id', $id)->first();
+        $body = ['version' => 2, 'enrollment_event_id' => $eventId, 'location_id' => $this->otherLocation,
+            'retained_location_id' => $this->location, 'reason' => 'Synthetic incorrect enrollment',
+            'correction_reference' => 'Synthetic access review', 'withdrawal_confirmed' => true];
+        $withdrawn = $this->postJson("$url/locations/withdraw", $body)->assertOk()->assertJsonCount(1, 'data.locations')
+            ->assertJsonPath('data.locations.0.id', $this->location)->assertJsonPath('data.version', 3)->json('data');
+        $this->assertSame('location_enrollment_withdrawn', $withdrawn['history'][0]['details']['action']);
+        $this->assertSame($eventId, $withdrawn['history'][0]['details']['enrollment_event_id']);
+        $this->assertSame($this->actor->id, $withdrawn['history'][0]['actor_id']);
+        $after = (array) DB::table('pharmacy_patients')->where('id', $id)->first();
+        foreach ($before as $field => $value) {
+            if (!in_array($field, ['version', 'updated_at'], true)) $this->assertSame($value, $after[$field]);
+        }
+        $this->assertSame(2, DB::table('pharmacy_patient_locations')->count());
+        $this->assertFalse((bool) DB::table('pharmacy_patient_locations')->where('patient_id', $id)->where('location_id', $this->otherLocation)->value('active'));
+        $this->assertSame($beforeRx, DB::table('pharmacy_prescriptions')->get()->toJson());
+        $this->getJson("/api/pharmacy/prescriptions/$sourceRx")->assertOk();
+        $this->postJson("$url/locations/withdraw", $body)->assertNotFound();
+        $this->getJson('/api/pharmacy/patients?location_id='.$this->otherLocation)->assertOk()->assertJsonPath('data.total', 0);
+        // Even staff assigned to both sites cannot receive new prescriptions against inactive enrollment.
+        $this->postJson('/api/pharmacy/prescriptions', $this->body(['patient_id' => null, 'pharmacy_patient_id' => $id,
+            'location_id' => $this->otherLocation]))->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->getJson("$url/history")->assertNotFound();
+        $this->getJson('/api/pharmacy/patients')->assertOk()->assertJsonPath('data.total', 0);
+        $this->putJson("$url/clinical", [])->assertNotFound();
+        $this->putJson("$url/demographics", [])->assertNotFound();
+        $this->postJson("$url/locations", array_replace($enroll, ['version' => 3]))->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $newEvent = $this->postJson("$url/locations", array_replace($enroll, ['version' => 3]))->assertOk()->assertJsonCount(2, 'data.locations')
+            ->assertJsonPath('data.version', 4)->json('data.history.0.id');
+        $this->assertNotSame($eventId, $newEvent);
+        $this->assertSame(2, DB::table('pharmacy_patient_locations')->count());
+        $this->postJson("$url/locations/withdraw", array_replace($body, ['version' => 4]))->assertConflict();
+        $this->postJson("$url/locations/withdraw", array_replace($body, ['version' => 4, 'enrollment_event_id' => $newEvent]))->assertOk()->assertJsonPath('data.version', 5);
+        $this->assertSame(5, DB::table('pharmacy_patient_events')->count());
+        $this->assertSame($beforeRx, DB::table('pharmacy_prescriptions')->get()->toJson());
+    }
+
+    public function test_patient_enrollment_withdrawal_rejects_unsafe_scope_and_preserves_records_on_failure(): void
+    {
+        $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-WITHDRAW-2', 'location_id' => $this->location,
+            'first_name' => 'Synthetic', 'last_name' => 'Withdrawal', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic intake'];
+        $id = $this->postJson('/api/pharmacy/patients', $intake)->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/patients/$id/locations";
+        $enroll = ['version' => 1, 'source_location_id' => $this->location, 'location_id' => $this->otherLocation,
+            'reason' => 'Synthetic enrollment', 'identity_reference' => 'Synthetic identity',
+            'sharing_authority_reference' => 'Synthetic authority', 'sharing_confirmed' => true];
+        $eventId = $this->postJson($url, $enroll)->assertOk()->json('data.history.0.id');
+        $body = ['version' => 2, 'enrollment_event_id' => $eventId, 'location_id' => $this->otherLocation,
+            'retained_location_id' => $this->location, 'reason' => 'Synthetic correction', 'correction_reference' => 'Synthetic review', 'withdrawal_confirmed' => true];
+        foreach (['pharmacy_technician', 'medical_biller', 'admin', 'firm_admin', 'attorney', 'client', 'provider'] as $role) {
+            $this->actor->role = $role; $this->postJson("$url/withdraw", $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist';
+        foreach ([['reason' => ''], ['correction_reference' => ''], ['withdrawal_confirmed' => false], ['retained_location_id' => $this->otherLocation]] as $invalid) {
+            $this->postJson("$url/withdraw", array_replace($body, $invalid))->assertUnprocessable();
+        }
+        $this->postJson("$url/withdraw", array_replace($body, ['location_id' => $this->location, 'retained_location_id' => $this->otherLocation]))->assertConflict();
+        $this->postJson("$url/withdraw", array_replace($body, ['enrollment_event_id' => 999999]))->assertConflict();
+        $this->postJson("$url/withdraw", array_replace($body, ['version' => 1]))->assertConflict();
+        $this->actor->organization_id = 2; $this->postJson("$url/withdraw", $body)->assertNotFound(); $this->actor->organization_id = 1;
+        foreach ([$this->location, $this->otherLocation] as $site) {
+            DB::table('pharmacy_staff_assignments')->where('location_id', $site)->update(['active' => false]);
+            $this->postJson("$url/withdraw", $body)->assertNotFound();
+            DB::table('pharmacy_staff_assignments')->where('location_id', $site)->update(['active' => true]);
+        }
+        $patientBefore = DB::table('pharmacy_patients')->get()->toJson();
+        $locationsBefore = DB::table('pharmacy_patient_locations')->get()->toJson();
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_patient_events')) {
+                throw new \RuntimeException('Synthetic withdrawal audit failure');
+            }
+        });
+        $this->postJson("$url/withdraw", $body)->assertStatus(500); $fail = false;
+        $this->assertSame($patientBefore, DB::table('pharmacy_patients')->get()->toJson());
+        $this->assertSame($locationsBefore, DB::table('pharmacy_patient_locations')->get()->toJson());
+        $this->assertSame(2, DB::table('pharmacy_patient_events')->count());
+        // A prescription at the target site, even discontinued, prevents this limited access correction.
+        $rx = $this->rx(['patient_id' => null, 'pharmacy_patient_id' => $id, 'location_id' => $this->otherLocation]);
+        $this->postJson("$url/withdraw", $body)->assertUnprocessable();
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['discontinued_at' => now()]);
+        $this->postJson("$url/withdraw", $body)->assertUnprocessable();
+        $this->assertSame($patientBefore, DB::table('pharmacy_patients')->get()->toJson());
+        $this->assertSame($locationsBefore, DB::table('pharmacy_patient_locations')->get()->toJson());
+        $this->assertSame(2, DB::table('pharmacy_patient_events')->count());
+    }
+
     public function test_patient_location_enrollment_shares_one_chart_but_not_source_prescriptions(): void
     {
         $intake = ['request_id' => (string) Str::uuid(), 'record_number' => 'SYN-ENROLL-1', 'location_id' => $this->location,

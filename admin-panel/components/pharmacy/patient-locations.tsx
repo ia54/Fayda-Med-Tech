@@ -2,6 +2,7 @@
 import {FormEvent,useState} from 'react'
 import {Button} from '@/components/ui/button'
 import {Field,errorMessage} from './fields'
+import {PatientLocationWithdrawal} from './patient-location-withdrawal'
 import {PharmacyPatient,useGetPharmacyLocationsQuery,usePharmacyStockActionMutation} from '@/store/api/pharmacyApiSlice'
 
 export function PatientLocations({patient,canEnroll}:{patient:PharmacyPatient;canEnroll:boolean}){
@@ -37,5 +38,6 @@ export function PatientLocations({patient,canEnroll}:{patient:PharmacyPatient;ca
    </form>}
   </details>}
   {error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
+  {canEnroll&&<PatientLocationWithdrawal key={patient.id} patient={patient}/>}
  </section>
 }

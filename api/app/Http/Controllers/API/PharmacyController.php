@@ -338,7 +338,7 @@ class PharmacyController extends Controller
             $case = CaseModel::where('organization_id', $org)->findOrFail($d['case_id']);
             if (! empty($d['pharmacy_patient_id'])) {
                 abort_unless(DB::table('pharmacy_patients as p')->join('pharmacy_patient_locations as pl', 'pl.patient_id', '=', 'p.id')
-                    ->where('p.organization_id', $org)->where('p.id', $d['pharmacy_patient_id'])->where('pl.location_id', $d['location_id'])->exists(), 404);
+                    ->where('p.organization_id', $org)->where('p.id', $d['pharmacy_patient_id'])->where('pl.location_id', $d['location_id'])->where('pl.active', true)->exists(), 404);
             } else {
                 abort_unless(DB::table('case_parties')->join('users', 'users.id', '=', 'case_parties.user_id')->where('case_parties.case_id', $case->id)->where('users.id', $d['patient_id'])->where('users.role', 'client')->where('users.organization_id', $org)->exists(), 404);
             }

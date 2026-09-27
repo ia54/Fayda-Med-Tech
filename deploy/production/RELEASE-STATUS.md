@@ -98,3 +98,7 @@ Patient histories now have scoped, read-only pagination and readable before/afte
 ### Multi-location patient enrollment
 
 The same independent patient chart can be explicitly enrolled at another same-organization location by a pharmacist assigned to both sites, with retained identity and sharing-authority evidence. Source prescriptions and stock retain their original access boundaries. This does not establish consent/legal authority or enable prescription transfer. Erroneous enrollment correction, operational sharing procedures and professional acceptance remain required.
+
+### Erroneous enrollment correction
+
+Additional patient enrollment can now be withdrawn with retained event/version/evidence when the target site has no prescriptions for that chart. The membership remains inactive in history and cannot authorize new intake or chart access; re-enrollment requires fresh evidence. Existing data is preserved by migration000025. Corrections after prescriptions exist, prior-disclosure response and operational privacy acceptance remain outstanding.
