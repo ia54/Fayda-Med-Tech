@@ -13,7 +13,7 @@ class PharmacyRecall
     public function notices($lot)
     {
         $keys = self::keys($lot->ndc, $lot->lot_number);
-        return DB::table('pharmacy_recall_notices as n')->where('n.organization_id', $lot->organization_id)
+        return DB::table('pharmacy_recall_notices as n')->where('n.organization_id', $lot->organization_id)->whereNull('n.withdrawn_at')
             ->whereIn('n.id', DB::table('pharmacy_recall_codes')->select('notice_id')->where('ndc_key', $keys['recall_ndc_key']))
             ->where(fn ($q) => $q->where('n.all_lots', true)->orWhere('n.lot_key', $keys['recall_lot_key']));
     }

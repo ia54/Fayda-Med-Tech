@@ -777,6 +777,170 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('available', $row->status); $this->assertNull($row->recall_reference); $this->assertSame(1, (int) $row->version);
     }
 
+    private function recallCorrectionBody(int $notice, array $changes = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_recall_notices')->where('id', $notice)->value('version'), 'reason' => 'Synthetic notice entered in error', 'evidence' => 'Synthetic verified source correction only', 'confirmed' => true], $changes);
+    }
+
+    private function recallCorrectionReview(int $notice, array $changes = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_recall_notices')->where('id', $notice)->value('version'), 'decision' => 'apply', 'evidence' => 'Synthetic independent source/scope review', 'confirmed' => true], $changes);
+    }
+
+    public function test_recall_correction_quarantines_all_matching_sites_without_releasing_stock_or_erasing_history(): void
+    {
+        $a = $this->lot(); $b = $this->lot(['location_id' => $this->otherLocation]); $other = $this->lot(['lot_number' => 'OTHER']);
+        $rx = $this->rx(); $fill = $this->act($rx, $this->fill($rx, $a), 'approve', $this->checks());
+        $fill = $this->act($rx, $fill, 'ready', ['checks' => ['label' => true]]);
+        $beforeFills = DB::table('pharmacy_fills')->get(); $beforeOther = DB::table('pharmacy_stock_lots')->where('id', $other)->first();
+        $id = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        $foreign = $this->lot(); DB::table('pharmacy_stock_lots')->where('id', $foreign)->update(['organization_id' => 2]);
+        $beforeForeign = DB::table('pharmacy_stock_lots')->where('id', $foreign)->first();
+        $original = DB::table('pharmacy_recall_notices')->where('id', $id)->first();
+        $url = "/api/pharmacy/recall-notices/$id/corrections"; $body = $this->recallCorrectionBody($id);
+        $correction = $this->postJson($url, $body)->assertOk()->assertJsonPath('data.withdrawn_at', null)->json('data.corrections.data.0.id');
+        $this->getJson('/api/pharmacy/recall-notices?status=pending')->assertOk()->assertJsonPath('data.total', 1);
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['reason' => 'Changed']))->assertStatus(409);
+        $late = $this->lot(); // Received while independent correction review was pending.
+        $reviewUrl = "$url/$correction/review"; $review = $this->recallCorrectionReview($id);
+        $this->postJson($reviewUrl, $review)->assertUnprocessable();
+        $this->act($rx, $fill, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic blocked handover', 'counseling' => 'provided'], 422);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson($reviewUrl, $review)->assertOk()->assertJsonPath('data.stock.total', 2)->assertJsonPath('data.corrections.data.0.status', 'applied')->assertJsonMissingPath('data.corrections.data.0.request_hash');
+        $this->postJson($reviewUrl, $review)->assertOk();
+        $this->postJson($reviewUrl, array_replace($review, ['decision' => 'reject']))->assertStatus(409);
+        foreach ([$a, $b, $late] as $lot) {
+            $row = DB::table('pharmacy_stock_lots')->where('id', $lot)->first();
+            $this->assertSame('quarantined', $row->status); $this->assertEquals(50, $row->on_hand);
+            $this->assertSame(1, DB::table('pharmacy_stock_events')->where('stock_lot_id', $lot)->where('action', 'notice_correction_quarantine')->count());
+        }
+        $this->assertEquals(10, DB::table('pharmacy_stock_lots')->where('id', $a)->value('reserved'));
+        $this->assertEquals($beforeForeign, DB::table('pharmacy_stock_lots')->where('id', $foreign)->first());
+        $this->assertEquals($beforeFills, DB::table('pharmacy_fills')->get());
+        $this->assertEquals($beforeOther, DB::table('pharmacy_stock_lots')->where('id', $other)->first());
+        $this->act($rx, $fill, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic blocked handover', 'counseling' => 'provided'], 422);
+        $retained = DB::table('pharmacy_recall_notices')->where('id', $id)->first();
+        foreach (['reference', 'evidence', 'ndcs', 'lot_number', 'lot_key', 'all_lots', 'created_by', 'created_at'] as $field) $this->assertSame($original->$field, $retained->$field);
+        $this->assertNotNull($retained->withdrawn_at);
+        $this->getJson('/api/pharmacy/recall-notices?status=pending')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/recall-notices?status=withdrawn')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/pharmacy/recall-notices?status=active')->assertOk()->assertJsonPath('data.total', 0);
+        $this->assertSame(0, DB::table('invoices')->count());
+        $this->putJson($url, $body)->assertStatus(405);
+    }
+
+    public function test_recall_correction_preserves_overlapping_and_receipt_recalls_and_future_matching(): void
+    {
+        $a = $this->lot(); $b = $this->lot(['lot_number' => 'RECALLED']);
+        $this->postJson("/api/pharmacy/stock/$b/recall", ['version' => 1, 'request_id' => (string) Str::uuid(), 'reference' => 'Synthetic receipt recall', 'evidence' => 'Synthetic'])->assertOk();
+        $id = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody(['all_lots' => true, 'lot_number' => null]))->assertCreated()->json('data.id');
+        $otherNotice = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody(['reference' => 'Synthetic valid separate notice']))->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/recall-notices/$id/corrections";
+        $c = $this->postJson($url, $this->recallCorrectionBody($id))->assertOk()->json('data.corrections.data.0.id');
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("$url/$c/review", $this->recallCorrectionReview($id))->assertOk();
+        $this->getJson("/api/pharmacy/stock/$a")->assertOk()->assertJsonPath('data.recall_notices.0.id', $otherNotice);
+        $this->getJson("/api/pharmacy/stock/$b")->assertOk()->assertJsonPath('data.status', 'recalled')->assertJsonPath('data.recall_reference', 'Synthetic receipt recall');
+        foreach ([$a,$b] as $lot) $this->putJson("/api/pharmacy/stock/$lot/status", ['version' => DB::table('pharmacy_stock_lots')->where('id',$lot)->value('version'), 'status' => 'available', 'note' => 'Synthetic'])->assertUnprocessable();
+        $future = $this->lot(); $this->getJson("/api/pharmacy/stock/$future")->assertOk()->assertJsonPath('data.status', 'quarantined');
+        $clearFuture = $this->lot(['lot_number' => 'DIFFERENT']); $this->getJson("/api/pharmacy/stock/$clearFuture")->assertOk()->assertJsonPath('data.status', 'available');
+    }
+
+    public function test_recall_correction_rejection_and_stale_requests_retain_original_hold(): void
+    {
+        $lot = $this->lot(); $id = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/recall-notices/$id/corrections"; $reviewer = $this->independentReviewer();
+        $c = $this->postJson($url, $this->recallCorrectionBody($id))->assertOk()->json('data.corrections.data.0.id');
+        $review = $this->recallCorrectionReview($id);
+        DB::table('pharmacy_recall_notices')->where('id', $id)->increment('version');
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("$url/$c/review", $review)->assertStatus(409);
+        $review['decision'] = 'reject'; $this->postJson("$url/$c/review", $review)->assertOk()->assertJsonPath('data.withdrawn_at', null);
+        $this->postJson("$url/$c/review", $review)->assertOk();
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'notice_correction_quarantine')->count());
+        $this->getJson("/api/pharmacy/stock/$lot")->assertOk()->assertJsonPath('data.recall_notices.0.id', $id);
+        $this->actingAs($this->actor, 'api');
+        $this->postJson($url, $this->recallCorrectionBody($id))->assertOk()->assertJsonCount(2, 'data.corrections.data');
+    }
+
+    public function test_recall_correction_access_confirmation_and_cross_notice_boundaries(): void
+    {
+        $id = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/recall-notices/$id/corrections"; $body = $this->recallCorrectionBody($id);
+        foreach ([['confirmed'=>false],['reason'=>''],['evidence'=>'']] as $bad) $this->postJson($url,array_replace($body,$bad))->assertUnprocessable();
+        $this->postJson($url,array_replace($body,['version'=>99]))->assertStatus(409);
+        foreach (['pharmacy_technician','medical_biller','admin'] as $role) { $this->actor->role=$role; $this->actor->save(); $this->postJson($url,$body)->assertForbidden(); }
+        $this->actor->role='pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id',$this->actor->id)->update(['active'=>false]); $this->postJson($url,$body)->assertForbidden();
+        DB::table('pharmacy_staff_assignments')->where('user_id',$this->actor->id)->update(['active'=>true]);
+        DB::table('pharmacy_recall_notices')->where('id',$id)->update(['organization_id'=>2]); $this->postJson($url,$body)->assertNotFound();
+        DB::table('pharmacy_recall_notices')->where('id',$id)->update(['organization_id'=>1]);
+        $c=$this->postJson($url,$body)->assertOk()->json('data.corrections.data.0.id');
+        $this->postJson($url,$this->recallCorrectionBody($id))->assertStatus(409);
+        $reviewer=$this->independentReviewer(); $this->actingAs($reviewer,'api');
+        $this->postJson($url,$body)->assertStatus(409);
+        $review=$this->recallCorrectionReview($id);
+        $this->postJson("$url/99999/review",$review)->assertNotFound();
+        $reviewer->role='pharmacy_technician';$reviewer->save();$this->postJson("$url/$c/review",$review)->assertForbidden();
+        $reviewer->role='pharmacist';$reviewer->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id',$reviewer->id)->update(['active'=>false]);$this->postJson("$url/$c/review",$review)->assertForbidden();
+    }
+
+    public function test_recall_correction_rolls_back_all_quarantines_and_review_on_audit_failure(): void
+    {
+        $this->lot();$this->lot(['location_id'=>$this->otherLocation]);
+        $id=$this->postJson('/api/pharmacy/recall-notices',$this->noticeBody())->assertCreated()->json('data.id');
+        $url="/api/pharmacy/recall-notices/$id/corrections"; $body=$this->recallCorrectionBody($id); $failNotice=true;
+        DB::connection()->beforeExecuting(function($query)use(&$failNotice){ if($failNotice&&str_starts_with(strtolower($query),'update')&&str_contains($query,'pharmacy_recall_notices'))throw new \RuntimeException('Synthetic notice update failure'); });
+        $this->postJson($url,$body)->assertStatus(500);$failNotice=false;
+        $this->assertSame(0,DB::table('pharmacy_recall_corrections')->count());
+        $c=$this->postJson($url,$body)->assertOk()->json('data.corrections.data.0.id');
+        $this->actingAs($this->independentReviewer(),'api'); $review=$this->recallCorrectionReview($id); $before=DB::table('pharmacy_stock_lots')->get(); $fail=true;$insert=0;
+        DB::connection()->beforeExecuting(function($query)use(&$fail,&$insert){if($fail&&str_starts_with(strtolower($query),'insert into')&&str_contains($query,'pharmacy_stock_events')&&++$insert===2)throw new \RuntimeException('Synthetic second stock audit failure');});
+        $this->postJson("$url/$c/review",$review)->assertStatus(500);$fail=false;
+        $this->assertEquals($before,DB::table('pharmacy_stock_lots')->get());
+        $this->assertNull(DB::table('pharmacy_recall_notices')->where('id',$id)->value('withdrawn_at'));
+        $this->assertSame('pending',DB::table('pharmacy_recall_corrections')->value('status'));
+        $this->assertSame(0,DB::table('pharmacy_stock_events')->where('action','notice_correction_quarantine')->count());
+        $this->postJson("$url/$c/review",$review)->assertOk();
+    }
+
+    public function test_recall_correction_retains_transfer_custody_and_existing_follow_up(): void
+    {
+        $receiver=$this->receivingPharmacist();[$transfer,$source,$dest]=$this->receivedDiscrepancy($receiver,'10.125');
+        $this->actingAs($this->actor,'api'); $rx=$this->rx();$f=$this->fill($rx,$source);$this->act($rx,$f,'cancel');
+        $id=$this->postJson('/api/pharmacy/recall-notices',$this->noticeBody())->assertCreated()->json('data.id');
+        $follow="/api/pharmacy/recall-notices/$id/fills/{$f['id']}/follow-up";
+        $this->postJson("$follow/events", $this->followUpBody())->assertCreated();
+        $followHistory = DB::table('pharmacy_recall_follow_up_events')->get();
+        $before=DB::table('pharmacy_stock_transfers')->get();
+        $url="/api/pharmacy/recall-notices/$id/corrections";$c=$this->postJson($url,$this->recallCorrectionBody($id))->assertOk()->json('data.corrections.data.0.id');
+        $this->actingAs($receiver,'api');$this->postJson("$url/$c/review",$this->recallCorrectionReview($id))->assertOk();
+        $this->assertEquals($before,DB::table('pharmacy_stock_transfers')->get());
+        foreach([$source,$dest]as$lot){$this->getJson("/api/pharmacy/stock/$lot")->assertOk()->assertJsonPath('data.status','quarantined')->assertJsonPath('data.custody_hold',null);}
+        $this->actingAs($this->actor,'api');$this->getJson($follow)->assertOk()->assertJsonPath('data.fill.fulfillment_status','cancelled')->assertJsonPath('data.status','open');
+        $this->assertEquals($followHistory, DB::table('pharmacy_recall_follow_up_events')->get());
+        $this->putJson("/api/pharmacy/stock/$source/status",['version'=>DB::table('pharmacy_stock_lots')->where('id',$source)->value('version'),'status'=>'available','note'=>'SYNTHETIC independent local release review'])->assertOk();
+        $this->getJson("/api/pharmacy/stock/$dest")->assertOk()->assertJsonPath('data.status','quarantined');
+    }
+
+    public function test_recall_correction_history_paginates_and_never_overwrites_rejected_reviews(): void
+    {
+        $id=$this->postJson('/api/pharmacy/recall-notices',$this->noticeBody())->assertCreated()->json('data.id');
+        $url="/api/pharmacy/recall-notices/$id/corrections"; $reviewer=$this->independentReviewer();
+        for($i=0;$i<11;$i++){
+            $this->actingAs($this->actor,'api');
+            $c=$this->postJson($url,$this->recallCorrectionBody($id,['reason'=>"Synthetic correction attempt $i"]))->assertOk()->json('data.corrections.data.0.id');
+            $this->actingAs($reviewer,'api');
+            $this->postJson("$url/$c/review",$this->recallCorrectionReview($id,['decision'=>'reject']))->assertOk();
+        }
+        $this->getJson("/api/pharmacy/recall-notices/$id")->assertOk()->assertJsonPath('data.corrections.total',11)->assertJsonCount(10,'data.corrections.data')->assertJsonPath('data.corrections.data.0.reason','Synthetic correction attempt 10');
+        $this->getJson("/api/pharmacy/recall-notices/$id?correction_page=2")->assertOk()->assertJsonCount(1,'data.corrections.data')->assertJsonPath('data.corrections.data.0.reason','Synthetic correction attempt 0');
+        $this->assertSame(11,DB::table('pharmacy_recall_corrections')->where('status','rejected')->count());
+        $this->getJson("/api/pharmacy/recall-notices/$id?correction_page=0")->assertUnprocessable();
+    }
+
     private function noticeBody(array $changes = []): array
     {
         return array_replace(['request_id' => (string) Str::uuid(), 'product_description' => 'Synthetic medication', 'reference' => 'SYNTHETIC notice', 'evidence' => 'Synthetic verified product and lot scope; not a real recall', 'all_lots' => false, 'lot_number' => 'syn-lot', 'ndcs' => ['00000000000', '00000-0000-00']], $changes);
