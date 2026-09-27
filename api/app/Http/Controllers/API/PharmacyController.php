@@ -262,7 +262,15 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(handover_work.pending_handover_count, 0) AS pending_handover_count, handover_work.pending_handover_fill_id')->selectRaw('COALESCE(handover_work.reviewable_handover_count, 0) AS reviewable_handover_count, handover_work.reviewable_handover_fill_id')->selectRaw('COALESCE(pending_corrections.pending_correction_count, 0) AS pending_correction_count')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
+        $rows = $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(handover_work.pending_handover_count, 0) AS pending_handover_count, handover_work.pending_handover_fill_id')->selectRaw('COALESCE(handover_work.reviewable_handover_count, 0) AS reviewable_handover_count, handover_work.reviewable_handover_fill_id')->selectRaw('COALESCE(pending_corrections.pending_correction_count, 0) AS pending_correction_count')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20);
+        foreach ($rows as $row) {
+            // PDO aggregate types differ across SQLite, MySQL and MariaDB.
+            foreach (['pending_handover_count', 'reviewable_handover_count'] as $field) { $row->$field = (int) $row->$field; }
+            foreach (['pending_handover_fill_id', 'reviewable_handover_fill_id'] as $field) {
+                $row->$field = $row->$field === null ? null : (int) $row->$field;
+            }
+        }
+        return response()->json(['data' => $rows]);
     }
 
     public function show(Request $r, $id)
