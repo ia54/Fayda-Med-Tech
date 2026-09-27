@@ -75,12 +75,13 @@ class PharmacyLabelController extends Controller
         }
         $decisions = $d;
         unset($decisions['request_id'], $decisions['version'], $decisions['source_token'], $decisions['previous_label_id'], $decisions['confirmed'], $decisions['reason']);
-        $snapshot = json_encode(['format_version' => 1, 'synthetic_only' => true, 'actor_id' => $r->user()->id, 'context' => $context, 'decisions' => $decisions], JSON_THROW_ON_ERROR);
+        $barcodeCode = 'FMTL-'.strtoupper(\Illuminate\Support\Str::random(20));
+        $snapshot = json_encode(['format_version' => 2, 'barcode_code' => $barcodeCode, 'synthetic_only' => true, 'actor_id' => $r->user()->id, 'context' => $context, 'decisions' => $decisions], JSON_THROW_ON_ERROR);
         $revision = ($current->revision ?? 0) + 1;
         $document = $service->document(json_decode($snapshot, true, 512, JSON_THROW_ON_ERROR), $revision);
         $labelId = DB::table('pharmacy_fill_labels')->insertGetId(['fill_id' => $fillId, 'revision' => $revision, 'created_by' => $r->user()->id,
             'request_id' => $d['request_id'], 'request_hash' => $hash, 'source_token' => $d['source_token'], 'snapshot' => $snapshot,
-            'snapshot_sha256' => hash('sha256', $snapshot), 'document' => $document, 'sha256' => hash('sha256', $document), 'reason' => $d['reason'], 'created_at' => now()]);
+            'barcode_code' => $barcodeCode, 'snapshot_sha256' => hash('sha256', $snapshot), 'document' => $document, 'sha256' => hash('sha256', $document), 'reason' => $d['reason'], 'created_at' => now()]);
         DB::table('pharmacy_fills')->where('id', $fillId)->update(['version' => $fill->version + 1, 'updated_at' => now()]);
         $this->event($r, $rx, 'label_retained', ['fill_id' => $fillId, 'label_id' => $labelId, 'revision' => $revision, 'sha256' => hash('sha256', $document), 'reason' => $d['reason']]);
         return $this->index($r, $id, $fillId)->setStatusCode(201);

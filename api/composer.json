@@ -18,8 +18,9 @@
         "laravel/tinker": "^2.8",
         "laravel/ui": "^4.6",
         "openai-php/client": "^0.19.2",
-        "predis/predis": "^3.0",
-        "pragmarx/google2fa": "^9.0"
+        "picqer/php-barcode-generator": "^3.2",
+        "pragmarx/google2fa": "^9.0",
+        "predis/predis": "^3.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.9.1",

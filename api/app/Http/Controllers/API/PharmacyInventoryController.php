@@ -93,9 +93,10 @@ class PharmacyInventoryController extends Controller
             'request_id' => 'required|uuid', 'revision' => 'required|integer|min:0',
             'generic_name' => 'required|string|max:255', 'brand_name' => 'nullable|string|max:255',
             'strength' => 'required|string|max:255', 'dosage_form' => 'required|string|max:255',
-            'manufacturer' => 'required|string|max:255', 'verified_on' => 'required|date_format:Y-m-d|before_or_equal:today',
+            'package_code' => 'required|string|max:14', 'manufacturer' => 'required|string|max:255', 'verified_on' => 'required|date_format:Y-m-d|before_or_equal:today',
             'evidence' => 'required|string|max:5000', 'reason' => 'required|string|max:2000', 'confirmed' => 'required|accepted',
         ]);
+        abort_unless(app(\App\Services\PharmacyBarcode::class)->validPackageCode($d['package_code']), 422, 'Enter the exact source-package GTIN with a valid check digit. No NDC conversion is inferred.');
         $d['brand_name'] = $d['brand_name'] ?? null;
         ksort($d);
         $hash = hash('sha256', json_encode($d, JSON_THROW_ON_ERROR));

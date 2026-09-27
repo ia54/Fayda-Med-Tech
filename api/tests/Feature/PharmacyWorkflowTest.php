@@ -1455,7 +1455,7 @@ class PharmacyWorkflowTest extends TestCase
     {
         return array_replace(['request_id' => (string) Str::uuid(), 'revision' => 0,
             'generic_name' => 'SYNTHETIC established name', 'brand_name' => null, 'strength' => 'SYNTHETIC strength',
-            'dosage_form' => 'tablet', 'manufacturer' => 'SYNTHETIC manufacturer', 'verified_on' => now()->toDateString(),
+            'dosage_form' => 'tablet', 'package_code' => '99999999999997', 'manufacturer' => 'SYNTHETIC manufacturer', 'verified_on' => now()->toDateString(),
             'evidence' => 'SYNTHETIC package and NDC/lot/expiry check', 'reason' => 'Initial synthetic product verification', 'confirmed' => true], $overrides);
     }
 
@@ -1568,6 +1568,9 @@ class PharmacyWorkflowTest extends TestCase
         if ($a === 'ready' && $status === 200 && ! array_key_exists('label_id', $extra)) {
             $f = $this->labelFixture($rx, $f);
             $extra['label_id'] = $f['current_label']['id'];
+        }
+        if (in_array($a, ['ready', 'collected', 'delivered'], true)) {
+            $extra += ['scan' => $this->scanEvidence($f, $a === 'ready')];
         }
         if (in_array($a, ['collected', 'delivered'], true)) {
             $extra += ['handover' => $this->handoverEvidence($a)];
@@ -1788,6 +1791,103 @@ class PharmacyWorkflowTest extends TestCase
         $this->get("$url/$labelId/file")->assertOk();
     }
 
+    public function test_package_barcode_requires_a_valid_exact_gtin_and_preserves_leading_zeros(): void
+    {
+        $service = app(\App\Services\PharmacyBarcode::class);
+        foreach (['96385074', '036000291452', '4006381333931', '00012345600012', '99999999999997'] as $code) {
+            $this->assertTrue($service->validPackageCode($code), $code);
+        }
+        foreach (['', '00000000', '036000291453', '36000291452', ' 036000291452', '036000291452 ', '1234567890', 'ABC12345', ']C1010036000291452'] as $code) {
+            $this->assertFalse($service->validPackageCode($code), $code);
+        }
+        $lot = $this->lot([], false); $url = "/api/pharmacy/stock/$lot/product";
+        $this->postJson($url, $this->productBody(['package_code' => '036000291453']))->assertUnprocessable();
+        $this->postJson($url, $this->productBody(['package_code' => null]))->assertUnprocessable();
+        $this->assertSame(0, DB::table('pharmacy_stock_products')->count());
+        $this->postJson($url, $this->productBody(['package_code' => '036000291452']))->assertCreated()->assertJsonPath('data.product.package_code', '036000291452');
+    }
+
+    public function test_barcode_preparation_requires_exact_package_lot_and_current_label_without_inventory_change_on_failure(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->labelFixture($rx, $f); $label = $f['current_label']['id'];
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions";
+        $body = ['action' => 'ready', 'version' => $f['version'], 'label_id' => $label, 'note' => 'SYNTHETIC final check', 'checks' => ['label' => true], 'scan' => $this->scanEvidence($f)];
+        $stock = (array) DB::table('pharmacy_stock_lots')->find($lot); $saved = (array) DB::table('pharmacy_fills')->find($f['id']);
+        foreach ([null, [], $this->scanEvidence($f, true, ['label_code' => 'FMTL-WRONG']), $this->scanEvidence($f, true, ['package_code' => '99999999999996']), $this->scanEvidence($f, true, ['lot_number' => 'OTHER-LOT']), $this->scanEvidence($f, true, ['input_method' => 'manual', 'manual_reason' => null]), $this->scanEvidence($f, true, ['confirmed' => false]), $this->scanEvidence($f, true, ['actor_id' => 999]), $this->scanEvidence($f, true, ['input_method' => 'scanner'])] as $bad) {
+            $this->postJson($url, array_replace($body, ['scan' => $bad]))->assertUnprocessable();
+        }
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $this->assertSame($saved, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $r = $this->postJson($url, $body)->assertOk(); $ready = collect($r->json('data.fills'))->firstWhere('id', $f['id']);
+        $this->assertSame($label, $ready['fulfillment']['prepared_scan']['label_id']);
+        $this->assertSame('99999999999997', $ready['fulfillment']['prepared_scan']['package_code']);
+        $this->assertSame($this->actor->id, $ready['fulfillment']['prepared_scan']['actor_id']);
+        $this->assertSame('manual', $ready['fulfillment']['prepared_scan']['input_method']);
+        $this->postJson($url, $body)->assertStatus(409);
+    }
+
+    public function test_barcode_label_revisions_retain_unique_intact_codes_and_reject_foreign_or_superseded_codes(): void
+    {
+        $rx = $this->rx(); $f = $this->act($rx, $this->fill($rx, $this->lot()), 'approve', $this->checks());
+        $f = $this->labelFixture($rx, $f);
+        $first = DB::table('pharmacy_fill_labels')->where('fill_id', $f['id'])->first();
+        $this->assertMatchesRegularExpression('/^FMTL-[A-Z0-9]{20}$/D', $first->barcode_code);
+        $this->assertStringContainsString('<svg', $first->document);
+        $this->assertStringContainsString($first->barcode_code, $first->document);
+        $this->assertSame($first->barcode_code, json_decode($first->snapshot, true)['barcode_code']);
+        $f = $this->labelFixture($rx, $f); $second = DB::table('pharmacy_fill_labels')->where('fill_id', $f['id'])->orderByDesc('revision')->first();
+        $this->assertNotSame($first->barcode_code, $second->barcode_code);
+        $this->assertSame((array) $first, (array) DB::table('pharmacy_fill_labels')->find($first->id));
+        $this->act($rx, $f, 'ready', ['label_id' => $second->id, 'checks' => ['label' => true], 'scan' => $this->scanEvidence($f, true, ['label_code' => $first->barcode_code])], 422);
+        $otherRx = $this->rx(); $other = $this->act($otherRx, $this->fill($otherRx, $this->lot()), 'approve', $this->checks()); $other = $this->labelFixture($otherRx, $other);
+        $foreignCode = DB::table('pharmacy_fill_labels')->where('fill_id', $other['id'])->value('barcode_code');
+        $this->act($rx, $f, 'ready', ['label_id' => $second->id, 'checks' => ['label' => true], 'scan' => $this->scanEvidence($f, true, ['label_code' => $foreignCode])], 422);
+        DB::table('pharmacy_fill_labels')->where('id', $second->id)->update(['barcode_code' => $first->barcode_code.'X']);
+        $this->get("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels/{$second->id}/file")->assertStatus(409);
+    }
+
+    public function test_barcode_handover_requires_rescan_of_prepared_label_and_retains_manual_or_scanner_method(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions"; $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        foreach ([null, $this->scanEvidence($f, false, ['label_code' => 'OTHER']), $this->scanEvidence($f, false, ['package_code' => '99999999999997']), $this->scanEvidence($f, false, ['confirmed' => false])] as $bad) {
+            $this->postJson($url, $this->handoverBody($f, 'collected', ['scan' => $bad]))->assertUnprocessable();
+        }
+        $saved = $f['fulfillment']; $legacy = $saved; unset($legacy['prepared_scan']);
+        DB::table('pharmacy_fills')->where('id', $f['id'])->update(['fulfillment' => json_encode($legacy)]);
+        $this->postJson($url, $this->handoverBody($f))->assertUnprocessable()->assertJsonPath('message', 'Preparation has no matching retained code check. Cancel this open fill and prepare a new one.');
+        DB::table('pharmacy_fills')->where('id', $f['id'])->update(['fulfillment' => json_encode($saved)]);
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $r = $this->postJson($url, $this->handoverBody($f, 'collected', ['scan' => $this->scanEvidence($f, false, ['input_method' => 'scanner', 'manual_reason' => null])]))->assertOk();
+        $done = collect($r->json('data.fills'))->firstWhere('id', $f['id']);
+        $this->assertSame('scanner', $done['fulfillment']['scan']['input_method']);
+        $this->assertSame($done['fulfillment']['prepared_scan']['label_code'], $done['fulfillment']['scan']['label_code']);
+        $this->assertSame($this->actor->id, $done['fulfillment']['scan']['actor_id']);
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+    }
+
+    public function test_barcode_legacy_product_records_do_not_gain_package_verification(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        DB::table('pharmacy_stock_products')->where('stock_lot_id', $lot)->update(['package_code' => null]);
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels", $this->labelBody($rx, $f))->assertUnprocessable();
+        $this->assertSame(0, DB::table('pharmacy_fill_labels')->count());
+        $this->assertNull(DB::table('pharmacy_stock_products')->where('stock_lot_id', $lot)->value('package_code'));
+    }
+
+    private function scanEvidence(array $fill, bool $preparation = true, array $overrides = []): array
+    {
+        $label = DB::table('pharmacy_fill_labels')->where('fill_id', $fill['id'])->orderByDesc('revision')->first();
+        $stock = DB::table('pharmacy_stock_lots')->find($fill['stock_lot_id']);
+        $product = app(\App\Services\PharmacyProduct::class)->current((int) $stock->id);
+        return array_replace(['label_code' => $label->barcode_code ?? 'NO-LABEL', 'input_method' => 'manual', 'manual_reason' => 'SYNTHETIC simulated code comparison; no physical scanner used', 'confirmed' => true]
+            + ($preparation ? ['package_code' => $product->package_code ?? '', 'lot_number' => $stock->lot_number] : []), $overrides);
+    }
+
     private function handoverEvidence(string $action = 'collected', array $overrides = []): array
     {
         return array_replace(['recipient_type' => 'patient', 'recipient_name' => 'Synthetic Patient',
@@ -1800,7 +1900,7 @@ class PharmacyWorkflowTest extends TestCase
     {
         return array_replace(['version' => $fill['version'], 'action' => $action, 'note' => 'SYNTHETIC completed handover',
             'occurred_on' => now()->toDateString(), 'reference' => 'SYNTHETIC receipt', 'counseling' => 'provided',
-            'handover' => $this->handoverEvidence($action)], $overrides);
+            'handover' => $this->handoverEvidence($action), 'scan' => $this->scanEvidence($fill, false)], $overrides);
     }
 
     public function test_handover_requires_explicit_recipient_checks_and_rejects_unsupported_evidence(): void

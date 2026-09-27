@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 
 class PharmacyProduct
 {
-    public const FIELDS = ['id', 'stock_lot_id', 'revision', 'generic_name', 'brand_name', 'strength', 'dosage_form', 'manufacturer', 'verified_on', 'evidence', 'reason', 'actor_id', 'created_at'];
+    public const FIELDS = ['id', 'stock_lot_id', 'revision', 'generic_name', 'brand_name', 'strength', 'dosage_form', 'manufacturer', 'package_code', 'verified_on', 'evidence', 'reason', 'actor_id', 'created_at'];
 
     public function current(int $lotId): ?object
     {

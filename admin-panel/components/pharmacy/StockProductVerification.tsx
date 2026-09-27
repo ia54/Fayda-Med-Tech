@@ -6,7 +6,7 @@ import {Button} from '@/components/ui/button'
 import {Card,CardHeader,CardTitle,CardContent} from '@/components/ui/card'
 
 export function ProductDetails({product:p}:{product:StockProduct}){
- return <div className="space-y-1 break-words text-sm"><p className="font-semibold">Revision {p.revision} · {p.brand_name?`${p.brand_name} (${p.generic_name})`:p.generic_name}</p><p>{p.strength} · {p.dosage_form} · Manufacturer / supplier: {p.manufacturer}</p><p>Verified {p.verified_on} · Pharmacist #{p.actor_id}</p><p className="whitespace-pre-wrap">Source: {p.evidence}</p><p className="whitespace-pre-wrap">Reason: {p.reason}</p><p>Recorded {p.created_at}</p></div>
+ return <div className="space-y-1 break-words text-sm"><p className="font-semibold">Revision {p.revision} · {p.brand_name?`${p.brand_name} (${p.generic_name})`:p.generic_name}</p><p>{p.strength} · {p.dosage_form} · Manufacturer / supplier: {p.manufacturer}</p><p>Source package GTIN: {p.package_code||'Not verified — new labels require verification'}</p><p>Verified {p.verified_on} · Pharmacist #{p.actor_id}</p><p className="whitespace-pre-wrap">Source: {p.evidence}</p><p className="whitespace-pre-wrap">Reason: {p.reason}</p><p>Recorded {p.created_at}</p></div>
 }
 
 export function StockProductVerification({lot,role,page,changePage,refreshing}:{lot:PharmacyLotDetail;role:string;page:number;changePage:(page:number)=>void;refreshing:boolean}){
@@ -28,10 +28,11 @@ function ProductForm({lot,refreshing}:{lot:PharmacyLotDetail;refreshing:boolean}
  <Field name="strength" label="Verified product strength" defaultValue={p?.strength} maxLength={255}/>
  <Field name="dosage_form" label="Verified dosage form" defaultValue={p?.dosage_form} maxLength={255}/>
  <Field name="manufacturer" label="Manufacturer / supplier shown on source product" defaultValue={p?.manufacturer} maxLength={255}/>
+ <Field name="package_code" label="Exact source-package GTIN (8, 12, 13 or 14 digits)" defaultValue={p?.package_code||''} maxLength={14}/><p className="text-sm md:col-span-2">Verify the physical package barcode against this product, NDC, lot and expiry. Preserve leading zeros. A check digit does not authenticate a product; no NDC-to-GTIN conversion is inferred.</p>
  <Field name="verified_on" label="Product verification date" type="date"/>
  <label className="grid gap-1 text-sm md:col-span-2">Product source evidence and receipt match<textarea name="evidence" required maxLength={5000} className="border rounded p-2 bg-background"/></label>
  <label className="grid gap-1 text-sm md:col-span-2">Reason for verification or correction<textarea name="reason" required maxLength={2000} className="border rounded p-2 bg-background"/></label>
- <label className="flex gap-2 items-start text-sm md:col-span-2"><input name="confirmed" type="checkbox" required/>I checked the product details, brand status, NDC, lot and expiry against the source product and this receipt.</label>
+ <label className="flex gap-2 items-start text-sm md:col-span-2"><input name="confirmed" type="checkbox" required/>I checked the exact package GTIN, product details, brand status, NDC, lot and expiry against the source product and this receipt.</label>
  <Button disabled={isLoading||refreshing}>{isLoading?'Saving verification…':'Save product verification'}</Button>
  </form></details>
 }

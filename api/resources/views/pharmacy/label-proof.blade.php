@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>Synthetic label proof — fill {{ $s['context']['fill']['id'] }} revision {{ $revision }}</title>
-<style>body{font:14px/1.45 Arial,sans-serif;color:#111;background:#fff;margin:20px}main{max-width:440px;border:2px solid #111;padding:18px;margin:auto;overflow-wrap:anywhere}h1{font-size:20px;margin:0 0 5px}.warning{font-weight:bold;border-bottom:2px solid #111;padding-bottom:8px}.patient,.directions{font-size:18px;font-weight:bold;white-space:pre-wrap}p{margin:8px 0}.meta{font-size:12px}.aux{white-space:pre-wrap}@media print{@page{margin:12mm}body{margin:0}main{max-width:none;border:2px solid #111}p{break-inside:avoid}}</style></head><body><main>
+<style>body{font:14px/1.45 Arial,sans-serif;color:#111;background:#fff;margin:20px}main{max-width:440px;border:2px solid #111;padding:18px;margin:auto;overflow-wrap:anywhere}h1{font-size:20px;margin:0 0 5px}.warning{font-weight:bold;border-bottom:2px solid #111;padding-bottom:8px}.patient,.directions{font-size:18px;font-weight:bold;white-space:pre-wrap}p{margin:8px 0}.meta{font-size:12px}.aux{white-space:pre-wrap}svg{max-width:100%;height:auto}@media print{@page{margin:12mm}body{margin:0}main{max-width:none;border:2px solid #111}p{break-inside:avoid}}</style></head><body><main>
 <p class="warning">SYNTHETIC PROOF — NOT FOR DISPENSING</p>
 <h1>{{ $s['context']['location']['name'] }}</h1><p>{{ $s['context']['location']['address'] }}</p>
 <p class="patient">{{ $s['context']['patient']['first_name'] }} {{ $s['context']['patient']['last_name'] }}</p>
@@ -16,5 +16,8 @@
 <p>Use by: {{ $s['decisions']['use_by'] }}</p>
 @if (!empty($s['decisions']['auxiliary_text']))<p class="aux">{{ $s['decisions']['auxiliary_text'] }}</p>@endif
 <p class="meta">Fill record {{ $s['context']['fill']['id'] }} · Label revision {{ $revision }} · Created by pharmacist #{{ $s['actor_id'] }}</p>
+@if (!empty($s['barcode_code']))
+<div style="background:white;padding:12px;overflow:hidden" aria-label="Internal label barcode"><div style="max-width:100%">{!! app(\App\Services\PharmacyBarcode::class)->svg($s['barcode_code']) !!}</div><p class="meta">{{ $s['barcode_code'] }}</p></div>
+@endif
 <p class="meta">Retained proof. Check current label status in the application before use. Printer sizing, physical output and professional acceptance are not validated.</p>
 </main></body></html>

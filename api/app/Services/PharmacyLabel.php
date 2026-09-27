@@ -38,7 +38,8 @@ class PharmacyLabel
     public function intact(object $label): bool
     {
         return hash_equals($label->sha256, hash('sha256', $label->document))
-            && hash_equals($label->snapshot_sha256, hash('sha256', $label->snapshot));
+            && hash_equals($label->snapshot_sha256, hash('sha256', $label->snapshot))
+            && (json_decode($label->snapshot, true, 512, JSON_THROW_ON_ERROR)['barcode_code'] ?? null) === $label->barcode_code;
     }
 
     public function summary(object $rx, object $fill): ?array
@@ -50,7 +51,7 @@ class PharmacyLabel
         return ['id' => $label->id, 'revision' => $label->revision, 'sha256' => $label->sha256, 'intact' => $intact,
             'fresh' => $intact && hash_equals($label->source_token, $this->token($this->context($rx, $fill))),
             'dispensed_on' => $data['decisions']['dispensed_on'] ?? null, 'use_by' => $data['decisions']['use_by'] ?? null,
-            'print_count' => DB::table('pharmacy_label_prints')->where('label_id', $label->id)->count()];
+            'barcode_supported' => (bool) $label->barcode_code, 'print_count' => DB::table('pharmacy_label_prints')->where('label_id', $label->id)->count()];
     }
 
     public function requireCurrent(object $rx, object $fill, int $labelId): object
@@ -70,6 +71,7 @@ class PharmacyLabel
         abort_unless(in_array($fill->fulfillment_status, ['pending', 'ready'], true) && $fill->review_status === 'approved', 422, 'An open fill with pharmacist approval is required.');
         $context = $this->context($rx, $fill);
         $product = $context['product'];
+        abort_unless($product && $product->package_code && app(PharmacyBarcode::class)->validPackageCode($product->package_code), 422, 'Verify the exact source-package GTIN before issuing a new label.');
         abort_unless($product && (int) ($context['review']['product_id'] ?? 0) === (int) $product->id, 422, 'Verify the current product and review this fill first.');
         abort_unless((int) ($context['review']['patient_version'] ?? 0) === (int) ($context['patient']->version ?? 0)
             && (int) ($context['review']['source_last_id'] ?? 0) === (int) $context['source_last_id'], 422, 'Patient or prescription evidence needs a fresh pharmacist review.');

@@ -27,7 +27,7 @@ export function HandoverFields({delivery}:{delivery:boolean}) {
   <label className="grid gap-1 text-sm">Counseling outcome<select required name="counseling" defaultValue="" className="border rounded h-10 px-3 bg-background"><option value="">Select the recorded outcome</option><option value="provided">Provided</option><option value="declined">Declined</option><option value="documented_remote">Documented remote counseling</option></select></label>
   <Field name="handover_counseling_reference" label="Counseling / offer and refusal evidence reference" maxLength={2000}/>
   <label className="flex items-start gap-2 text-sm"><input required type="checkbox" name="handover_confirmed" className="mt-1"/>I verified the recipient and any representative authority, checked this fill and label, and confirmed actual receipt and the recorded counseling outcome.</label>
-  <p className="text-xs text-muted-foreground">Synthetic preview only. These entries retain your checks; identity services, delivery integration and physical barcode verification are not connected.</p>
+  <p className="text-xs text-muted-foreground">Synthetic preview only. These entries retain your checks; identity and delivery integrations and physical scanner acceptance are still pending.</p>
  </fieldset>
 }
 

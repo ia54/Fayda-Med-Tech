@@ -66,3 +66,8 @@ Internal recall notices entered in error now support retained correction request
 ### Recipient handover evidence increment
 
 New pickup/delivery completion requires retained recipient identity-check and counseling evidence, representative authority when applicable, and confirmed recipient delivery evidence. Handover dates cannot precede final preparation. The recording pharmacist, timestamp and prepared label remain linked; failed audit writes roll back inventory and completion together. Historical records gain no inferred checks. Physical identity/barcode/delivery procedures, failed-delivery custody, completed-record correction and professional acceptance remain outstanding. Local, CI and synthetic browser evidence is recorded with the published increment.
+
+
+### Package and label code-check increment
+
+Exact pharmacist-verified package GTINs, unique retained Code 128 label proofs and preparation/handover code matching are implemented. Manual entry requires evidence and is distinguished from reported scanner input. Current source/product/label, inventory and clinical controls remain in force; historical records gain no inferred package or scan verification. Physical printer/scanner acceptance, unsupported/GS1 compound payloads, package association and operating procedures remain outstanding. Synthetic validation and independent image-decoder evidence are retained with the published increment.
