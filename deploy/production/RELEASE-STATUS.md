@@ -25,7 +25,7 @@ Not deployed. The public website and existing production application are separat
 
 ## Implemented pharmacy foundation
 
-Multi-location access, independent patient charts, intake, stock reservation and recorded handover/billing; private original prescription evidence; discontinuation and retained replacement links; formulation/worksheet review; ingredient receipt/quarantine/reservation; exact-quantity execution and independent documentary review; append-only addenda; independent ingredient-count reconciliation; receipt-specific ingredient and medication recall holds with allocation/fill tracing. None of these entries claims the remaining operational workflows above are complete.
+Multi-location access, independent patient charts, intake, stock reservation and recorded handover/billing; private original prescription evidence; discontinuation and retained replacement links; formulation/worksheet review; ingredient receipt/quarantine/reservation; exact-quantity execution and independent documentary review; append-only addenda; independent ingredient and medication count reconciliation; receipt-specific ingredient and medication recall holds with allocation/fill tracing. None of these entries claims the remaining operational workflows above are complete.
 
 ## Working order
 

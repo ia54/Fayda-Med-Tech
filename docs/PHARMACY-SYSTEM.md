@@ -130,6 +130,14 @@ Compounding adds a versioned formulation and a production batch between prescrip
 
 Intake supports independent pharmacy patient charts and the legacy case-party/client path. Patients using a pharmacy chart do not require a portal login. Keep a stable link to existing case/client identifiers rather than merging patients by email.
 
+## Medication physical-count reconciliation
+
+Assigned pharmacy staff can record a retained discrepancy between the physical medication count and the receipt balance. The receipt enters quarantine immediately, without changing on-hand or reserved quantities. A different assigned pharmacist must apply or reject the proposal with evidence. Applying uses fixed-precision quantities, requires the receipt version to remain unchanged and cannot reduce the balance below reservations. Both decisions retain quarantine until a separate pharmacist stock-status review.
+
+Cancellation of an open fill changes the stock version: reject the stale proposal and recount after reservations are resolved. Recall holds supersede counts: they block new counts and application of pending adjustments; rejecting an obsolete proposal does not clear the recall. Conflicting retries, repeat reviews, same-person review, other locations/organizations and unauthorized roles are rejected. Stock/count/audit changes commit together; audit failure rolls back the entire action. Count history is paginated and retained, and affected prescriptions display quarantine guidance.
+
+This reconciles physically observed stock only. It does not record purchase corrections, transfer, disposal, return, controlled-substance loss reporting or professional acceptance. Physically present damaged stock belongs in the count; removing it requires its own disposition workflow. Synthetic-only restrictions remain.
+
 ## Medication stock recall holds and fill trace
 
 Assigned pharmacists can record a retained recall hold on a specific medication receipt, with notice reference, receipt-match evidence, actor and time. Exact retries return the retained record without duplicate stock events; conflicting or stale submissions fail. The hold and stock event commit together. Ordinary quarantine/release cannot clear a recall hold. Recorded on-hand and reserved quantities remain unchanged until explicit existing stock actions occur.
