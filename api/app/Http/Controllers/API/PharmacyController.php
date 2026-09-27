@@ -201,7 +201,7 @@ class PharmacyController extends Controller
 
     public function index(Request $r)
     {
-        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'attention' => 'nullable|in:discontinued_work', 'search' => 'nullable|string|max:100']);
+        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'attention' => 'nullable|in:discontinued_work,allowance_correction', 'search' => 'nullable|string|max:100']);
         $q = DB::table('pharmacy_prescriptions as rx')->join('pharmacy_episodes as ep', 'ep.id', '=', 'rx.episode_id')->leftJoin('users as patient', 'patient.id', '=', 'ep.patient_id')->leftJoin('pharmacy_patients as chart', 'chart.id', '=', 'ep.pharmacy_patient_id')->join('cases', 'cases.id', '=', 'ep.case_id')->where('rx.organization_id', $this->org($r));
         app(PharmacyAccess::class)->scope($q, $r->user(), 'rx.location_id');
         $latest = DB::table('pharmacy_fills')->selectRaw('prescription_id, MAX(id) AS latest_fill_id')->groupBy('prescription_id');
@@ -211,7 +211,13 @@ class PharmacyController extends Controller
             ->where('b.organization_id', $this->org($r))->where('a.status', 'reserved')->selectRaw('b.prescription_id, b.location_id, COUNT(DISTINCT b.id) AS reserved_batch_count')->groupBy('b.prescription_id', 'b.location_id');
         $q->leftJoinSub($openFills, 'open_fills', fn ($join) => $join->on('open_fills.prescription_id', '=', 'rx.id'))
             ->leftJoinSub($reservedBatches, 'reserved_batches', fn ($join) => $join->on('reserved_batches.prescription_id', '=', 'rx.id')->on('reserved_batches.location_id', '=', 'rx.location_id'));
-        if (! empty($v['attention'])) {
+        $pendingCorrections = DB::table('pharmacy_allowance_corrections as ac')->join('pharmacy_allowance_closures as cl', 'cl.id', '=', 'ac.closure_id')
+            ->where('ac.status', 'pending')->selectRaw('cl.prescription_id, COUNT(*) AS pending_correction_count')->groupBy('cl.prescription_id');
+        $q->leftJoinSub($pendingCorrections, 'pending_corrections', fn ($join) => $join->on('pending_corrections.prescription_id', '=', 'rx.id'));
+        if (($v['attention'] ?? null) === 'allowance_correction') {
+            $q->where('pending_corrections.pending_correction_count', '>', 0);
+        }
+        if (($v['attention'] ?? null) === 'discontinued_work') {
             $q->whereNotNull('rx.discontinued_at')->where(fn ($q) => $q->where('open_fills.open_fill_count', '>', 0)->orWhere('reserved_batches.reserved_batch_count', '>', 0));
         }
         if (! empty($v['stage'])) {
@@ -240,7 +246,7 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
+        return response()->json(['data' => $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(pending_corrections.pending_correction_count, 0) AS pending_correction_count')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
     }
 
     public function show(Request $r, $id)
@@ -377,6 +383,7 @@ class PharmacyController extends Controller
             abort_if($rx->controlled || $rx->compounded, 422, 'This closure workflow does not apply to controlled or compounded prescriptions.');
             abort_if($rx->discontinued_at || $rx->expires_on < now()->toDateString(), 422, 'This prescription is no longer active for further supply.');
             $balance = app(PharmacyQuantity::class)->balance($rx);
+            abort_if($balance['pending_correction_id'], 422, 'Resolve the pending allowance correction before changing prescription quantities.');
             abort_unless(hash_equals($balance['ledger_token'], $d['ledger_token']), 409, 'The prescription quantity record changed. Refresh and review it before closing a remainder.');
             $fills = DB::table('pharmacy_fills')->where('prescription_id', $rx->id);
             abort_if((clone $fills)->whereNotIn('fulfillment_status', ['collected', 'delivered', 'cancelled'])->exists(), 422, 'Resolve the open fill before closing a remainder.');
@@ -397,6 +404,58 @@ class PharmacyController extends Controller
             $this->event($r, $rx, 'allowance_remainder_closed', ['closure_id' => $closureId, 'authorization_number' => $d['authorization_number'],
                 'quantity' => $group['remaining'], 'basis' => $d['basis'], 'occurred_on' => $d['occurred_on'], 'reason' => $d['reason'], 'evidence' => $d['evidence']]);
         });
+        return $this->show($r, $id);
+    }
+
+    public function requestAllowanceCorrection(Request $r, $id, $closureId)
+    {
+        $this->allow($r, ['pharmacist']);
+        $rx = $this->rx($r, $id, true);
+        $closure = DB::table('pharmacy_allowance_closures')->where('prescription_id', $rx->id)->where('id', $closureId)->first();
+        abort_unless($closure, 404);
+        $d = $r->validate(['request_id' => 'required|uuid', 'ledger_token' => 'required|string|regex:/^[a-f0-9]{64}$/D', 'reason' => 'required|string|max:2000', 'evidence' => 'required|string|max:2000', 'confirmed' => 'required|accepted']);
+        $old = DB::table('pharmacy_allowance_corrections')->where('closure_id', $closure->id)->where('request_id', $d['request_id'])->first();
+        if ($old) {
+            abort_unless((int) $old->created_by === (int) $r->user()->id && hash_equals($old->request_hash, $this->hash($d)), 409, 'This request already has different retained correction evidence.');
+            return $this->show($r, $id);
+        }
+        $balance = app(PharmacyQuantity::class)->balance($rx);
+        abort_unless(hash_equals($balance['ledger_token'], $d['ledger_token']), 409, 'The quantity history changed. Refresh before requesting a correction.');
+        abort_if($balance['pending_correction_id'], 409, 'Resolve the pending correction first.');
+        abort_unless($balance['correctable_closure_id'] === (int) $closure->id, 422, 'This closure cannot be reopened: the prescription must be active and unrestricted, with no open fill or later supply.');
+        $correctionId = DB::table('pharmacy_allowance_corrections')->insertGetId([
+            'closure_id' => $closure->id, 'created_by' => $r->user()->id, 'request_id' => $d['request_id'], 'request_hash' => $this->hash($d),
+            'ledger_token' => '', 'reason' => $d['reason'], 'evidence' => $d['evidence'], 'created_at' => now(),
+        ]);
+        $reviewToken = app(PharmacyQuantity::class)->balance($rx)['ledger_token'];
+        DB::table('pharmacy_allowance_corrections')->where('id', $correctionId)->update(['ledger_token' => $reviewToken]);
+        $this->event($r, $rx, 'allowance_correction_requested', ['correction_id' => $correctionId, 'closure_id' => $closure->id, 'quantity' => $closure->quantity, 'reason' => $d['reason'], 'evidence' => $d['evidence']]);
+        return $this->show($r, $id);
+    }
+
+    public function reviewAllowanceCorrection(Request $r, $id, $correctionId)
+    {
+        $this->allow($r, ['pharmacist']);
+        $rx = $this->rx($r, $id, true);
+        $correction = DB::table('pharmacy_allowance_corrections as c')->join('pharmacy_allowance_closures as cl', 'cl.id', '=', 'c.closure_id')
+            ->where('cl.prescription_id', $rx->id)->where('c.id', $correctionId)->select('c.*')->first();
+        abort_unless($correction, 404);
+        $d = $r->validate(['request_id' => 'required|uuid', 'decision' => 'required|in:apply,reject', 'ledger_token' => 'required|string|regex:/^[a-f0-9]{64}$/D', 'evidence' => 'required|string|max:2000', 'confirmed' => 'required|accepted']);
+        if ($correction->status !== 'pending') {
+            abort_unless((int) $correction->reviewed_by === (int) $r->user()->id && $correction->review_request_id === $d['request_id'] && hash_equals($correction->review_hash, $this->hash($d)), 409, 'This correction already has a retained review.');
+            return $this->show($r, $id);
+        }
+        abort_if((int) $correction->created_by === (int) $r->user()->id, 422, 'A different assigned pharmacist must review the correction.');
+        if ($d['decision'] === 'apply') {
+            $balance = app(PharmacyQuantity::class)->balance($rx);
+            abort_unless(hash_equals($balance['ledger_token'], $d['ledger_token']) && hash_equals($correction->ledger_token, $d['ledger_token']), 409, 'The quantity history changed. Reject this stale request and reassess.');
+            abort_unless($balance['correctable_closure_id'] === (int) $correction->closure_id, 422, 'This closure is no longer eligible to reopen. Reject the request and resolve the prescription history.');
+        }
+        DB::table('pharmacy_allowance_corrections')->where('id', $correction->id)->update([
+            'status' => $d['decision'] === 'apply' ? 'applied' : 'rejected', 'reviewed_by' => $r->user()->id, 'review_request_id' => $d['request_id'],
+            'review_hash' => $this->hash($d), 'review_evidence' => $d['evidence'], 'reviewed_at' => now(),
+        ]);
+        $this->event($r, $rx, $d['decision'] === 'apply' ? 'allowance_correction_applied' : 'allowance_correction_rejected', ['correction_id' => $correction->id, 'closure_id' => $correction->closure_id, 'evidence' => $d['evidence']]);
         return $this->show($r, $id);
     }
 
@@ -424,6 +483,7 @@ class PharmacyController extends Controller
                 $this->fail('Resolve the open fill before creating another.');
             }
             $balance = app(PharmacyQuantity::class)->balance($rx);
+            abort_if($balance['pending_correction_id'], 422, 'Resolve the pending allowance correction before changing prescription quantities.');
             if (! $balance['next_authorization_number']) {
                 $this->fail('No authorized fills remain.');
             }

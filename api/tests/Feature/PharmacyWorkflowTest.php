@@ -1697,6 +1697,189 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson('/api/pharmacy/prescriptions')->assertForbidden();
     }
 
+    public function test_allowance_correction_preserves_fractional_quantity_and_expiry_at_review(): void
+    {
+        $rx = $this->rx(['quantity' => '0.300', 'refills_authorized' => 0, 'expires_on' => now()->toDateString()]); $lot = $this->lot();
+        $fill = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '0.100', 'partial_reason' => 'Synthetic fractional partial']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $fill);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/allowances/close", $this->closureBody($rx))->assertOk()->assertJsonPath('data.quantity_balance.next_authorization_number', null);
+        $closure = DB::table('pharmacy_allowance_closures')->where('prescription_id', $rx)->value('id');
+        $url = "/api/pharmacy/prescriptions/$rx/allowances/$closure/corrections";
+        $correction = $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertOk()->json('data.quantity_balance.pending_correction_id');
+        $reviewer = $this->independentReviewer();
+        $reviewer->withAccessToken(new Token(['expires_at' => now()->addDays(2)]));
+        $this->actingAs($reviewer, 'api');
+        $review = $this->allowanceCorrectionReview($rx); $reviewUrl = "/api/pharmacy/prescriptions/$rx/allowance-corrections/$correction/review";
+        $this->travel(1)->days();
+        // No row changed, but an expired prescription must still fail at independent review.
+        $this->postJson($reviewUrl, $review)->assertUnprocessable();
+        $this->travelBack();
+        $this->postJson($reviewUrl, $review)->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '0.200')
+            ->assertJsonPath('data.quantity_balance.next_authorization_number', 1)->assertJsonPath('data.quantity_balance.allowances.0.handed_over', '0.100');
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '0.201']))->assertUnprocessable();
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '0.200']))->assertOk();
+    }
+
+    private function closedAllowanceFixture(): array
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $fill = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '4.000', 'partial_reason' => 'Synthetic partial']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $fill);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/allowances/close", $this->closureBody($rx))->assertOk();
+        return [$rx, $lot, (int) DB::table('pharmacy_allowance_closures')->where('prescription_id', $rx)->value('id')];
+    }
+
+    private function allowanceCorrectionBody(int $rx, array $changes = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'ledger_token' => $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.quantity_balance.ledger_token'), 'reason' => 'Synthetic wrong closure instruction', 'evidence' => 'Synthetic independently verifiable correction', 'confirmed' => true], $changes);
+    }
+
+    private function allowanceCorrectionReview(int $rx, array $changes = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'ledger_token' => $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.quantity_balance.ledger_token'), 'decision' => 'apply', 'evidence' => 'Synthetic independent authority review', 'confirmed' => true], $changes);
+    }
+
+    public function test_allowance_correction_independently_restores_same_remainder_without_stock_or_history_changes(): void
+    {
+        [$rx, $lot, $closure] = $this->closedAllowanceFixture();
+        $snapshot = [];
+        foreach (['pharmacy_allowance_closures', 'pharmacy_fills', 'pharmacy_stock_lots', 'pharmacy_stock_events', 'invoices', 'payments'] as $table) $snapshot[$table] = DB::table($table)->get();
+        $url = "/api/pharmacy/prescriptions/$rx/allowances/$closure/corrections"; $body = $this->allowanceCorrectionBody($rx);
+        $data = $this->postJson($url, $body)->assertOk()->json('data.quantity_balance'); $correction = $data['pending_correction_id'];
+        $this->assertNotNull($correction);
+        $this->getJson('/api/pharmacy/prescriptions?attention=allowance_correction')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.pending_correction_count', 1);
+        $this->assertSame('10.000', $data['available_quantity']);
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['evidence' => 'Changed']))->assertStatus(409);
+        $reviewUrl = "/api/pharmacy/prescriptions/$rx/allowance-corrections/$correction/review"; $review = $this->allowanceCorrectionReview($rx);
+        $this->postJson($reviewUrl, $review)->assertUnprocessable();
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertUnprocessable();
+        $this->postJson("/api/pharmacy/prescriptions/$rx/allowances/close", $this->closureBody($rx, ['authorization_number' => 2]))->assertUnprocessable();
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson($url, $body)->assertStatus(409);
+        $this->postJson($reviewUrl, $review)->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '6.000')
+            ->assertJsonPath('data.quantity_balance.next_authorization_number', 1)->assertJsonPath('data.quantity_balance.pending_correction_id', null)
+            ->assertJsonPath('data.quantity_balance.closure_history.0.corrected', true)->assertJsonPath('data.quantity_balance.closure_history.0.corrections.0.status', 'applied')
+            ->assertJsonMissingPath('data.quantity_balance.closure_history.0.corrections.0.request_hash');
+        $this->postJson($reviewUrl, $review)->assertOk();
+        $this->postJson($reviewUrl, array_replace($review, ['decision' => 'reject']))->assertStatus(409);
+        $this->getJson('/api/pharmacy/prescriptions?attention=allowance_correction')->assertOk()->assertJsonPath('data.total', 0);
+        foreach ($snapshot as $table => $rows) $this->assertEquals($rows, DB::table($table)->get(), $table);
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'allowance_correction_requested')->count());
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'allowance_correction_applied')->count());
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '6.001']))->assertUnprocessable();
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '6.000']))->assertOk()->assertJsonPath('data.fills.1.authorization_number', 1);
+        $this->deleteJson($reviewUrl)->assertStatus(405);
+    }
+
+    public function test_allowance_correction_rejects_later_supply_but_allows_cancelled_future_reservation(): void
+    {
+        [$rx, $lot, $closure] = $this->closedAllowanceFixture();
+        $url = "/api/pharmacy/prescriptions/$rx/allowances/$closure/corrections";
+        $next = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertOk()->json('data.fills.1');
+        $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertUnprocessable();
+        $this->act($rx, $next, 'cancel');
+        $request = $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertOk()->json('data.quantity_balance.pending_correction_id');
+        $this->actingAs($this->independentReviewer(), 'api');
+        $reviewUrl = "/api/pharmacy/prescriptions/$rx/allowance-corrections/$request/review";
+        $body = $this->allowanceCorrectionReview($rx, ['decision' => 'reject']);
+        $this->postJson($reviewUrl, $body)->assertOk()->assertJsonPath('data.quantity_balance.next_authorization_number', 2)->assertJsonPath('data.quantity_balance.available_quantity', '10.000');
+        $this->postJson($reviewUrl, $body)->assertOk();
+        $next = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertOk()->json('data.fills.2');
+        $this->complete($rx, $next);
+        $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertUnprocessable();
+        $this->assertSame(1, DB::table('pharmacy_allowance_corrections')->count());
+    }
+
+    public function test_allowance_correction_preserves_multiple_closure_and_rejection_decisions(): void
+    {
+        [$rx, $lot, $closure] = $this->closedAllowanceFixture(); $reviewer = $this->independentReviewer();
+        $firstClosure = DB::table('pharmacy_allowance_closures')->where('id', $closure)->first();
+        $url = "/api/pharmacy/prescriptions/$rx/allowances/$closure/corrections";
+        foreach (['reject', 'apply'] as $decision) {
+            $this->actingAs($this->actor, 'api');
+            $correction = $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertOk()->json('data.quantity_balance.pending_correction_id');
+            $this->actingAs($reviewer, 'api');
+            $this->postJson("/api/pharmacy/prescriptions/$rx/allowance-corrections/$correction/review", $this->allowanceCorrectionReview($rx, ['decision' => $decision]))->assertOk();
+        }
+        $this->postJson("/api/pharmacy/prescriptions/$rx/allowances/close", $this->closureBody($rx, ['reason' => 'Synthetic subsequent verified instruction']))->assertOk()
+            ->assertJsonPath('data.quantity_balance.closure_history.0.corrected', true)->assertJsonPath('data.quantity_balance.closure_history.1.corrected', false)
+            ->assertJsonPath('data.quantity_balance.available_quantity', '10.000');
+        $this->assertEquals($firstClosure, DB::table('pharmacy_allowance_closures')->where('id', $closure)->first());
+        $this->assertSame(2, DB::table('pharmacy_allowance_closures')->count());
+        $this->assertSame(2, DB::table('pharmacy_allowance_corrections')->count());
+        $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertUnprocessable();
+    }
+
+    public function test_allowance_correction_stale_or_stopped_records_can_be_rejected_but_not_applied(): void
+    {
+        [$rx, $lot, $closure] = $this->closedAllowanceFixture();
+        $url = "/api/pharmacy/prescriptions/$rx/allowances/$closure/corrections";
+        $correction = $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertOk()->json('data.quantity_balance.pending_correction_id');
+        $review = $this->allowanceCorrectionReview($rx);
+        $this->stopPrescription($rx)->assertOk();
+        $this->actingAs($this->independentReviewer(), 'api');
+        $reviewUrl = "/api/pharmacy/prescriptions/$rx/allowance-corrections/$correction/review";
+        $this->postJson($reviewUrl, $review)->assertStatus(409);
+        $this->postJson($reviewUrl, $this->allowanceCorrectionReview($rx))->assertStatus(409);
+        $this->postJson($reviewUrl, array_replace($review, ['decision' => 'reject']))->assertOk()->assertJsonPath('data.quantity_balance.pending_correction_id', null);
+        $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertUnprocessable();
+    }
+
+    public function test_allowance_correction_roles_scope_confirmation_and_restrictions(): void
+    {
+        [$rx, $lot, $closure] = $this->closedAllowanceFixture();
+        $url = "/api/pharmacy/prescriptions/$rx/allowances/$closure/corrections"; $body = $this->allowanceCorrectionBody($rx);
+        foreach ([['confirmed' => false], ['reason' => ''], ['evidence' => ''], ['ledger_token' => 'invalid']] as $invalid) $this->postJson($url, array_replace($body, $invalid))->assertUnprocessable();
+        $this->postJson($url, array_replace($body, ['ledger_token' => str_repeat('a', 64)]))->assertStatus(409);
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save(); $this->postJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['organization_id' => 2]); $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['organization_id' => 1]);
+        foreach ([['controlled' => true], ['compounded' => true], ['expires_on' => now()->subDay()->toDateString()]] as $change) {
+            DB::table('pharmacy_prescriptions')->where('id', $rx)->update($change);
+            $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertUnprocessable();
+            DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['controlled' => false, 'compounded' => false, 'expires_on' => now()->addYear()->toDateString()]);
+        }
+        $other = $this->rx();
+        $this->postJson("/api/pharmacy/prescriptions/$other/allowances/$closure/corrections", $body)->assertNotFound();
+        $correction = $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertOk()->json('data.quantity_balance.pending_correction_id');
+        $this->postJson($url, $this->allowanceCorrectionBody($rx))->assertStatus(409);
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $review = $this->allowanceCorrectionReview($rx); $reviewUrl = "/api/pharmacy/prescriptions/$rx/allowance-corrections/$correction/review";
+        $this->postJson("/api/pharmacy/prescriptions/$other/allowance-corrections/$correction/review", $review)->assertNotFound();
+        $reviewer->role = 'pharmacy_technician'; $reviewer->save(); $this->postJson($reviewUrl, $review)->assertForbidden();
+        $reviewer->role = 'pharmacist'; $reviewer->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->postJson($reviewUrl, $review)->assertNotFound();
+        $this->getJson('/api/pharmacy/prescriptions?attention=allowance_correction')->assertOk()->assertJsonPath('data.total', 0);
+        $this->assertSame('pending', DB::table('pharmacy_allowance_corrections')->value('status'));
+    }
+
+    public function test_allowance_correction_audit_failures_roll_back_request_and_application(): void
+    {
+        [$rx, $lot, $closure] = $this->closedAllowanceFixture();
+        $url = "/api/pharmacy/prescriptions/$rx/allowances/$closure/corrections"; $body = $this->allowanceCorrectionBody($rx);
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) throw new \RuntimeException('Synthetic allowance correction audit failure');
+        });
+        $this->postJson($url, $body)->assertStatus(500); $fail = false;
+        $this->assertSame(0, DB::table('pharmacy_allowance_corrections')->count());
+        $correction = $this->postJson($url, $body)->assertOk()->json('data.quantity_balance.pending_correction_id');
+        $this->actingAs($this->independentReviewer(), 'api'); $review = $this->allowanceCorrectionReview($rx);
+        $reviewUrl = "/api/pharmacy/prescriptions/$rx/allowance-corrections/$correction/review";
+        $fail = true; $this->postJson($reviewUrl, $review)->assertStatus(500); $fail = false;
+        $this->assertSame('pending', DB::table('pharmacy_allowance_corrections')->value('status'));
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '10.000');
+        $this->postJson($reviewUrl, $review)->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '6.000');
+    }
+
     private function closureBody(int $rx, array $overrides = []): array
     {
         $balance = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.quantity_balance');

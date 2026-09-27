@@ -13,9 +13,9 @@ export function PrescriptionQuantity({rx,role,disabled,save}:{rx:PharmacyRx;role
   {b.allowances.map(a=><div key={a.number} className="border rounded p-3 space-y-2 break-words">
    <h3 className="font-semibold">{allowance(a.number)}</h3>
    <p>Handed over: {a.handed_over} · Reserved: {a.reserved} · Unreserved remainder: {a.remaining} {rx.quantity_unit}</p>
-   {a.closure&&<div className="border-t pt-2 space-y-2"><p className="font-semibold">Closed without supply: {a.closed_quantity} {rx.quantity_unit}</p><p>Basis: {a.closure.basis.replaceAll('_',' ')} · Effective {a.closure.occurred_on}</p><p>{a.closure.reason}</p><p>Evidence: {a.closure.evidence}</p><p className="text-sm text-muted-foreground">Recorded by pharmacist #{a.closure.actor_id} · {a.closure.created_at}. Stock and prior handovers are unchanged. This remainder cannot be reclaimed.</p></div>}
+   {a.closure&&<div className="border-t pt-2 space-y-2"><p className="font-semibold">Closed without supply: {a.closed_quantity} {rx.quantity_unit}</p><p>Basis: {a.closure.basis.replaceAll('_',' ')} · Effective {a.closure.occurred_on}</p><p>{a.closure.reason}</p><p>Evidence: {a.closure.evidence}</p><p className="text-sm text-muted-foreground">Recorded by pharmacist #{a.closure.actor_id} · {a.closure.created_at}. Stock and prior handovers are unchanged. This remainder is unavailable unless a retained correction is independently applied.</p></div>}
   </div>)}
-  {rx.discontinued_at?<p>This prescription is discontinued. The quantities above are retained history and cannot authorize another supply.</p>:b.next_authorization_number?<p>Available for a future reservation: {b.available_quantity} {rx.quantity_unit} under {allowance(b.next_authorization_number).toLowerCase()}. Resolve any open fill first.</p>:<p>No authorized allowances remain.</p>}
+  {b.pending_correction_id?<p>New reservations are held pending independent allowance-correction review.</p>:rx.discontinued_at?<p>This prescription is discontinued. The quantities above are retained history and cannot authorize another supply.</p>:b.next_authorization_number?<p>Available for a future reservation: {b.available_quantity} {rx.quantity_unit} under {allowance(b.next_authorization_number).toLowerCase()}. Resolve any open fill first.</p>:<p>No authorized allowances remain.</p>}
   <p className="text-sm text-muted-foreground">Remaining quantity does not establish that dispensing is clinically appropriate or due. A pharmacist must verify every supply. Allowances cannot be pooled, and historical partial quantities cannot be reclaimed here.</p>
   {!rx.discontinued_at&&role==='pharmacist'&&b.closable_authorization_number!==null&&<CloseRemainder key={b.ledger_token} number={b.closable_authorization_number} quantity={b.available_quantity} unit={rx.quantity_unit} token={b.ledger_token} disabled={disabled} save={save}/>}
  </CardContent></Card>
@@ -24,12 +24,12 @@ function CloseRemainder({number,quantity,unit,token,disabled,save}:{number:numbe
  const [requestId]=useState(()=>crypto.randomUUID())
  return <details className="rounded border p-3"><summary className="cursor-pointer underline">Close remaining allowance</summary>
   <form className="grid gap-3 mt-3" onSubmit={e=>{e.preventDefault();save({...Object.fromEntries(new FormData(e.currentTarget)),request_id:requestId,ledger_token:token,authorization_number:number,confirmed:true})}}>
-   <p>Close the unsupplied {quantity} {unit} from {allowance(number).toLowerCase()} only after reviewing the patient’s request or prescriber’s instruction. The retained decision cannot be undone here. It does not dispense, return or destroy stock, cancel the prescription, or authorize an early refill. Any later supply needs its own pharmacist review.</p>
+   <p>Close the unsupplied {quantity} {unit} from {allowance(number).toLowerCase()} only after reviewing the patient’s request or prescriber’s instruction. The original decision is retained. Correcting an error requires a separate request and independent pharmacist review. It does not dispense, return or destroy stock, cancel the prescription, or authorize an early refill. Any later supply needs its own pharmacist review.</p>
    <Choice name="basis" label="Supporting authority" options={['patient_request','prescriber_instruction']}/>
    <Field name="occurred_on" label="Decision date" type="date"/>
    <Field name="reason" label="Reason for closing this remainder" maxLength={2000}/>
    <Field name="evidence" label="Patient request / prescriber instruction evidence" maxLength={2000}/>
-   <label className="flex items-start gap-2 text-sm"><input type="checkbox" required/>I reviewed the authority and quantity. This closes the unsupplied remainder permanently without restoring it to another allowance.</label>
+   <label className="flex items-start gap-2 text-sm"><input type="checkbox" required/>I reviewed the authority and quantity. This closes the unsupplied remainder without moving it to another allowance.</label>
    <Button variant="destructive" disabled={disabled}>Close {quantity} {unit} without supply</Button>
   </form>
  </details>
