@@ -1,0 +1,57 @@
+name: Production-origin web build
+on:
+  pull_request:
+    paths: ['admin-panel/**', 'frontend/**', 'deploy/production/**', '.github/workflows/web-release-build.yml']
+  push:
+    branches: [main]
+    paths: ['admin-panel/**', 'frontend/**', 'deploy/production/**', '.github/workflows/web-release-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: web-release-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  web-assets:
+    name: Linux production-origin asset candidate
+    runs-on: ubuntu-latest
+    container: node:22-bookworm
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_API_URL: https://api.faydamed.tech
+      NEXT_PUBLIC_API_BASE_URL: https://api.faydamed.tech/api
+      VITE_BASE_URL: https://api.faydamed.tech
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify asset packaging boundaries
+        run: node --test deploy/production/tests/web_asset_package.test.mjs
+      - name: Install locked admin dependencies
+        working-directory: admin-panel
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+      - name: Build admin for real API origin
+        working-directory: admin-panel
+        run: corepack pnpm build
+      - name: Install and build public website
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:security
+          npm run build
+      - name: Assemble and inspect candidate without starting a listener
+        run: node deploy/production/web_asset_package.mjs "$GITHUB_WORKSPACE" "$RUNNER_TEMP/fayda-web-candidate"
+      - name: Retain verified candidate files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: faydamed-web-candidate-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/fayda-web-candidate/*.tar.gz
+            ${{ runner.temp }}/fayda-web-candidate/BUILD-RECORD.json
+            ${{ runner.temp }}/fayda-web-candidate/WEB-ASSET-MANIFEST.json
+          if-no-files-found: error
+          retention-days: 14
