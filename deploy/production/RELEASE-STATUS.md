@@ -39,4 +39,10 @@ Local preview credentials, OAuth keys, databases and patient-like fixtures stay 
 
 ### Product verification increment
 
-Receipt-specific immutable product verification and review freshness checks are implemented in the current worktree. Container labels, retained label/reprint artifacts, barcode checks and licensed catalogue/substitution workflows remain outstanding. Existing and transferred receipts require actual source-product verification; there is no inferred legacy backfill. See `docs/PHARMACY-SYSTEM.md`. Local and branch validation results are recorded with the final published increment.
+Receipt-specific immutable product verification and review freshness checks are implemented in the current worktree. Retained synthetic label and print records are covered by the following increment. Validated container labels, barcode checks and licensed catalogue/substitution workflows remain outstanding. Existing and transferred receipts require actual source-product verification; there is no inferred legacy backfill. See `docs/PHARMACY-SYSTEM.md`. Local and branch validation results are recorded with the final published increment.
+
+### Label proof increment
+
+Retained synthetic HTML label documents, immutable revisions, scoped retrieval, separately recorded print evidence and label-bound preparation/handover controls are implemented. Physical printer/container formats, barcode/medication-guide and purchaser-receipt workflows, completed-supply relabeling procedures and responsible-pharmacist acceptance remain outstanding. No proof is an operationally validated dispensing label; all are visibly marked synthetic.
+
+Local label validation: 210 tests / 3,377 assertions; optimized admin build/type checks pass (119 static pages); 66 protected pharmacy route declarations / 309 total and 3,104 role decisions. Chrome verifies conflicting-substitution rejection, immutable corrected proofs, missing-print rejection, label-bound preparation, and cancellation without handover/billing. Read-back confirms unchanged earlier fills, intact document/snapshot hashes, and the test reservation released. Production and physical-label acceptance remain unverified.

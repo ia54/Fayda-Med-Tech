@@ -87,6 +87,12 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::put('/patients/{id}/clinical', [\App\Http\Controllers\API\PharmacyPatientController::class, 'clinical']);
         Route::get('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'index']);
         Route::put('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'save']);
+        $labels = \App\Http\Controllers\API\PharmacyLabelController::class;
+        Route::get('/prescriptions/{id}/fills/{fillId}/labels', [$labels, 'index']);
+        Route::post('/prescriptions/{id}/fills/{fillId}/labels', [$labels, 'store']);
+        Route::get('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/file', [$labels, 'file']);
+        Route::get('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/prints', [$labels, 'prints']);
+        Route::post('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/prints', [$labels, 'recordPrint']);
         Route::get('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'locations']);
         Route::post('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'storeLocation']);
         Route::get('/recall-notices', [\App\Http\Controllers\API\PharmacyRecallController::class, 'index']);

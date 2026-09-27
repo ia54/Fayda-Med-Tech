@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\PharmacyAccess;
 use App\Services\PharmacyStock;
 use App\Services\PharmacyProduct;
+use App\Services\PharmacyLabel;
 use App\Services\PharmacyQuantity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -247,6 +248,7 @@ class PharmacyController extends Controller
             $f->current_product = $stock ? app(PharmacyProduct::class)->current((int) $stock->id) : null;
             $f->reviewed_product = $stock && ! empty($f->review['product_id'])
                 ? DB::table('pharmacy_stock_products')->where('stock_lot_id', $stock->id)->where('id', $f->review['product_id'])->first(PharmacyProduct::FIELDS) : null;
+            $f->current_label = app(PharmacyLabel::class)->summary($rx, $f);
             if ($f->invoice_id) {
                 $inv = Invoice::withSum('payments as total_paid', 'amount')->find($f->invoice_id);
                 $f->invoice = $inv?->only(['id', 'invoice_number', 'amount', 'status', 'total_paid']);
@@ -429,7 +431,7 @@ class PharmacyController extends Controller
 
     public function fillAction(Request $r, $id, $fillId)
     {
-        $d = $r->validate(['version' => 'required|integer|min:1', 'action' => 'required|in:approve,hold,cancel,ready,collected,delivered,prepare_claim,record_submission,record_denial,record_maps', 'note' => 'required|string|max:2000', 'product_id' => 'nullable|integer|min:1', 'checks' => 'sometimes|array:identity,prescriber,therapy,product,label', 'checks.identity' => 'sometimes|accepted', 'checks.prescriber' => 'sometimes|accepted', 'checks.therapy' => 'sometimes|accepted', 'checks.product' => 'sometimes|accepted', 'checks.label' => 'sometimes|accepted', 'occurred_on' => 'nullable|date_format:Y-m-d|before_or_equal:today', 'reference' => 'nullable|string|max:255', 'amount' => 'nullable|numeric|min:0.01|max:99999999.99|decimal:0,2', 'counseling' => 'nullable|in:provided,declined,documented_remote', 'maps_status' => 'nullable|in:not_applicable,pending,submitted', 'maps_reference' => 'nullable|string|max:255', 'denial_type' => 'nullable|in:coverage,coding,medical_necessity,cost,no_response', 'determination_on' => 'nullable|date_format:Y-m-d|before_or_equal:today']);
+        $d = $r->validate(['version' => 'required|integer|min:1', 'action' => 'required|in:approve,hold,cancel,ready,collected,delivered,prepare_claim,record_submission,record_denial,record_maps', 'note' => 'required|string|max:2000', 'product_id' => 'nullable|integer|min:1', 'label_id' => 'nullable|integer|min:1', 'checks' => 'sometimes|array:identity,prescriber,therapy,product,label', 'checks.identity' => 'sometimes|accepted', 'checks.prescriber' => 'sometimes|accepted', 'checks.therapy' => 'sometimes|accepted', 'checks.product' => 'sometimes|accepted', 'checks.label' => 'sometimes|accepted', 'occurred_on' => 'nullable|date_format:Y-m-d|before_or_equal:today', 'reference' => 'nullable|string|max:255', 'amount' => 'nullable|numeric|min:0.01|max:99999999.99|decimal:0,2', 'counseling' => 'nullable|in:provided,declined,documented_remote', 'maps_status' => 'nullable|in:not_applicable,pending,submitted', 'maps_reference' => 'nullable|string|max:255', 'denial_type' => 'nullable|in:coverage,coding,medical_necessity,cost,no_response', 'determination_on' => 'nullable|date_format:Y-m-d|before_or_equal:today']);
         DB::transaction(function () use ($r, $id, $fillId, $d) {
             $rx = $this->rx($r, $id, true);
             $f = DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->where('id', $fillId)->lockForUpdate()->first();
@@ -573,6 +575,19 @@ class PharmacyController extends Controller
             }
             if (in_array($a, ['ready', 'collected', 'delivered', 'cancel'], true)) {
                 app(PharmacyStock::class)->transition($r->user(), $rx, $f, $a);
+            }
+            if (in_array($a, ['ready', 'collected', 'delivered'], true)) {
+                $priorFulfillment = $this->json($f->fulfillment);
+                $labelId = $a === 'ready' ? (int) ($d['label_id'] ?? 0) : (int) ($priorFulfillment['prepared_label_id'] ?? 0);
+                $label = app(PharmacyLabel::class)->requireCurrent($rx, $f, $labelId);
+                abort_unless(DB::table('pharmacy_label_prints')->where('label_id', $labelId)->exists(), 422, 'Record label print evidence before the final product and label check.');
+                $labelData = $this->json($label->snapshot);
+                if ($a === 'ready') {
+                    $update['fulfillment'] = json_encode($priorFulfillment + ['prepared_label_id' => $labelId, 'prepared_label_sha256' => $label->sha256, 'prepared_at' => now()->toIso8601String()], JSON_THROW_ON_ERROR);
+                } else {
+                    abort_if($d['occurred_on'] < $labelData['decisions']['dispensed_on'] || $d['occurred_on'] > $labelData['decisions']['use_by'], 422, 'Handover date does not fit the retained label dates.');
+                    $update['fulfillment'] = json_encode($priorFulfillment + $d + ['actor_id' => $r->user()->id], JSON_THROW_ON_ERROR);
+                }
             }
             DB::table('pharmacy_fills')->where('id', $f->id)->update($update + ['version' => $f->version + 1, 'updated_at' => now()]);
             $this->event($r, $rx, $a, ['fill_id' => $f->id, 'previous' => ['review_status' => $f->review_status, 'fulfillment_status' => $f->fulfillment_status, 'claim_status' => $f->claim_status], 'input' => $d]);

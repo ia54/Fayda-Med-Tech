@@ -1129,9 +1129,224 @@ class PharmacyWorkflowTest extends TestCase
 
     private function act(int $rx, array $f, string $a, array $extra = [], $status = 200): array
     {
+        if ($a === 'ready' && $status === 200 && ! array_key_exists('label_id', $extra)) {
+            $f = $this->labelFixture($rx, $f);
+            $extra['label_id'] = $f['current_label']['id'];
+        }
         $result = $this->postJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions", array_replace(['version' => $f['version'], 'product_id' => $f['current_product']['id'] ?? null, 'action' => $a, 'note' => 'Synthetic evidence'], $extra))->assertStatus($status);
 
         return $status === 200 ? collect($result->json('data.fills'))->firstWhere('id', $f['id']) : $f;
+    }
+
+    private function labelBody(int $rx, array $fill, array $overrides = []): array
+    {
+        $state = $this->getJson("/api/pharmacy/prescriptions/$rx/fills/{$fill['id']}/labels")->assertOk()->json('data');
+        return array_replace(['request_id' => (string) Str::uuid(), 'version' => $state['fill_version'],
+            'source_token' => $state['source_token'], 'previous_label_id' => $state['current']['id'] ?? 0,
+            'dispensed_on' => now()->toDateString(), 'use_by' => now()->toDateString(),
+            'use_by_reference' => 'SYNTHETIC package and policy basis only', 'substituted' => false, 'daw' => false,
+            'selection_reference' => 'SYNTHETIC selection check', 'notification_reference' => null,
+            'do_not_label' => false, 'disclosure_reference' => null, 'auxiliary_text' => 'SYNTHETIC storage instructions',
+            'reason' => 'SYNTHETIC initial proof', 'confirmed' => true], $overrides);
+    }
+
+    private function printBody(array $overrides = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'copies' => 1, 'occurred_on' => now()->toDateString(),
+            'reason' => 'SYNTHETIC print simulation', 'reference' => 'No physical printer used; synthetic acceptance fixture', 'confirmed' => true], $overrides);
+    }
+
+    private function labelFixture(int $rx, array $fill): array
+    {
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$fill['id']}/labels";
+        $label = $this->postJson($url, $this->labelBody($rx, $fill))->assertCreated()->json('data.current');
+        $this->postJson("$url/{$label['id']}/prints", $this->printBody())->assertCreated();
+        return collect($this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.fills'))->firstWhere('id', $fill['id']);
+    }
+
+    public function test_labels_retain_escaped_documents_with_snapshot_integrity_and_replay_guards(): void
+    {
+        $rx = $this->rx(['directions' => '<script>alert("synthetic")</script> SYNTHETIC directions']);
+        $f = $this->act($rx, $this->fill($rx, $this->lot()), 'approve', $this->checks());
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels";
+        $body = $this->labelBody($rx, $f);
+        $label = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.current.fresh', true)->json('data.current');
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.current.id', $label['id']);
+        $this->postJson($url, array_replace($body, ['reason' => 'changed']))->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_fill_labels')->count());
+        $doc = $this->get("$url/{$label['id']}/file")->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringContainsString('no-store', $doc->headers->get('Cache-Control'));
+        $this->assertStringContainsString('sandbox', $doc->headers->get('Content-Security-Policy'));
+        $this->assertSame($label['sha256'], hash('sha256', $doc->getContent()));
+        $this->assertStringContainsString('SYNTHETIC PROOF — NOT FOR DISPENSING', $doc->getContent());
+        $this->assertStringContainsString('&lt;script&gt;', $doc->getContent());
+        $this->assertStringNotContainsString('<script>', $doc->getContent());
+        $this->assertStringContainsString('Synthetic Patient', $doc->getContent());
+        $this->assertStringContainsString('SYNTHETIC manufacturer', $doc->getContent());
+        $this->getJson($url)->assertJsonMissingPath('data.labels.data.0.request_hash')->assertJsonMissingPath('data.labels.data.0.document');
+        $this->putJson("$url/{$label['id']}", [])->assertNotFound();
+        $this->deleteJson("$url/{$label['id']}")->assertNotFound();
+        $original = (array) DB::table('pharmacy_fill_labels')->find($label['id']);
+        $second = $this->postJson($url, $this->labelBody($rx, $f, ['do_not_label' => true, 'disclosure_reference' => 'SYNTHETIC prescriber instruction']))->assertCreated()->json('data.current');
+        $hidden = $this->get("$url/{$second['id']}/file")->assertOk()->getContent();
+        foreach (['SYNTHETIC manufacturer', 'SYNTHETIC established name', 'Prescribed:', 'Dispensed:'] as $text) {
+            $this->assertStringNotContainsString($text, $hidden);
+        }
+        $this->assertStringContainsString('SYNTHETIC directions', $hidden);
+        $this->assertSame($original, (array) DB::table('pharmacy_fill_labels')->find($label['id']));
+        $this->get("$url/{$label['id']}/file")->assertOk(); // retained history remains retrievable
+        DB::table('pharmacy_fill_labels')->where('id', $second['id'])->update(['snapshot' => '{}']);
+        $this->get("$url/{$second['id']}/file")->assertStatus(409);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.current.intact', false);
+        $this->postJson("$url/{$second['id']}/prints", $this->printBody())->assertStatus(409);
+    }
+
+    public function test_label_decisions_scope_dates_and_stale_sources_fail_closed(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->fill($rx, $lot);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels";
+        $this->postJson($url, $this->labelBody($rx, $f))->assertStatus(422);
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $body = $this->labelBody($rx, $f);
+        foreach ([['substituted' => true], ['do_not_label' => true], ['substituted' => true, 'daw' => true, 'notification_reference' => 'Synthetic notification'],
+            ['confirmed' => false], ['use_by' => now()->addYears(2)->toDateString()], ['dispensed_on' => now()->addDay()->toDateString()],
+            ['dispensed_on' => now()->subYears(2)->toDateString()], ['use_by_reference' => '']] as $change) {
+            $this->postJson($url, array_replace($body, $change))->assertStatus(422);
+        }
+        $this->postJson($url, array_replace($body, ['source_token' => str_repeat('0', 64)]))->assertStatus(409);
+        $this->postJson($url, array_replace($body, ['previous_label_id' => 999]))->assertStatus(409);
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save();
+            $this->postJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        DB::table('pharmacy_locations')->where('id', $this->location)->update(['address' => 'SYNTHETIC changed address']);
+        $this->postJson($url, $body)->assertStatus(409);
+        $body = $this->labelBody($rx, $f, ['substituted' => true, 'notification_reference' => 'SYNTHETIC notification evidence']);
+        $this->postJson($url, $body)->assertCreated();
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->getJson($url)->assertOk();
+        $this->actor->role = 'medical_biller'; $this->actor->save();
+        $this->getJson($url)->assertForbidden();
+    }
+
+    public function test_current_label_and_print_evidence_are_required_for_preparation_and_handover(): void
+    {
+        $rx = $this->rx(); $f = $this->act($rx, $this->fill($rx, $this->lot()), 'approve', $this->checks());
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels";
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => 0], 422);
+        $body = $this->labelBody($rx, $f);
+        $label = $this->postJson($url, $body)->assertCreated()->json('data.current');
+        $f = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.fills.0');
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => $label['id']], 422);
+        $print = $this->printBody();
+        $this->postJson("$url/{$label['id']}/prints", array_replace($print, ['occurred_on' => now()->subDay()->toDateString()]))->assertStatus(422);
+        $this->postJson("$url/{$label['id']}/prints", $print)->assertCreated();
+        $this->postJson("$url/{$label['id']}/prints", $print)->assertOk();
+        $this->postJson("$url/{$label['id']}/prints", array_replace($print, ['copies' => 2]))->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_label_prints')->count());
+        $second = $this->postJson($url, $this->labelBody($rx, $f, ['reason' => 'SYNTHETIC correction']))->assertCreated()->json('data.current');
+        $this->postJson("$url/{$label['id']}/prints", $this->printBody())->assertStatus(422);
+        $f = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.fills.0');
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => $label['id']], 422);
+        $this->postJson("$url/{$second['id']}/prints", $this->printBody())->assertCreated();
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => $second['id']]);
+        $this->assertSame($second['id'], $f['fulfillment']['prepared_label_id']);
+        $this->postJson($url, $this->labelBody($rx, $f))->assertStatus(422);
+        DB::table('pharmacy_locations')->where('id', $this->location)->update(['name' => 'SYNTHETIC changed pharmacy']);
+        $before = DB::table('pharmacy_stock_lots')->first();
+        $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'SYNTHETIC', 'counseling' => 'provided'], 422);
+        $this->assertEquals($before, DB::table('pharmacy_stock_lots')->first());
+        $this->act($rx, $f, 'cancel');
+        $this->postJson("$url/{$second['id']}/prints", $this->printBody())->assertStatus(422);
+        $this->get("$url/{$second['id']}/file")->assertOk();
+    }
+
+    public function test_label_audit_failure_rolls_back_artifact_and_fill_version(): void
+    {
+        $rx = $this->rx(); $f = $this->act($rx, $this->fill($rx, $this->lot()), 'approve', $this->checks());
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels";
+        $body = $this->labelBody($rx, $f);
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) {
+                throw new \RuntimeException('Synthetic label audit failure');
+            }
+        });
+        $this->postJson($url, $body)->assertStatus(500);
+        $this->assertSame(0, DB::table('pharmacy_fill_labels')->count());
+        $this->assertSame($f['version'], (int) DB::table('pharmacy_fills')->where('id', $f['id'])->value('version'));
+    }
+
+    public function test_label_print_evidence_is_scoped_and_rolls_back_with_its_audit(): void
+    {
+        $rx = $this->rx(); $f = $this->act($rx, $this->fill($rx, $this->lot()), 'approve', $this->checks());
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels";
+        $label = $this->postJson($url, $this->labelBody($rx, $f))->assertCreated()->json('data.current');
+        $file = "$url/{$label['id']}/file"; $prints = "$url/{$label['id']}/prints";
+        $body = $this->printBody();
+        foreach ([['copies' => 0], ['copies' => 21], ['confirmed' => false], ['reference' => ''], ['occurred_on' => now()->addDay()->toDateString()]] as $change) {
+            $this->postJson($prints, array_replace($body, $change))->assertStatus(422);
+        }
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->get($file)->assertOk(); $this->postJson($prints, $body)->assertCreated();
+        $this->actor->role = 'admin'; $this->actor->save();
+        $this->get($file, ['Accept' => 'application/json'])->assertForbidden(); $this->postJson($prints, $body)->assertForbidden();
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->get($file, ['Accept' => 'application/json'])->assertNotFound(); $this->getJson($prints)->assertNotFound(); $this->postJson($prints, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->get($file, ['Accept' => 'application/json'])->assertNotFound(); $this->postJson($prints, $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $other = $this->independentReviewer(); $this->actingAs($other, 'api');
+        $this->postJson($prints, $body)->assertStatus(409);
+        $this->actingAs($this->actor, 'api');
+        $original = DB::table('pharmacy_fill_labels')->where('id', $label['id'])->value('document');
+        DB::table('pharmacy_fill_labels')->where('id', $label['id'])->update(['document' => '<script>corrupt</script>']);
+        $this->get($file, ['Accept' => 'application/json'])->assertStatus(409);
+        $this->postJson($prints, $this->printBody())->assertStatus(409);
+        DB::table('pharmacy_fill_labels')->where('id', $label['id'])->update(['document' => $original]);
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) {
+                throw new \RuntimeException('Synthetic print audit failure');
+            }
+        });
+        $this->postJson($prints, $this->printBody())->assertStatus(500);
+        $this->assertSame(1, DB::table('pharmacy_label_prints')->count());
+        $this->assertSame(0, DB::table('invoices')->count());
+    }
+
+    public function test_label_freshness_tracks_product_review_patient_identity_and_source_changes(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->labelFixture($rx, $f);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/labels";
+        $labelId = $f['current_label']['id'];
+        $this->postJson("/api/pharmacy/stock/$lot/product", $this->productBody(['revision' => 1]))->assertCreated();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.current.fresh', false);
+        $this->postJson("$url/$labelId/prints", $this->printBody())->assertStatus(422);
+        $this->postJson($url, $this->labelBody($rx, $f))->assertStatus(422);
+        $f = $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->json('data.fills.0');
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => $labelId], 422);
+        $f = $this->labelFixture($rx, $f);
+        $labelId = $f['current_label']['id'];
+        $this->patient->last_name = 'SYNTHETIC corrected identity'; $this->patient->save();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.current.fresh', false);
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true], 'label_id' => $labelId], 422);
+        $f = $this->labelFixture($rx, $f);
+        $labelId = $f['current_label']['id'];
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'SYNTHETIC new source', 'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', "%PDF-1.4\n%%EOF")], ['Accept' => 'application/json'])->assertCreated();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.current.fresh', false);
+        $this->postJson("$url/$labelId/prints", $this->printBody())->assertStatus(422);
+        $this->get("$url/$labelId/file")->assertOk();
     }
 
     private function checks(): array
