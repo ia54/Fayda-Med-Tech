@@ -16,4 +16,15 @@ Only successful candidates are uploaded to the workflow run. The archive, `BUILD
 
 Every candidate declares `production_ready: false`. Verify authenticated host identity, architecture, Node/glibc compatibility, service ownership, existing application paths, backups/isolated restore, database migrations and actual HTTPS acceptance before cutover. If the host differs from the build platform, build on its approved matching runtime instead. Preserve the authorized admin listener on localhost port 3005; this workflow does not start it. Do not copy a candidate over a live tree or use it as a rollback backup. Follow LAUNCH.md and preserve runtime keys/configuration/private records separately.
 
+Before extraction, run the read-only verifier with Python 3.9 or newer. Substitute the exact archive path, full commit and SHA-256 from the trusted release record:
+
+```sh
+python3 deploy/production/verify_web_assets.py /approved/path/web-assets-COMMIT.tar.gz \
+  --commit FULL_COMMIT --sha256 TRUSTED_ARCHIVE_SHA256
+```
+
+The verifier requires the recorded digest and commit, approved origins and host/port boundary, matching file hashes/modes/sizes, required web entrypoints and contained resolvable relative links. It refuses duplicate/traversal paths, hard links, special file types, nested link/file paths, inventory mismatches and unlisted members appended after a tar end marker, including a concatenated gzip stream. It reads the archive without extracting files, starting a process or writing to application folders. Directory metadata is not a deployment ownership specification; apply the verified host's service ownership during release preparation. Seven regression tests cover these refusal paths and a valid read-only candidate; the existing backend release job discovers them automatically.
+
+Use a trusted digest retained separately from the downloaded archive. A digest calculated from an unknown archive, or a manifest inside that archive, does not establish its provenance. `verified: true` reports artifact integrity and boundaries only; `production_ready` remains false and host/runtime/HTTPS acceptance still applies.
+
 The workflow checks build contents; it does not prove the app can reach the production API or that the backend, external providers or pharmacy operating requirements are ready. Pharmacy endpoints remain synthetic-only, and controlled/compounded dispensing remains blocked.
