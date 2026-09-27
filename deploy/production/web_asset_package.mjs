@@ -62,7 +62,7 @@ export function assemble({repo,output}) {
   if(inside(repo,output) || fs.existsSync(output)) fail('Output must be a new directory outside the source checkout.');
   const expected={NEXT_PUBLIC_API_URL:origins.api,NEXT_PUBLIC_API_BASE_URL:origins.api+'/api',VITE_BASE_URL:origins.api};
   for(const [key,value] of Object.entries(expected)) if(process.env[key]!==value) fail(`Incorrect build origin: ${key}`);
-  const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8'}).trim();
+  const git=(...args)=>execFileSync('git',['-c',`safe.directory=${repo}`,...args],{cwd:repo,encoding:'utf8'}).trim();
   if(git('status','--porcelain','--untracked-files=no')) fail('Tracked source changes exist; build a pinned clean commit.');
   const commit=git('rev-parse','HEAD'),tree=git('rev-parse','HEAD^{tree}');
   const admin=path.join(repo,'admin-panel'),frontend=path.join(repo,'frontend');
