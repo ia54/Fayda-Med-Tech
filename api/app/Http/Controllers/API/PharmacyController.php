@@ -201,7 +201,7 @@ class PharmacyController extends Controller
 
     public function index(Request $r)
     {
-        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'attention' => 'nullable|in:discontinued_work,allowance_correction', 'search' => 'nullable|string|max:100']);
+        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'attention' => 'nullable|in:discontinued_work,allowance_correction,handover_addenda,handover_review', 'search' => 'nullable|string|max:100']);
         $q = DB::table('pharmacy_prescriptions as rx')->join('pharmacy_episodes as ep', 'ep.id', '=', 'rx.episode_id')->leftJoin('users as patient', 'patient.id', '=', 'ep.patient_id')->leftJoin('pharmacy_patients as chart', 'chart.id', '=', 'ep.pharmacy_patient_id')->join('cases', 'cases.id', '=', 'ep.case_id')->where('rx.organization_id', $this->org($r));
         app(PharmacyAccess::class)->scope($q, $r->user(), 'rx.location_id');
         $latest = DB::table('pharmacy_fills')->selectRaw('prescription_id, MAX(id) AS latest_fill_id')->groupBy('prescription_id');
@@ -214,6 +214,22 @@ class PharmacyController extends Controller
         $pendingCorrections = DB::table('pharmacy_allowance_corrections as ac')->join('pharmacy_allowance_closures as cl', 'cl.id', '=', 'ac.closure_id')
             ->where('ac.status', 'pending')->selectRaw('cl.prescription_id, COUNT(*) AS pending_correction_count')->groupBy('cl.prescription_id');
         $q->leftJoinSub($pendingCorrections, 'pending_corrections', fn ($join) => $join->on('pending_corrections.prescription_id', '=', 'rx.id'));
+        $handoverReader = in_array($r->user()->role, ['pharmacist', 'pharmacy_technician'], true);
+        if (in_array($v['attention'] ?? null, ['handover_addenda', 'handover_review'], true)) {
+            abort_unless($handoverReader, 403);
+            abort_if(($v['attention'] ?? null) === 'handover_review' && $r->user()->role !== 'pharmacist', 403);
+        }
+        $handover = DB::table('pharmacy_handover_addenda as ha')->join('pharmacy_fills as hf', 'hf.id', '=', 'ha.fill_id')
+            ->where('ha.status', 'pending')->whereIn('hf.fulfillment_status', ['collected', 'delivered'])
+            ->selectRaw('hf.prescription_id, COUNT(*) AS pending_handover_count, MIN(hf.id) AS pending_handover_fill_id')
+            ->selectRaw('COUNT(CASE WHEN ha.created_by <> ? AND ? = 1 THEN 1 END) AS reviewable_handover_count, MIN(CASE WHEN ha.created_by <> ? AND ? = 1 THEN hf.id ELSE NULL END) AS reviewable_handover_fill_id', [$r->user()->id, (int) ($r->user()->role === 'pharmacist'), $r->user()->id, (int) ($r->user()->role === 'pharmacist')])
+            ->groupBy('hf.prescription_id');
+        // The outer prescription query enforces organization and current site access.
+        // Restrict disclosure to roles allowed to open the documentary history.
+        if (! $handoverReader) { $handover->whereRaw('1 = 0'); }
+        $q->leftJoinSub($handover, 'handover_work', fn ($join) => $join->on('handover_work.prescription_id', '=', 'rx.id'));
+        if (($v['attention'] ?? null) === 'handover_addenda') { $q->where('handover_work.pending_handover_count', '>', 0); }
+        if (($v['attention'] ?? null) === 'handover_review') { $q->where('handover_work.reviewable_handover_count', '>', 0); }
         if (($v['attention'] ?? null) === 'allowance_correction') {
             $q->where('pending_corrections.pending_correction_count', '>', 0);
         }
@@ -246,7 +262,7 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(pending_corrections.pending_correction_count, 0) AS pending_correction_count')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
+        return response()->json(['data' => $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(handover_work.pending_handover_count, 0) AS pending_handover_count, handover_work.pending_handover_fill_id')->selectRaw('COALESCE(handover_work.reviewable_handover_count, 0) AS reviewable_handover_count, handover_work.reviewable_handover_fill_id')->selectRaw('COALESCE(pending_corrections.pending_correction_count, 0) AS pending_correction_count')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
     }
 
     public function show(Request $r, $id)

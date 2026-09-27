@@ -2004,6 +2004,59 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame($count, DB::table('pharmacy_stock_events')->count());
     }
 
+    public function test_handover_review_worklist_includes_older_fills_without_duplicates_and_clears_after_review(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/handover-addenda";
+        $ids = [];
+        for ($i = 0; $i < 2; $i++) { $ids[] = $this->postJson($url, $this->handoverAddendumBody($url))->assertCreated()->json('data.addenda.data.0.id'); }
+        $newFill = collect($this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertOk()->json('data.fills'))->last(); $this->act($rx, $newFill, 'cancel');
+        $this->postJson("/api/pharmacy/prescriptions/$rx/discontinue", ['request_id' => (string) Str::uuid(), 'reason' => 'SYNTHETIC stop', 'reference' => 'SYNTHETIC authority'])->assertOk();
+        $pending = '/api/pharmacy/prescriptions?attention=handover_addenda'; $eligible = '/api/pharmacy/prescriptions?attention=handover_review';
+        $this->getJson($pending)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.pending_handover_count', 2)
+            ->assertJsonPath('data.data.0.pending_handover_fill_id', $f['id'])->assertJsonPath('data.data.0.stage', 'cancelled')->assertJsonPath('data.data.0.reviewable_handover_count', 0);
+        $this->getJson($eligible)->assertOk()->assertJsonPath('data.total', 0);
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $this->getJson($eligible)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.reviewable_handover_count', 2)->assertJsonPath('data.data.0.reviewable_handover_fill_id', $f['id']);
+        $own = $this->postJson($url, $this->handoverAddendumBody($url))->assertCreated()->json('data.addenda.data.0.id');
+        $this->getJson($eligible)->assertJsonPath('data.data.0.pending_handover_count', 3)->assertJsonPath('data.data.0.reviewable_handover_count', 2);
+        foreach ($ids as $i => $id) {
+            $this->postJson("$url/$id/review", ['decision' => $i ? 'accepted' : 'rejected', 'evidence' => 'SYNTHETIC independent review', 'confirmed' => true])->assertOk();
+        }
+        $this->getJson($eligible)->assertJsonPath('data.total', 0);
+        $this->getJson($pending)->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.pending_handover_count', 1);
+        $this->actingAs($this->actor, 'api');
+        $this->getJson($eligible)->assertJsonPath('data.data.0.reviewable_handover_count', 1);
+        $this->postJson("$url/$own/review", ['decision' => 'accepted', 'evidence' => 'SYNTHETIC independent review', 'confirmed' => true])->assertOk();
+        $this->getJson($pending)->assertJsonPath('data.total', 0);
+        $this->getJson($eligible)->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/prescriptions')->assertJsonPath('data.data.0.pending_handover_count', 0);
+    }
+
+    public function test_handover_review_worklist_obeys_site_organization_and_read_role_boundaries(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/handover-addenda";
+        $this->postJson($url, $this->handoverAddendumBody($url))->assertCreated();
+        $pending = '/api/pharmacy/prescriptions?attention=handover_addenda'; $eligible = '/api/pharmacy/prescriptions?attention=handover_review';
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $this->getJson($pending.'&location_id='.$this->otherLocation)->assertJsonPath('data.total', 0);
+        $this->getJson($pending.'&search=DOES-NOT-EXIST')->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['valid_until' => now()->subDay()->toDateString()]);
+        $this->getJson($pending)->assertJsonPath('data.total', 0); $this->getJson($eligible)->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['valid_until' => now()->addDay()->toDateString()]);
+        $reviewer->organization_id = 2; $reviewer->save();
+        $this->getJson($pending)->assertJsonPath('data.total', 0); $this->getJson($eligible)->assertJsonPath('data.total', 0);
+        $reviewer->organization_id = 1; $reviewer->role = 'pharmacy_technician'; $reviewer->save();
+        $this->getJson($pending)->assertOk()->assertJsonPath('data.data.0.pending_handover_count', 1)->assertJsonPath('data.data.0.reviewable_handover_count', 0);
+        $this->getJson($eligible)->assertForbidden();
+        foreach (['medical_biller', 'admin'] as $role) {
+            $reviewer->role = $role; $reviewer->save();
+            $this->getJson($pending)->assertForbidden(); $this->getJson($eligible)->assertForbidden();
+            $this->getJson('/api/pharmacy/prescriptions')->assertOk()->assertJsonPath('data.data.0.pending_handover_count', 0)->assertJsonPath('data.data.0.pending_handover_fill_id', null);
+        }
+    }
+
     private function handoverAddendumBody(string $url): array
     {
         return ['request_id' => (string) Str::uuid(), 'ledger_token' => $this->getJson($url)->assertOk()->json('data.ledger_token'),
