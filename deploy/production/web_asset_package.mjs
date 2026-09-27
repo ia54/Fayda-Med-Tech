@@ -11,6 +11,16 @@ const inside = (root, target) => target === root || target.startsWith(root + pat
 const fail = message => { throw new Error(message); };
 const forbidden = /(?:^|\/)(?:\.env(?:\..*)?|\.git|\.runtime|credentials\.json|.*\.(?:sqlite|sqlite3|pem|key|p12|pfx))$/i;
 
+export function containsPrivateKey(bytes) {
+  // Crypto libraries contain PEM delimiter constants. Refuse key payloads, not bare parser labels.
+  const text=bytes.toString('utf8').replaceAll('\\n','\n');
+  const prefix=/-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----\s*[A-Za-z0-9+/=]{32,}/;
+  if(prefix.test(text)) return true;
+  const block=/-----BEGIN ((?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY)-----([\s\S]{0,32768}?)-----END \1-----/g;
+  for(const match of text.matchAll(block)) if(/(?:^|\n)[A-Za-z0-9+/=]{32,}(?:\r?\n|$)/.test(match[2])) return true;
+  return false;
+}
+
 export function inventory(root) {
   root=fs.realpathSync(root); const rows=[];
   function walk(dir) {
@@ -25,7 +35,7 @@ export function inventory(root) {
       } else if(stat.isDirectory()) walk(absolute);
       else if(stat.isFile()) {
         const bytes=fs.readFileSync(absolute);
-        if(/-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----/.test(bytes.toString('utf8'))) fail(`Private-key material refused: ${relative}`);
+        if(containsPrivateKey(bytes)) fail(`Private-key material refused: ${relative}`);
         rows.push({path:relative,type:'file',size:bytes.length,mode:stat.mode&0o777,sha256:hash(bytes)});
       } else fail(`Unsupported file type: ${relative}`);
     }
