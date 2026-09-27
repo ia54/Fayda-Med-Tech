@@ -76,3 +76,8 @@ Exact pharmacist-verified package GTINs, unique retained Code 128 label proofs a
 ### Pinned source package preparation
 
 A local, read-only Git source packager now builds reproducible archives from a full commit SHA. It excludes runtime data/environment/build/backup files, rejects unsafe source entries and unresolved LFS pointers, retains file and migration hashes, and refuses overwrites. Verification checks the separately recorded archive digest, exact commit, approved target metadata, paths, member types and all file hashes without extracting anything. CI exercises fixture failures and the actual checked-out project. This is source preparation only; Linux production builds, host access, restore/rehearsal, physical pharmacy acceptance and cutover remain required. See SOURCE-PACKAGE.md.
+
+
+### Completed handover addenda
+
+Append-only documentary requests and independent pharmacist acceptance/rejection retain the original completed fill. Scoped pagination, stale-source checks, actor-bound retries and atomic audit writes are implemented; no inventory or financial correction is implied. Migration 000022 adds the retained addendum ledger without modifying historical completions. Local/CI/browser evidence is recorded in the workspace results; operational incident resolution and professional acceptance remain required.

@@ -2004,6 +2004,115 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame($count, DB::table('pharmacy_stock_events')->count());
     }
 
+    private function handoverAddendumBody(string $url): array
+    {
+        return ['request_id' => (string) Str::uuid(), 'ledger_token' => $this->getJson($url)->assertOk()->json('data.ledger_token'),
+            'section' => 'recipient', 'statement' => 'SYNTHETIC recipient spelling correction; original retained',
+            'reason' => 'SYNTHETIC transcription error', 'evidence' => 'SYNTHETIC source confirmation', 'confirmed' => true];
+    }
+
+    public function test_handover_addenda_require_independent_review_and_preserve_completed_records(): void
+    {
+        Http::preventStrayRequests();
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/handover-addenda";
+        $fill = (array) DB::table('pharmacy_fills')->find($f['id']); $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        $events = DB::table('pharmacy_stock_events')->get()->toJson();
+        $body = $this->handoverAddendumBody($url);
+        $id = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.addenda.data.0.status', 'pending')->json('data.addenda.data.0.id');
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['statement' => 'changed retry']))->assertStatus(409);
+        $this->postJson($url, array_replace($body, ['request_id' => (string) Str::uuid()]))->assertStatus(409);
+        $review = ['decision' => 'accepted', 'evidence' => 'SYNTHETIC independent source review', 'confirmed' => true];
+        $this->postJson("$url/$id/review", $review)->assertUnprocessable();
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $this->postJson($url, $body)->assertStatus(409);
+        $this->postJson("$url/$id/review", $review)->assertOk()->assertJsonPath('data.addenda.data.0.status', 'accepted');
+        $this->postJson("$url/$id/review", $review)->assertOk();
+        $this->postJson("$url/$id/review", array_replace($review, ['decision' => 'rejected']))->assertStatus(409);
+        $this->getJson($url)->assertJsonMissingPath('data.addenda.data.0.request_hash')->assertJsonMissingPath('data.addenda.data.0.source_hash');
+        $this->putJson("$url/$id", ['statement' => 'overwrite'])->assertNotFound();
+        $this->deleteJson("$url/$id")->assertNotFound();
+        $this->actingAs($this->actor, 'api');
+        $this->postJson("$url/$id/review", $review)->assertUnprocessable();
+        $this->assertSame($fill, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $this->assertSame($events, DB::table('pharmacy_stock_events')->get()->toJson());
+        $this->assertSame(0, DB::table('invoices')->count());
+        $this->assertSame(0, DB::table('payments')->count());
+        $this->assertSame(2, DB::table('pharmacy_events')->where('action', 'like', 'handover_addendum_%')->count());
+        // Later addenda supplement rather than overwrite the accepted statement; history paginates.
+        for ($i = 0; $i < 10; $i++) { $this->postJson($url, $this->handoverAddendumBody($url))->assertCreated(); }
+        $this->getJson($url)->assertJsonPath('data.addenda.total', 11)->assertJsonPath('data.addenda.last_page', 2);
+        $this->getJson($url.'?page=2')->assertJsonPath('data.addenda.data.0.id', $id);
+    }
+
+    public function test_handover_addenda_validate_completion_roles_location_and_organization(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->fill($rx, $lot);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/handover-addenda";
+        $this->getJson($url)->assertUnprocessable();
+        $f = $this->complete($rx, $f); $body = $this->handoverAddendumBody($url);
+        foreach (['statement', 'reason', 'evidence', 'confirmed', 'request_id', 'ledger_token'] as $key) {
+            $invalid = $body; unset($invalid[$key]); $this->postJson($url, $invalid)->assertUnprocessable();
+        }
+        $this->postJson($url, array_replace($body, ['section' => 'quantity']))->assertUnprocessable();
+        $this->postJson($url, array_replace($body, ['statement' => str_repeat('x', 5001)]))->assertUnprocessable();
+        $id = $this->postJson($url, $body)->assertCreated()->json('data.addenda.data.0.id');
+        foreach (['admin', 'medical_biller', 'pharmacy_technician'] as $role) {
+            $this->actor->role = $role; $this->actor->save();
+            $this->getJson($url)->assertStatus($role === 'pharmacy_technician' ? 200 : 403);
+            $this->postJson($url, $body)->assertForbidden();
+            $this->postJson("$url/$id/review", [])->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        $this->postJson("$url/$id/review", [])->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $other = $this->rx();
+        $this->getJson("/api/pharmacy/prescriptions/$other/fills/{$f['id']}/handover-addenda")->assertNotFound();
+        $this->assertSame(1, DB::table('pharmacy_handover_addenda')->count());
+    }
+
+    public function test_handover_addenda_reject_changed_source_but_allow_retained_rejection_and_legacy_evidence(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/handover-addenda";
+        $id = $this->postJson($url, $this->handoverAddendumBody($url))->assertCreated()->json('data.addenda.data.0.id');
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        DB::table('pharmacy_fills')->where('id', $f['id'])->update(['fulfillment' => '{}']);
+        $review = ['decision' => 'accepted', 'evidence' => 'SYNTHETIC source mismatch', 'confirmed' => true];
+        $this->postJson("$url/$id/review", $review)->assertStatus(409);
+        $review['decision'] = 'rejected';
+        $this->postJson("$url/$id/review", $review)->assertOk()->assertJsonPath('data.addenda.data.0.status', 'rejected');
+        $this->postJson("$url/$id/review", $review)->assertOk();
+        // A historical record can receive a statement without inventing absent structured evidence.
+        $this->postJson($url, $this->handoverAddendumBody($url))->assertCreated();
+        $this->assertSame('{}', DB::table('pharmacy_fills')->where('id', $f['id'])->value('fulfillment'));
+    }
+
+    public function test_handover_addenda_and_reviews_roll_back_when_audit_persistence_fails(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/handover-addenda";
+        $id = $this->postJson($url, $this->handoverAddendumBody($url))->assertCreated()->json('data.addenda.data.0.id');
+        $body = $this->handoverAddendumBody($url);
+        $before = DB::table('pharmacy_handover_addenda')->get()->toJson();
+        $events = DB::table('pharmacy_events')->get()->toJson();
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) { throw new \RuntimeException('SYNTHETIC addendum audit failure'); }
+        });
+        $this->postJson($url, $body)->assertStatus(500);
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $this->postJson("$url/$id/review", ['decision' => 'accepted', 'evidence' => 'SYNTHETIC review', 'confirmed' => true])->assertStatus(500);
+        $this->assertSame($before, DB::table('pharmacy_handover_addenda')->get()->toJson());
+        $this->assertSame($events, DB::table('pharmacy_events')->get()->toJson());
+    }
+
     private function checks(): array
     {
         return ['checks' => ['identity' => true, 'prescriber' => true, 'therapy' => true, 'product' => true]];

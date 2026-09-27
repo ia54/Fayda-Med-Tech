@@ -87,6 +87,10 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::put('/patients/{id}/clinical', [\App\Http\Controllers\API\PharmacyPatientController::class, 'clinical']);
         Route::get('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'index']);
         Route::put('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'save']);
+        $handoverAddenda = \App\Http\Controllers\API\PharmacyHandoverAddendumController::class;
+        Route::get('/prescriptions/{id}/fills/{fillId}/handover-addenda', [$handoverAddenda, 'index']);
+        Route::post('/prescriptions/{id}/fills/{fillId}/handover-addenda', [$handoverAddenda, 'store']);
+        Route::post('/prescriptions/{id}/fills/{fillId}/handover-addenda/{addendumId}/review', [$handoverAddenda, 'review']);
         $labels = \App\Http\Controllers\API\PharmacyLabelController::class;
         Route::get('/prescriptions/{id}/fills/{fillId}/labels', [$labels, 'index']);
         Route::post('/prescriptions/{id}/fills/{fillId}/labels', [$labels, 'store']);
