@@ -192,3 +192,12 @@ No production pharmacy launch is authorized by passing a build. Complete the ope
 Still needed from pharmacy operations: location roster and credentials; controlled schedules; hazardous preparation scope, sterile service categories and actual formulas; stock catalogue and unit conventions; target payers/e-prescribing/reporting arrangements. These do not prevent building the shared foundation.
 
 Still needed for AI: confirmed provider account and hosting/processing approval. Do not assume a GLM model name establishes suitable patient-data handling.
+
+
+## Inter-location medication custody preview (September 27, 2026)
+
+Stock receipts can now be reserved for another active location in the same organization. Planning reserves only unreserved source stock. Dispatch deducts source on-hand and reservation exactly once; cancellation is allowed only before dispatch and releases the reservation without adding stock. Transfers are visible only to staff assigned to an involved location, and each action checks the relevant location assignment. Only pharmacists may plan, dispatch, cancel or receive.
+
+A different pharmacist at the destination records the actual received quantity, including zero, shortages and excess. A new destination receipt begins quarantined and retains the source transfer and source receipt lineage. A quantity mismatch becomes `received_discrepancy`; neither an ordinary release nor a later physical-count adjustment clears that custody hold. A matching receipt needs a separate stock release review. Upstream recalls block descendant release, reservation, preparation, handover and onward transfer, including recalls recorded after dispatch. Cancellation of fill reservations remains possible.
+
+Request identifiers, versions and transactional custody events prevent duplicate movements and roll back a stock change if its evidence cannot be saved. This is synthetic custody accounting, not regulatory authorization to move medications. Controlled-drug transfer procedures, shipping/transport records, exception investigation and resolution, returns/destruction, external traceability and professional acceptance remain outstanding. It does not create an organization-wide recall campaign or notify recipients.

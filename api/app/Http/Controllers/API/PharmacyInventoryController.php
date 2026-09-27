@@ -214,6 +214,7 @@ class PharmacyInventoryController extends Controller
             abort_if($lot->recall_reference !== null, 422, 'A recalled receipt cannot be cleared through a stock status change.');
             abort_unless((int) $lot->version === (int) $d['version'], 409, 'Stock changed. Refresh before trying again.');
             abort_if($d['status'] === 'available' && $lot->expires_on < now()->toDateString(), 422, 'Expired stock cannot be released.');
+            if ($d['status'] === 'available') { app(PharmacyStock::class)->assertReleaseAllowed($lot); }
             DB::table('pharmacy_stock_lots')->where('id', $id)->update(['status' => $d['status'], 'version' => $lot->version + 1, 'updated_at' => now()]);
             app(PharmacyStock::class)->event($r->user(), $lot, 'status_changed', '0.000', ['previous' => $lot->status, 'status' => $d['status'], 'note' => $d['note']]);
         });

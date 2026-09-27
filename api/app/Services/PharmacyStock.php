@@ -31,10 +31,33 @@ class PharmacyStock
         throw ValidationException::withMessages(['stock' => $message]);
     }
 
-    private function usable($lot): void
+    public function assertUsable($lot): void
     {
+        $this->assertReleaseAllowed($lot);
         if ($lot->recall_reference !== null || $lot->status !== 'available' || $lot->expires_on < now()->toDateString()) {
             $this->fail('This stock is expired, quarantined or recalled. Cancel the fill to release its reservation and select usable stock.');
+        }
+    }
+
+    /** Transfer receipts retain their source history, including later recalls. */
+    public function assertReleaseAllowed($lot): void
+    {
+        $seen = [];
+        $organization = (int) $lot->organization_id;
+        while (true) {
+            if (isset($seen[$lot->id]) || (int) $lot->organization_id !== $organization || $lot->recall_reference !== null || $lot->status === 'recalled') {
+                $this->fail('Stock custody or recall history requires reconciliation before release or use.');
+            }
+            $seen[$lot->id] = true;
+            if ($lot->source_transfer_id === null) { return; }
+            $transfer = DB::table('pharmacy_stock_transfers')->where('organization_id', $organization)->where('id', $lot->source_transfer_id)->first();
+            if (! $transfer || $transfer->status !== 'received' || (int) $transfer->destination_lot_id !== (int) $lot->id || (int) $transfer->destination_location_id !== (int) $lot->location_id || self::milli($transfer->quantity) !== self::milli($transfer->received_quantity)) {
+                $this->fail('Stock custody or receipt discrepancy requires reconciliation before release or use.');
+            }
+            $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $organization)->where('id', $transfer->source_lot_id)->first();
+            if (! $lot || (int) $lot->location_id !== (int) $transfer->source_location_id) {
+                $this->fail('Stock custody history is incomplete. Reconcile before release or use.');
+            }
         }
     }
 
@@ -43,7 +66,7 @@ class PharmacyStock
         $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $actor->organization_id)
             ->where('location_id', $rx->location_id)->where('id', $data['stock_lot_id'])->lockForUpdate()->first();
         abort_unless($lot, 404);
-        $this->usable($lot);
+        $this->assertUsable($lot);
         if ($lot->ndc !== $data['ndc'] || $lot->quantity_unit !== $rx->quantity_unit) {
             $this->fail('Selected stock must match the fill NDC and prescription quantity unit.');
         }
@@ -65,7 +88,7 @@ class PharmacyStock
             ->where('location_id', $rx->location_id)->where('id', $fill->stock_lot_id)->lockForUpdate()->first();
         abort_unless($lot, 404);
         if ($action !== 'cancel') {
-            $this->usable($lot);
+            $this->assertUsable($lot);
         }
         if ($action === 'ready') {
             return;
