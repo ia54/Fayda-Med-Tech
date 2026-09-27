@@ -6,10 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\CaseModel;
 use App\Models\Invoice;
 use App\Models\User;
-use App\Services\PharmacyStock;
 use App\Services\PharmacyAccess;
+use App\Services\PharmacyStock;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -67,6 +68,59 @@ class PharmacyController extends Controller
         abort_unless((int) $record->version === (int) $data['version'], 409, 'This record changed. Refresh before trying again.');
     }
 
+    public function sources(Request $r, $id)
+    {
+        $this->allow($r, ['pharmacist', 'pharmacy_technician']);
+        $rx = $this->rx($r, $id);
+
+        return response()->json(['data' => DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)
+            ->orderByDesc('id')->get(['id', 'original_name', 'mime_type', 'size', 'sha256', 'reference', 'created_by', 'created_at'])]);
+    }
+
+    public function addSource(Request $r, $id)
+    {
+        $this->allow($r, ['pharmacist', 'pharmacy_technician']);
+        $rx = $this->rx($r, $id, true);
+        $v = $r->validate(['request_id' => 'required|uuid', 'reference' => 'required|string|max:500',
+            'file' => 'required|file|mimetypes:application/pdf,image/jpeg,image/png|max:10240']);
+        $file = $r->file('file');
+        $sha = hash_file('sha256', $file->getRealPath());
+        $name = mb_substr(basename(str_replace('\\', '/', $file->getClientOriginalName())), 0, 255);
+        $existing = DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->where('request_id', $v['request_id'])->first();
+        if ($existing) {
+            abort_unless($existing->sha256 === $sha && $existing->reference === $v['reference'] && $existing->original_name === $name && (int) $existing->created_by === (int) $r->user()->id, 409, 'This upload request was already used for different evidence.');
+
+            return response()->json(['data' => ['id' => $existing->id]]);
+        }
+        $path = $file->store('pharmacy-sources/'.$rx->id, 'documents');
+        // The transaction middleware removes newly written files if the database write rolls back.
+        $r->attributes->set('pharmacy_new_private_files', [$path]);
+        $sourceId = DB::table('pharmacy_source_documents')->insertGetId([
+            'prescription_id' => $rx->id, 'created_by' => $r->user()->id, 'request_id' => $v['request_id'],
+            'original_name' => $name, 'mime_type' => $file->getMimeType(), 'size' => $file->getSize(),
+            'path' => $path, 'sha256' => $sha, 'reference' => $v['reference'], 'created_at' => now(),
+        ]);
+        $this->event($r, $rx, 'source_document_added', ['source_document_id' => $sourceId, 'sha256' => $sha, 'reference' => $v['reference']]);
+
+        return response()->json(['data' => ['id' => $sourceId]], 201);
+    }
+
+    public function sourceFile(Request $r, $id, $sourceId)
+    {
+        $this->allow($r, ['pharmacist', 'pharmacy_technician']);
+        $rx = $this->rx($r, $id);
+        $source = DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->where('id', $sourceId)->first();
+        abort_unless($source, 404);
+        $disk = Storage::disk('documents');
+        abort_unless($disk->exists($source->path), 404, 'Source file is unavailable.');
+        abort_unless(hash_equals($source->sha256, hash_file('sha256', $disk->path($source->path))), 409, 'Source file integrity check failed.');
+
+        return $disk->download($source->path, $source->original_name, [
+            'Content-Type' => $source->mime_type, 'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff', 'Content-Security-Policy' => "sandbox; default-src 'none'",
+        ]);
+    }
+
     public function cases(Request $r)
     {
         $r->validate(['search' => 'nullable|string|max:100']);
@@ -106,7 +160,7 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        return response()->json(['data' => $q->select('rx.id', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw("COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name")->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
+        return response()->json(['data' => $q->select('rx.id', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20)]);
     }
 
     public function show(Request $r, $id)
@@ -157,11 +211,11 @@ class PharmacyController extends Controller
             }
             abort_unless(DB::table('pharmacy_locations')->where('organization_id', $org)->where('id', $d['location_id'])->where('active', true)->exists(), 404);
             $case = CaseModel::where('organization_id', $org)->findOrFail($d['case_id']);
-            if (!empty($d['pharmacy_patient_id'])) {
+            if (! empty($d['pharmacy_patient_id'])) {
                 abort_unless(DB::table('pharmacy_patients as p')->join('pharmacy_patient_locations as pl', 'pl.patient_id', '=', 'p.id')
                     ->where('p.organization_id', $org)->where('p.id', $d['pharmacy_patient_id'])->where('pl.location_id', $d['location_id'])->exists(), 404);
             } else {
-            abort_unless(DB::table('case_parties')->join('users', 'users.id', '=', 'case_parties.user_id')->where('case_parties.case_id', $case->id)->where('users.id', $d['patient_id'])->where('users.role', 'client')->where('users.organization_id', $org)->exists(), 404);
+                abort_unless(DB::table('case_parties')->join('users', 'users.id', '=', 'case_parties.user_id')->where('case_parties.case_id', $case->id)->where('users.id', $d['patient_id'])->where('users.role', 'client')->where('users.organization_id', $org)->exists(), 404);
             }
             if (! $case->accident_date) {
                 $this->fail('The linked case needs its accident date before pharmacy intake.');
@@ -291,15 +345,18 @@ class PharmacyController extends Controller
                             }
                         }
                     }
-                    $update = ['review_status' => $a === 'approve' ? 'approved' : 'held', 'review' => json_encode(['actor_id' => $r->user()->id, 'at' => now()->toIso8601String(), 'note' => $d['note'], 'checks' => $d['checks'] ?? [], 'patient_version' => $chart->version ?? null])];
+                    $update = ['review_status' => $a === 'approve' ? 'approved' : 'held', 'review' => json_encode(['actor_id' => $r->user()->id, 'at' => now()->toIso8601String(), 'note' => $d['note'], 'checks' => $d['checks'] ?? [], 'patient_version' => $chart->version ?? null, 'source_last_id' => DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->max('id') ?? 0])];
                 } elseif ($a === 'cancel') {
                     $update = ['fulfillment_status' => 'cancelled'];
                 } else {
                     if ($rx->controlled || $rx->compounded) {
                         $this->fail('Controlled and compounded dispensing is not enabled.');
                     }
-                    if ($ep->pharmacy_patient_id && (int)($this->json($f->review)['patient_version'] ?? 0) !== (int) DB::table('pharmacy_patients')->where('id', $ep->pharmacy_patient_id)->value('version')) {
+                    if ($ep->pharmacy_patient_id && (int) ($this->json($f->review)['patient_version'] ?? 0) !== (int) DB::table('pharmacy_patients')->where('id', $ep->pharmacy_patient_id)->value('version')) {
                         $this->fail('The patient clinical record changed. A new pharmacist review is required; cancel a prepared fill and start again.');
+                    }
+                    if ((int) ($this->json($f->review)['source_last_id'] ?? 0) !== (int) DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->max('id')) {
+                        $this->fail('New prescription evidence needs pharmacist review. Review a pending fill again; cancel a prepared fill and start again.');
                     }
                     if ($f->review_status !== 'approved') {
                         $this->fail('Pharmacist review is required.');
@@ -389,7 +446,7 @@ class PharmacyController extends Controller
         $rx = $this->rx($r, $id);
         $ep = DB::table('pharmacy_episodes')->where('id', $rx->episode_id)->first();
         $checks = [];
-        if ($rx->compounded && !$rx->compound_type) {
+        if ($rx->compounded && ! $rx->compound_type) {
             $checks[] = ['message' => 'This older compounded prescription has no verified sterile/nonsterile classification. Resolve it before production planning.', 'source' => 'prescription:'.$rx->id];
         }
         if ($rx->controlled || $rx->compounded) {
@@ -398,7 +455,7 @@ class PharmacyController extends Controller
         if ($ep->coverage_status !== 'verified') {
             $checks[] = ['message' => 'Coverage needs resolution.', 'source' => 'episode:'.$ep->id];
         }
-        foreach (DB::table('pharmacy_fills')->where('prescription_id',$rx->id)->get() as $f) {
+        foreach (DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->get() as $f) {
             if ($f->fulfillment_status === 'cancelled') {
                 continue;
             }

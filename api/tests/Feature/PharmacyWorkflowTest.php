@@ -46,6 +46,89 @@ class PharmacyWorkflowTest extends TestCase
         }
     }
 
+    public function test_original_source_files_are_private_immutable_and_location_scoped(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $rx = $this->rx();
+        $url = "/api/pharmacy/prescriptions/$rx/sources";
+        $bytes = "%PDF-1.4\n% SYNTHETIC ONLY\n%%EOF";
+        $body = ['request_id' => (string) Str::uuid(), 'reference' => 'Synthetic received prescription'];
+        $send = fn ($text = null) => $this->post($url, $body + ['file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', $text ?? $bytes)], ['Accept' => 'application/json']);
+        $id = $send()->assertCreated()->json('data.id');
+        $send()->assertOk()->assertJsonPath('data.id', $id);
+        $send($bytes.'changed')->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_source_documents')->count());
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'source_document_added')->count());
+        $record = DB::table('pharmacy_source_documents')->first();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.0.sha256', hash('sha256', $bytes))->assertJsonMissingPath('data.0.path');
+        $response = $this->get("$url/$id/file")->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        $this->assertSame($bytes, $response->streamedContent());
+        $this->getJson("$url/999999/file")->assertNotFound();
+        $otherRx = $this->rx();
+        $this->getJson("/api/pharmacy/prescriptions/$otherRx/sources/$id/file")->assertNotFound();
+        $this->deleteJson("$url/$id")->assertNotFound();
+        $this->putJson("$url/$id", ['reference' => 'overwrite'])->assertNotFound();
+        $this->actor->role = 'medical_biller'; $this->actor->save();
+        $this->getJson($url)->assertForbidden();
+        $this->getJson("$url/$id/file")->assertForbidden();
+        $send()->assertForbidden();
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->getJson($url)->assertOk();
+        $send()->assertOk();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->getJson("$url/$id/file")->assertNotFound();
+        $send()->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson($url)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        \Illuminate\Support\Facades\Storage::disk('documents')->put($record->path, 'corrupted');
+        $this->getJson("$url/$id/file")->assertStatus(409);
+        \Illuminate\Support\Facades\Storage::disk('documents')->delete($record->path);
+        $this->getJson("$url/$id/file")->assertNotFound();
+    }
+
+    public function test_source_file_validation_and_transaction_cleanup(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $rx = $this->rx();
+        $url = "/api/pharmacy/prescriptions/$rx/sources";
+        $body = ['request_id' => (string) Str::uuid(), 'reference' => 'Synthetic'];
+        $disguised = \Illuminate\Http\UploadedFile::fake()->createWithContent('fake.pdf', '<script>bad</script>');
+        $this->post($url, $body + ['file' => new \Illuminate\Http\UploadedFile($disguised->getRealPath(), 'fake.pdf', null, null, true)], ['Accept' => 'application/json'])->assertStatus(422);
+        $this->post($url, $body + ['file' => \Illuminate\Http\UploadedFile::fake()->create('large.pdf', 10241, 'application/pdf')], ['Accept' => 'application/json'])->assertStatus(422);
+        $this->postJson($url, $body)->assertStatus(422);
+        $this->assertSame([], \Illuminate\Support\Facades\Storage::disk('documents')->allFiles());
+        // A failure after storing bytes must roll back both the row and the private file.
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) {
+                throw new \RuntimeException('Synthetic event write failure');
+            }
+        });
+        $this->post($url, $body + ['file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', "%PDF-1.4\n%%EOF")], ['Accept' => 'application/json'])->assertStatus(500);
+        $this->assertSame(0, DB::table('pharmacy_source_documents')->count());
+        $this->assertSame([], \Illuminate\Support\Facades\Storage::disk('documents')->allFiles());
+    }
+
+    public function test_new_source_evidence_requires_fresh_review_before_preparation_or_handover(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $upload = fn () => $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'Synthetic evidence', 'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', "%PDF-1.4\n%%EOF")], ['Accept' => 'application/json'])->assertCreated();
+        $upload();
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true]], 422);
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $upload();
+        $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic handover', 'counseling' => 'provided'], 422);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->act($rx, $f, 'cancel');
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+    }
+
     private function body(array $overrides = []): array
     {
         if (! empty($overrides['compounded']) && ! array_key_exists('compound_type', $overrides)) {

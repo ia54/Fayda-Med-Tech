@@ -98,6 +98,9 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('prescriptions', [$controller, 'index']);
         Route::post('prescriptions', [$controller, 'store']);
         Route::get('prescriptions/{id}', [$controller, 'show']);
+        Route::get('prescriptions/{id}/sources', [$controller, 'sources']);
+        Route::post('prescriptions/{id}/sources', [$controller, 'addSource']);
+        Route::get('prescriptions/{id}/sources/{sourceId}/file', [$controller, 'sourceFile']);
         Route::put('prescriptions/{id}/coverage', [$controller, 'coverage']);
         Route::post('prescriptions/{id}/fills', [$controller, 'createFill']);
         Route::post('prescriptions/{id}/fills/{fillId}/actions', [$controller, 'fillAction']);
