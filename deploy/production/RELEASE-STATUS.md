@@ -1,4 +1,4 @@
-# Current release status — September 27, 2026
+# Current release status — September 28, 2026
 
 This is the current launch checklist. `OUTSTANDING.md` retains the historical evidence and older increments; older counts and statements there are not current acceptance claims.
 
@@ -10,7 +10,7 @@ Not deployed. The public website and existing production application are separat
 
 | Requirement | Current evidence / remaining action |
 | --- | --- |
-| Authorized host access | Owner is having the administrator restore SSH to 144.126.132.98. A September 27 credential-free connection reached OpenSSH/key exchange and stopped at strict host-key verification; this does not establish account authentication or a regional block. Independently confirm host identity and current access through an authenticated provider terminal. No other host, domain, folder or port is authorized. |
+| Authorized host access | Owner is having the administrator restore SSH to 144.126.132.98. September 27 and 28 credential-free connections reached OpenSSH/key exchange and stopped at strict host-key verification; this does not establish account authentication or a regional block. Independently confirm host identity and current access through an authenticated provider terminal. No other host, domain, folder or port is authorized. |
 | Production inventory | Reconfirm active API/admin/public roots, process owners, PHP/Node/database versions and existing admin port 3005 after access is restored. Do not infer these from the local runtime. |
 | Recoverable production backup | Last panel inspection reported completed API/admin/public backups, but contents, actual admin tree, database/private files/keys and isolated restore remain unverified. CI synthetic recovery does not establish production recovery. |
 | Migration and release rehearsal | Branch CI covers SQLite, MySQL 8 and MariaDB 10.11 plus synthetic upgrades/restore. Pinned source packaging records per-file and migration hashes and verifies archive integrity without extraction. The exact production schema/data and host permissions still require scoped read-only inspection and rehearsal. Preserve all existing keys and records. |
@@ -103,3 +103,7 @@ The same independent patient chart can be explicitly enrolled at another same-or
 ### Erroneous enrollment correction
 
 Additional patient enrollment can now be withdrawn with retained event/version/evidence when the target site has no prescriptions for that chart. The membership remains inactive in history and cannot authorize new intake or chart access; re-enrollment requires fresh evidence. Existing data is preserved by migration000025. Corrections after prescriptions exist, prior-disclosure response and operational privacy acceptance remain outstanding.
+
+## Current intake increment
+
+Independent-chart prescription intake now requires explicit patient-to-case evidence, confirmation and current chart version, retaining an immutable identity/case snapshot in the intake audit event. The detail page exposes that evidence separately from recent history and identifies missing historical evidence honestly. This does not verify identity automatically, remediate historical links, or complete the pharmacy operating/acceptance gates. See PHARMACY-SYSTEM.md.

@@ -310,6 +310,8 @@ class PharmacyController extends Controller
                 ->where('link.'.$from, $rx->id)->where('related.organization_id', $this->org($r))->where('related.location_id', $rx->location_id)
                 ->first(['related.id', 'related.rx_number', 'related.medication', 'link.reason', 'link.reference', 'link.created_by', 'link.created_at']);
         }
+        $intake = DB::table('pharmacy_events')->where('prescription_id', $rx->id)->where('action', 'prescription_received')->orderBy('id')->first();
+        $rx->case_link = $intake ? ($this->json($intake->details)['case_link'] ?? null) : null;
         $rx->events = DB::table('pharmacy_events')->where('prescription_id', $rx->id)->orderByDesc('id')->limit(100)->get()->map(function ($e) {
             $e->details = $this->json($e->details);
 
@@ -322,7 +324,7 @@ class PharmacyController extends Controller
     public function store(Request $r)
     {
         $this->allow($r, ['pharmacist', 'pharmacy_technician']);
-        $d = $r->validate(['request_id' => 'required|uuid', 'case_id' => 'required|integer', 'patient_id' => 'nullable|integer|required_without:pharmacy_patient_id|prohibits:pharmacy_patient_id', 'pharmacy_patient_id' => 'nullable|integer|required_without:patient_id|prohibits:patient_id', 'location_id' => 'required|integer', 'quantity_unit' => 'required|in:tablet,capsule,mL,g,each', 'compounded' => 'required|boolean', 'compound_type' => 'nullable|required_if:compounded,true|in:sterile,nonsterile|prohibited_if:compounded,false', 'rx_number' => 'required|string|max:100', 'medication' => 'required|string|max:255', 'strength' => 'required|string|max:100', 'dosage_form' => 'required|string|max:100', 'directions' => 'required|string|max:2000', 'quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'refills_authorized' => 'required|integer|min:0|max:99', 'written_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'expires_on' => 'required|date_format:Y-m-d|after_or_equal:written_on', 'prescriber_name' => 'required|string|max:255', 'prescriber_identifier' => 'required|string|max:100', 'source_reference' => 'required|string|max:255', 'controlled' => 'required|boolean']);
+        $d = $r->validate(['request_id' => 'required|uuid', 'case_id' => 'required|integer', 'patient_id' => 'nullable|integer|required_without:pharmacy_patient_id|prohibits:pharmacy_patient_id', 'pharmacy_patient_id' => 'nullable|integer|required_without:patient_id|prohibits:patient_id', 'case_link_reference' => 'required_with:pharmacy_patient_id|prohibited_if:pharmacy_patient_id,null|string|max:2000', 'case_link_confirmed' => 'required_with:pharmacy_patient_id|prohibited_if:pharmacy_patient_id,null|in:1,true,on,yes', 'patient_version' => 'required_with:pharmacy_patient_id|prohibited_if:pharmacy_patient_id,null|integer|min:1', 'location_id' => 'required|integer', 'quantity_unit' => 'required|in:tablet,capsule,mL,g,each', 'compounded' => 'required|boolean', 'compound_type' => 'nullable|required_if:compounded,true|in:sterile,nonsterile|prohibited_if:compounded,false', 'rx_number' => 'required|string|max:100', 'medication' => 'required|string|max:255', 'strength' => 'required|string|max:100', 'dosage_form' => 'required|string|max:100', 'directions' => 'required|string|max:2000', 'quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'refills_authorized' => 'required|integer|min:0|max:99', 'written_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'expires_on' => 'required|date_format:Y-m-d|after_or_equal:written_on', 'prescriber_name' => 'required|string|max:255', 'prescriber_identifier' => 'required|string|max:100', 'source_reference' => 'required|string|max:255', 'controlled' => 'required|boolean']);
         $org = $this->org($r);
         $id = DB::transaction(function () use ($r, $d, $org) {
             app(PharmacyAccess::class)->requireLocation($r->user(), $d['location_id']);
@@ -336,9 +338,16 @@ class PharmacyController extends Controller
             }
             abort_unless(DB::table('pharmacy_locations')->where('organization_id', $org)->where('id', $d['location_id'])->where('active', true)->exists(), 404);
             $case = CaseModel::where('organization_id', $org)->findOrFail($d['case_id']);
+            $caseLink = null;
             if (! empty($d['pharmacy_patient_id'])) {
                 abort_unless(DB::table('pharmacy_patients as p')->join('pharmacy_patient_locations as pl', 'pl.patient_id', '=', 'p.id')
                     ->where('p.organization_id', $org)->where('p.id', $d['pharmacy_patient_id'])->where('pl.location_id', $d['location_id'])->where('pl.active', true)->exists(), 404);
+                $chart = DB::table('pharmacy_patients')->where('id', $d['pharmacy_patient_id'])->lockForUpdate()->first();
+                abort_unless((int) $chart->version === (int) $d['patient_version'], 409, 'Patient chart changed. Refresh and confirm the case linkage again.');
+                $caseLink = ['reference' => $d['case_link_reference'], 'confirmed' => true, 'patient_version' => $chart->version,
+                    'pharmacy_patient_id' => $chart->id, 'record_number' => $chart->record_number, 'first_name' => $chart->first_name,
+                    'last_name' => $chart->last_name, 'date_of_birth' => $chart->date_of_birth, 'case_id' => $case->id,
+                    'case_number' => $case->case_number, 'accident_date' => $case->accident_date?->toDateString()];
             } else {
                 abort_unless(DB::table('case_parties')->join('users', 'users.id', '=', 'case_parties.user_id')->where('case_parties.case_id', $case->id)->where('users.id', $d['patient_id'])->where('users.role', 'client')->where('users.organization_id', $org)->exists(), 404);
             }
@@ -355,9 +364,9 @@ class PharmacyController extends Controller
             $ep = DB::table('pharmacy_episodes')->where($episodeKeys)->first();
             $eid = $ep?->id ?? DB::table('pharmacy_episodes')->insertGetId($episodeKeys + ['created_at' => now(), 'updated_at' => now()]);
             $data = $d;
-            unset($data['case_id'],$data['patient_id'],$data['pharmacy_patient_id']);
+            unset($data['case_id'],$data['patient_id'],$data['pharmacy_patient_id'],$data['case_link_reference'],$data['case_link_confirmed'],$data['patient_version']);
             $id = DB::table('pharmacy_prescriptions')->insertGetId($data + ['organization_id' => $org, 'episode_id' => $eid, 'request_hash' => $this->hash($d), 'created_by' => $r->user()->id, 'created_at' => now(), 'updated_at' => now()]);
-            $this->event($r, (object) ['id' => $id], 'prescription_received', ['source_reference' => $d['source_reference']]);
+            $this->event($r, (object) ['id' => $id], 'prescription_received', ['source_reference' => $d['source_reference'], 'case_link' => $caseLink]);
 
             return $id;
         });

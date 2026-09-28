@@ -1428,8 +1428,59 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
     }
 
+    public function test_independent_chart_intake_requires_retained_case_identity_evidence(): void
+    {
+        $id = $this->postJson('/api/pharmacy/patients', ['request_id' => (string) Str::uuid(),
+            'record_number' => 'SYN-CASE-LINK', 'location_id' => $this->location, 'first_name' => 'Synthetic',
+            'last_name' => 'Linkage', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic intake'])->assertCreated()->json('data.id');
+        $body = $this->body(['patient_id' => null, 'pharmacy_patient_id' => $id]);
+        foreach (['case_link_reference', 'case_link_confirmed', 'patient_version'] as $field) {
+            $missing = $body; unset($missing[$field]);
+            $this->postJson('/api/pharmacy/prescriptions', $missing)->assertUnprocessable()->assertJsonValidationErrors($field);
+        }
+        $this->postJson('/api/pharmacy/prescriptions', array_replace($body, ['case_link_confirmed' => false]))->assertUnprocessable();
+        $this->postJson('/api/pharmacy/prescriptions', array_replace($body, ['patient_version' => 2]))->assertConflict();
+        $this->assertSame(0, DB::table('pharmacy_prescriptions')->count());
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) {
+                throw new \RuntimeException('Synthetic intake audit failure');
+            }
+        });
+        $this->postJson('/api/pharmacy/prescriptions', $body)->assertStatus(500); $fail = false;
+        $this->assertSame(0, DB::table('pharmacy_prescriptions')->count());
+        $this->assertSame(0, DB::table('pharmacy_episodes')->count());
+        $rx = $this->postJson('/api/pharmacy/prescriptions', $body)->assertCreated()->json('data.id');
+        $this->postJson('/api/pharmacy/prescriptions', $body)->assertCreated()->assertJsonPath('data.id', $rx);
+        $this->postJson('/api/pharmacy/prescriptions', array_replace($body, ['case_link_reference' => 'Different evidence']))->assertConflict();
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.case_link.reference', $body['case_link_reference']);
+        $event = DB::table('pharmacy_events')->where('prescription_id', $rx)->where('action', 'prescription_received')->sole();
+        $link = json_decode($event->details, true)['case_link'];
+        $this->assertSame($id, $link['pharmacy_patient_id']);
+        $this->assertSame($this->case->id, $link['case_id']);
+        $this->assertSame('SYN-CASE-LINK', $link['record_number']);
+        $this->assertSame('Linkage', $link['last_name']);
+        $this->assertSame(1, $link['patient_version']);
+        $this->assertSame($body['case_link_reference'], $link['reference']);
+        $this->assertTrue($link['confirmed']);
+        $this->assertSame($this->actor->id, $event->actor_id);
+        $this->assertSame(1, DB::table('pharmacy_prescriptions')->count());
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'prescription_received')->count());
+        for ($i = 0; $i < 101; $i++) {
+            DB::table('pharmacy_events')->insert(['organization_id' => 1, 'prescription_id' => $rx,
+                'actor_id' => $this->actor->id, 'action' => 'synthetic_history', 'details' => '{}', 'created_at' => now()]);
+        }
+        $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonCount(100, 'data.events')
+            ->assertJsonPath('data.case_link.reference', $body['case_link_reference']);
+    }
+
     private function body(array $overrides = []): array
     {
+        if (! empty($overrides['pharmacy_patient_id'])) {
+            $overrides += ['case_link_reference' => 'SYNTHETIC case and chart identity evidence', 'case_link_confirmed' => true,
+                'patient_version' => DB::table('pharmacy_patients')->where('id', $overrides['pharmacy_patient_id'])->value('version') ?? 1];
+        }
+
         if (! empty($overrides['compounded']) && ! array_key_exists('compound_type', $overrides)) {
             $overrides['compound_type'] = 'nonsterile';
         }
