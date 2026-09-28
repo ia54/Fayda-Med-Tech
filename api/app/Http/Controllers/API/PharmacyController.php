@@ -711,6 +711,35 @@ class PharmacyController extends Controller
         $rx = $this->rx($r, $id);
         $ep = DB::table('pharmacy_episodes')->where('id', $rx->episode_id)->first();
         $checks = [];
+        $pharmacyStaff = in_array($r->user()->role, ['pharmacist', 'pharmacy_technician'], true);
+        $sourceLastId = DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->max('id') ?? 0;
+        $chart = null;
+        if ($rx->discontinued_at) {
+            $checks[] = ['code' => 'prescription_discontinued', 'message' => 'This prescription is discontinued. Resolve open reservations without recording a new supply.', 'source' => 'prescription:'.$rx->id];
+        } elseif ($rx->expires_on < now()->toDateString()) {
+            $checks[] = ['code' => 'prescription_expired', 'message' => 'This prescription has expired. Review separately received authority before any new supply.', 'source' => 'prescription:'.$rx->id];
+        }
+        if ($pharmacyStaff) {
+            if (! $sourceLastId) {
+                $checks[] = ['code' => 'source_missing', 'message' => 'No original prescription file has been retained. Retain and review the received source evidence.', 'source' => 'prescription:'.$rx->id];
+            }
+            if ($ep->pharmacy_patient_id) {
+                $chart = DB::table('pharmacy_patients')->where('organization_id', $rx->organization_id)->where('id', $ep->pharmacy_patient_id)->first();
+                $clinical = $chart ? $this->json($chart->clinical) : [];
+                if (empty($clinical['reviewed_on'])) {
+                    $checks[] = ['code' => 'clinical_review_missing', 'message' => 'Patient clinical history has no recorded review date. A pharmacist must review and document it.', 'source' => 'patient:'.$ep->pharmacy_patient_id];
+                }
+                foreach (['allergies' => 'Allergy history', 'medications' => 'Current medication history'] as $field => $label) {
+                    if (($clinical[$field.'_status'] ?? 'unknown') === 'unknown') {
+                        $checks[] = ['code' => $field.'_unknown', 'message' => $label.' is unresolved. Unknown does not mean none reported.', 'source' => 'patient:'.$ep->pharmacy_patient_id];
+                    }
+                }
+                $intake = DB::table('pharmacy_events')->where('prescription_id', $rx->id)->where('action', 'prescription_received')->orderBy('id')->first();
+                if (! $intake || empty($this->json($intake->details)['case_link']['confirmed'])) {
+                    $checks[] = ['code' => 'case_link_missing', 'message' => 'This historical intake has no dedicated patient-to-case identity evidence. Resolve the linkage with the responsible pharmacist; do not infer verification.', 'source' => 'prescription:'.$rx->id];
+                }
+            }
+        }
         if ($rx->compounded && ! $rx->compound_type) {
             $checks[] = ['message' => 'This older compounded prescription has no verified sterile/nonsterile classification. Resolve it before production planning.', 'source' => 'prescription:'.$rx->id];
         }
@@ -723,6 +752,13 @@ class PharmacyController extends Controller
         foreach (DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->get() as $f) {
             if ($f->fulfillment_status === 'cancelled') {
                 continue;
+            }
+            if ($pharmacyStaff && $f->review_status === 'approved' && in_array($f->fulfillment_status, ['pending', 'ready'], true)) {
+                $review = $this->json($f->review);
+                if (($ep->pharmacy_patient_id && (int) ($review['patient_version'] ?? 0) !== (int) ($chart->version ?? 0))
+                    || (int) ($review['source_last_id'] ?? 0) !== (int) $sourceLastId) {
+                    $checks[] = ['code' => 'review_stale', 'fill_id' => $f->id, 'message' => 'Fill '.$f->fill_number.' has new patient or source evidence since approval. Review a pending fill again; cancel a prepared fill and start again.', 'source' => 'fill:'.$f->id];
+                }
             }
             if ($f->review_status !== 'approved') {
                 $checks[] = ['message' => 'Fill '.$f->fill_number.' needs pharmacist review.', 'source' => 'fill:'.$f->id];

@@ -1428,6 +1428,58 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
     }
 
+    public function test_assistant_surfaces_record_gaps_without_inference_external_calls_or_writes(): void
+    {
+        Http::preventStrayRequests();
+        $p = $this->postJson('/api/pharmacy/patients', ['request_id' => (string) Str::uuid(),
+            'record_number' => 'SYN-READINESS', 'location_id' => $this->location, 'first_name' => 'Synthetic',
+            'last_name' => 'Readiness', 'date_of_birth' => '1980-01-01', 'identity_reference' => 'Synthetic only'])->assertCreated()->json('data');
+        $rx = $this->rx(['patient_id' => null, 'pharmacy_patient_id' => $p['id']]);
+        $before = DB::table('pharmacy_patients')->get()->toJson();
+        $events = DB::table('pharmacy_events')->count();
+        $url = "/api/pharmacy/prescriptions/$rx/assistant";
+        $checks = $this->getJson($url)->assertOk()->assertJsonPath('data.mode', 'rules_only')->assertJsonPath('data.ai_connected', false)->json('data.checks');
+        $codes = array_column($checks, 'code');
+        foreach (['source_missing', 'clinical_review_missing', 'allergies_unknown', 'medications_unknown'] as $code) $this->assertContains($code, $codes);
+        $this->assertNotContains('case_link_missing', $codes);
+        $this->assertSame($before, DB::table('pharmacy_patients')->get()->toJson());
+        $this->assertSame($events, DB::table('pharmacy_events')->count());
+        $this->actor->role = 'medical_biller';
+        $billingCodes = array_column($this->getJson($url)->assertOk()->json('data.checks'), 'code');
+        foreach (['source_missing', 'clinical_review_missing', 'allergies_unknown', 'medications_unknown'] as $code) $this->assertNotContains($code, $billingCodes);
+        $this->actor->role = 'pharmacist';
+        $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", ['version' => 1, 'allergies_status' => 'none_reported',
+            'medications_status' => 'none_reported', 'reviewed_on' => now()->toDateString(), 'source_reference' => 'Synthetic review'])->assertOk();
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'Synthetic source',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', "%PDF-1.4\n% Synthetic only\n%%EOF")], ['Accept' => 'application/json'])->assertCreated();
+        $resolved = array_column($this->getJson($url)->assertOk()->json('data.checks'), 'code');
+        foreach (['source_missing', 'clinical_review_missing', 'allergies_unknown', 'medications_unknown'] as $code) $this->assertNotContains($code, $resolved);
+        DB::table('pharmacy_events')->where('prescription_id', $rx)->where('action', 'prescription_received')->update(['details' => '{}']);
+        $this->assertContains('case_link_missing', array_column($this->getJson($url)->assertOk()->json('data.checks'), 'code'));
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        Http::assertNothingSent();
+    }
+
+    public function test_assistant_flags_new_source_after_approval_without_rewriting_review(): void
+    {
+        $rx = $this->rx(); $f = $this->fill($rx, $this->lot());
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $url = "/api/pharmacy/prescriptions/$rx/assistant";
+        $this->assertNotContains('review_stale', array_column($this->getJson($url)->assertOk()->json('data.checks'), 'code'));
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'Synthetic new source',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', "%PDF-1.4\n% Synthetic only\n%%EOF")], ['Accept' => 'application/json'])->assertCreated();
+        $before = DB::table('pharmacy_fills')->where('id', $f['id'])->first();
+        $checks = $this->getJson($url)->assertOk()->json('data.checks');
+        $stale = array_values(array_filter($checks, fn ($c) => ($c['code'] ?? null) === 'review_stale'));
+        $this->assertCount(1, $stale); $this->assertSame($f['id'], $stale[0]['fill_id']);
+        $this->assertEquals($before, DB::table('pharmacy_fills')->where('id', $f['id'])->first());
+        $this->act($rx, $f, 'approve', $this->checks());
+        $this->assertNotContains('review_stale', array_column($this->getJson($url)->assertOk()->json('data.checks'), 'code'));
+    }
+
     public function test_independent_chart_intake_requires_retained_case_identity_evidence(): void
     {
         $id = $this->postJson('/api/pharmacy/patients', ['request_id' => (string) Str::uuid(),
@@ -3308,6 +3360,7 @@ class PharmacyWorkflowTest extends TestCase
         $f = $this->act($rx, $f, 'approve', $this->checks());
         $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
         $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", array_replace($review, ['version' => 2, 'allergies_status' => 'documented', 'allergies' => 'Synthetic new allergy']))->assertOk();
+        $this->assertContains('review_stale', array_column($this->getJson("/api/pharmacy/prescriptions/$rx/assistant")->assertOk()->json('data.checks'), 'code'));
         $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic', 'counseling' => 'provided'], 422);
         $this->assertEquals(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
         DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);

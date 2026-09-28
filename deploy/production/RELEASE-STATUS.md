@@ -107,3 +107,5 @@ Additional patient enrollment can now be withdrawn with retained event/version/e
 ## Current intake increment
 
 Independent-chart prescription intake now requires explicit patient-to-case evidence, confirmation and current chart version, retaining an immutable identity/case snapshot in the intake audit event. The detail page exposes that evidence separately from recent history and identifies missing historical evidence honestly. This does not verify identity automatically, remediate historical links, or complete the pharmacy operating/acceptance gates. See PHARMACY-SYSTEM.md.
+
+The pharmacy record checklist now exposes missing source/clinical evidence and approvals made stale by new patient/source records, with scoped navigation links. It is read-only deterministic guidance and explicitly not complete dispensing clearance or connected AI. No dispensing or production gate is relaxed.
