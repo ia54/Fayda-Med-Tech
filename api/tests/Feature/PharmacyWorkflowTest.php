@@ -1428,6 +1428,104 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
     }
 
+    private function classificationBody(int $rx): array
+    {
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $source = $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'SYNTHETIC classification comparison',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('classification.pdf', "%PDF-1.4\n% SYNTHETIC ONLY\n%%EOF")], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        return ['request_id' => (string) Str::uuid(), 'source_token' => $this->getJson("/api/pharmacy/prescriptions/$rx/classification-corrections")->assertOk()->json('data.source_token'),
+            'values' => ['controlled_schedule' => 'II', 'controlled_source_format' => 'paper', 'controlled_classification_reference' => 'SYNTHETIC compared source, not dispensing authority'],
+            'source_document_id' => $source, 'reason' => 'SYNTHETIC resolve incomplete intake', 'confirmed' => true];
+    }
+
+    public function test_classification_correction_retains_originals_without_changing_order_or_dispensing(): void
+    {
+        $rx = $this->rx(['controlled' => true]); $url = "/api/pharmacy/prescriptions/$rx/classification-corrections";
+        $body = $this->classificationBody($rx); $before = (array) DB::table('pharmacy_prescriptions')->find($rx);
+        $intake = (array) DB::table('pharmacy_events')->where('prescription_id', $rx)->where('action', 'prescription_received')->sole();
+        $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.revision', 1)
+            ->assertJsonPath('data.current.controlled_schedule', 'II')->assertJsonPath('data.corrections.data.0.before_snapshot.controlled_schedule', 'unknown');
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.corrections.total', 1);
+        $this->postJson($url, array_replace($body, ['reason' => 'changed retry']))->assertConflict();
+        $after = (array) DB::table('pharmacy_prescriptions')->find($rx);
+        foreach (array_keys($body['values']) as $key) unset($before[$key], $after[$key]);
+        unset($before['updated_at'], $after['updated_at']); $this->assertSame($before, $after);
+        $this->assertSame($intake, (array) DB::table('pharmacy_events')->find($intake['id']));
+        $entry = DB::table('pharmacy_classification_corrections')->sole();
+        $this->assertSame($this->actor->id, $entry->created_by);
+        $this->assertSame(DB::table('pharmacy_source_documents')->find($body['source_document_id'])->sha256, $entry->source_sha256);
+        $fill = $this->fill($rx, $this->lot()); $this->act($rx, $fill, 'approve', $this->checks(), 422);
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+        $next = $body; $next['request_id'] = (string) Str::uuid(); $next['values']['controlled_schedule'] = 'unknown';
+        $this->postJson($url, $next)->assertConflict();
+        $next['source_token'] = $this->getJson($url)->json('data.source_token');
+        $this->postJson($url, $next)->assertCreated()->assertJsonPath('data.revision', 2)->assertJsonPath('data.corrections.data.0.before_snapshot.controlled_schedule', 'II');
+        $this->assertSame((array) $entry, (array) DB::table('pharmacy_classification_corrections')->find($entry->id));
+        $this->assertContains('controlled_classification_unresolved', array_column($this->getJson("/api/pharmacy/prescriptions/$rx/assistant")->json('data.checks'), 'code'));
+    }
+
+    public function test_classification_corrections_reject_wrong_scope_corrupt_source_and_noop(): void
+    {
+        $rx = $this->rx(['controlled' => true]); $url = "/api/pharmacy/prescriptions/$rx/classification-corrections"; $body = $this->classificationBody($rx);
+        foreach (['controlled', 'medication', 'quantity', 'refills_authorized', 'expires_on'] as $key) {
+            $bad = $body; $bad['values'][$key] = 'changed'; $this->postJson($url, $bad)->assertUnprocessable();
+        }
+        $bad = $body; $bad['values']['controlled_schedule'] = 'I'; $this->postJson($url, $bad)->assertUnprocessable();
+        $this->postJson($url, array_replace($body, ['confirmed' => false]))->assertUnprocessable();
+        $noop = $body; $noop['values'] = $this->getJson($url)->json('data.current'); $this->postJson($url, $noop)->assertUnprocessable();
+        $other = $this->rx(['controlled' => true]);
+        $foreign = $body; $foreign['source_token'] = $this->getJson("/api/pharmacy/prescriptions/$other/classification-corrections")->json('data.source_token');
+        $this->postJson("/api/pharmacy/prescriptions/$other/classification-corrections", $foreign)->assertNotFound();
+        $source = DB::table('pharmacy_source_documents')->find($body['source_document_id']);
+        \Illuminate\Support\Facades\Storage::disk('documents')->put($source->path, 'corrupt'); $this->postJson($url, $body)->assertConflict();
+        \Illuminate\Support\Facades\Storage::disk('documents')->delete($source->path); $this->postJson($url, $body)->assertConflict();
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save(); $this->postJson($url, $body)->assertForbidden();
+            $this->getJson($url)->assertStatus($role === 'pharmacy_technician' ? 200 : 403);
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 2; $this->actor->save(); $this->getJson($url)->assertNotFound();
+        $this->assertSame(0, DB::table('pharmacy_classification_corrections')->count());
+    }
+
+    public function test_classification_correction_preserves_null_history_and_rejects_stale_source_and_foreign_retries(): void
+    {
+        $rx = $this->rx(); DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['controlled' => true]);
+        $url = "/api/pharmacy/prescriptions/$rx/classification-corrections"; $body = $this->classificationBody($rx);
+        $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'SYNTHETIC later evidence',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('later.pdf', "%PDF-1.4\n% SYNTHETIC LATER\n%%EOF")], ['Accept' => 'application/json'])->assertCreated();
+        $this->postJson($url, $body)->assertConflict();
+        $body['source_token'] = $this->getJson($url)->json('data.source_token');
+        $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.corrections.data.0.before_snapshot.controlled_schedule', null)
+            ->assertJsonPath('data.corrections.data.0.before_snapshot.controlled_source_format', null)
+            ->assertJsonPath('data.corrections.data.0.before_snapshot.controlled_classification_reference', null);
+        for ($n = 2; $n <= 11; $n++) {
+            $next = $body; $next['request_id'] = (string) Str::uuid(); $next['source_token'] = $this->getJson($url)->json('data.source_token');
+            $next['values']['controlled_classification_reference'] = "SYNTHETIC correction $n";
+            $this->postJson($url, $next)->assertCreated();
+        }
+        $this->getJson($url.'?page=2')->assertOk()->assertJsonPath('data.corrections.total', 11)->assertJsonCount(1, 'data.corrections.data')->assertJsonPath('data.corrections.data.0.revision', 1);
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.revision', 11);
+        $reviewer = User::create(['first_name' => 'Other', 'last_name' => 'Synthetic', 'email' => 'classification-reviewer@example.invalid', 'password' => 'synthetic-only', 'role' => 'pharmacist', 'organization_id' => 1, 'status' => 'active']);
+        $reviewer->withAccessToken(new Token(['expires_at' => now()->addHour()]));
+        DB::table('pharmacy_staff_assignments')->insert(['location_id' => $this->location, 'user_id' => $reviewer->id, 'active' => true, 'valid_until' => now()->addYear()->toDateString()]);
+        $this->actingAs($reviewer, 'api'); $this->postJson($url, $body)->assertConflict();
+    }
+
+    public function test_classification_correction_supports_null_history_and_rolls_back_failed_audit(): void
+    {
+        $plain = $this->rx(); $this->getJson("/api/pharmacy/prescriptions/$plain/classification-corrections")->assertUnprocessable();
+        DB::table('pharmacy_prescriptions')->where('id', $plain)->update(['controlled' => true]);
+        $url = "/api/pharmacy/prescriptions/$plain/classification-corrections"; $body = $this->classificationBody($plain);
+        $before = (array) DB::table('pharmacy_prescriptions')->find($plain);
+        DB::connection()->beforeExecuting(function ($query) { if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) throw new \RuntimeException('Synthetic classification audit failure'); });
+        $this->postJson($url, $body)->assertStatus(500);
+        $this->assertSame($before, (array) DB::table('pharmacy_prescriptions')->find($plain));
+        $this->assertSame(0, DB::table('pharmacy_classification_corrections')->count());
+    }
+
     public function test_controlled_intake_retains_explicit_classification_without_enabling_dispensing(): void
     {
         $body = $this->body(['controlled' => true, 'controlled_schedule' => 'II', 'controlled_source_format' => 'paper',
@@ -1448,7 +1546,10 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson("/api/pharmacy/prescriptions/$id")->assertOk()->assertJsonPath('data.controlled_schedule', 'II')
             ->assertJsonPath('data.controlled_source_format', 'paper')->assertJsonPath('data.controlled_classification_reference', $body['controlled_classification_reference']);
         $event = DB::table('pharmacy_events')->where('prescription_id', $id)->where('action', 'prescription_received')->sole();
-        $this->assertSame(['schedule' => 'II', 'source_format' => 'paper', 'reference' => $body['controlled_classification_reference']], json_decode($event->details, true)['controlled_classification']);
+        $expected = ['schedule' => 'II', 'source_format' => 'paper', 'reference' => $body['controlled_classification_reference']];
+        $actual = json_decode($event->details, true)['controlled_classification'];
+        ksort($expected); ksort($actual); // MySQL JSON objects do not preserve insertion order.
+        $this->assertSame($expected, $actual);
         $this->assertSame($this->actor->id, $event->actor_id);
         $fill = $this->fill($id, $this->lot());
         $this->act($id, $fill, 'approve', $this->checks(), 422);

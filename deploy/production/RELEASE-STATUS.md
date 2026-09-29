@@ -1,4 +1,4 @@
-# Current release status — September 28, 2026
+# Current release status — September 29, 2026
 
 This is the current launch checklist. `OUTSTANDING.md` retains the historical evidence and older increments; older counts and statements there are not current acceptance claims.
 
@@ -110,4 +110,4 @@ Independent-chart prescription intake now requires explicit patient-to-case evid
 
 The pharmacy record checklist now exposes missing source/clinical evidence and approvals made stale by new patient/source records, with scoped navigation links. It is read-only deterministic guidance and explicitly not complete dispensing clearance or connected AI. No dispensing or production gate is relaxed.
 
-Controlled intake now records explicit schedule/received-format/evidence with unresolved values preserved and historical fields left null. This is the prerequisite data foundation only; schedule-specific rules, classification corrections, credentials, EPCS/MAPS and controlled dispensing acceptance remain incomplete.
+Controlled intake now records explicit schedule/received-format/evidence with unresolved values preserved and historical fields left null. This is the prerequisite data foundation only; schedule-specific rules, credentials, EPCS/MAPS and controlled dispensing acceptance remain incomplete. Source-backed documentary classification corrections are implemented in the current increment; operational acceptance remains outstanding.
