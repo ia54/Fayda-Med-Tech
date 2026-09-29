@@ -148,6 +148,8 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('prescriptions/{id}/amendments', [\App\Http\Controllers\API\PharmacyAmendmentController::class, 'store']);
         Route::post('prescriptions/{id}/replacement', [$controller, 'linkReplacement']);
         Route::post('prescriptions/{id}/discontinue', [$controller, 'discontinue']);
+        Route::get('prescriptions/{id}/sources/{sourceId}/transcriptions', [\App\Http\Controllers\API\PharmacyTranscriptionController::class, 'index']);
+        Route::post('prescriptions/{id}/sources/{sourceId}/transcriptions', [\App\Http\Controllers\API\PharmacyTranscriptionController::class, 'store']);
         Route::get('prescriptions/{id}/sources', [$controller, 'sources']);
         Route::post('prescriptions/{id}/sources', [$controller, 'addSource']);
         Route::get('prescriptions/{id}/sources/{sourceId}/file', [$controller, 'sourceFile']);

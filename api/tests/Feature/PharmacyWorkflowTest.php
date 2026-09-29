@@ -46,6 +46,74 @@ class PharmacyWorkflowTest extends TestCase
         }
     }
 
+    public function test_source_transcriptions_preserve_literal_pages_history_and_location_boundaries(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        Http::preventStrayRequests();
+        $rx = $this->rx();
+        $source = $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'SYNTHETIC original',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', "%PDF-1.4\n% SYNTHETIC ONLY\n%%EOF")], ['Accept' => 'application/json'])->assertCreated()->json('data');
+        $source['sha256'] = DB::table('pharmacy_source_documents')->where('id', $source['id'])->value('sha256');
+        $url = "/api/pharmacy/prescriptions/$rx/sources/{$source['id']}/transcriptions";
+        $pages = ["  SYNTHETIC Quantity: 05.000 tablets.\n", ''];
+        $body = ['request_id' => (string) Str::uuid(), 'source_sha256' => $source['sha256'], 'previous_id' => null,
+            'transcription_pages' => $pages, 'reference' => 'SYNTHETIC manual transcription; not OCR or clinical approval', 'confirmed' => true];
+        $id = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.method', 'manual')
+            ->assertJsonPath('data.status', 'unverified_transcription')->assertJsonPath('data.pages', $pages)->json('data.id');
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.id', $id);
+        $this->postJson($url, array_replace($body, ['reference' => 'changed']))->assertStatus(409);
+        $next = array_replace($body, ['request_id' => (string) Str::uuid(), 'transcription_pages' => ['SYNTHETIC corrected transcription'], 'previous_id' => $id]);
+        $newId = $this->postJson($url, $next)->assertCreated()->assertJsonPath('data.supersedes_id', $id)->json('data.id');
+        $this->postJson($url, array_replace($next, ['request_id' => (string) Str::uuid()]))->assertStatus(409);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 2)->assertJsonPath('data.data.1.pages', $pages)->assertJsonMissingPath('data.data.0.request_hash');
+        $this->assertSame(hash('sha256', json_encode($pages)), DB::table('pharmacy_source_transcriptions')->where('id', $id)->value('transcription_sha256'));
+        $this->assertSame(0, DB::table('pharmacy_fills')->count());
+        $this->assertSame(1, DB::table('pharmacy_prescriptions')->count());
+        $this->assertSame(2, DB::table('pharmacy_events')->where('action', 'source_transcription_retained')->count());
+        $this->actor->role = 'medical_biller'; $this->actor->save();
+        $this->getJson($url)->assertForbidden(); $this->postJson($url, $body)->assertForbidden();
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->getJson($url)->assertOk();
+        $this->postJson($url, array_replace($next, ['request_id' => (string) Str::uuid(), 'previous_id' => $newId, 'reference' => 'SYNTHETIC technician transcription']))->assertCreated();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound(); $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson($url)->assertNotFound();
+        Http::assertNothingSent();
+    }
+
+    public function test_transcription_bad_source_stale_pages_and_audit_failure_leave_no_partial_record(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $rx = $this->rx();
+        $source = $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'SYNTHETIC original',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', "%PDF-1.4\n% SYNTHETIC ONLY\n%%EOF")], ['Accept' => 'application/json'])->assertCreated()->json('data');
+        $source['sha256'] = DB::table('pharmacy_source_documents')->where('id', $source['id'])->value('sha256');
+        $url = "/api/pharmacy/prescriptions/$rx/sources/{$source['id']}/transcriptions";
+        $body = ['request_id' => (string) Str::uuid(), 'source_sha256' => $source['sha256'], 'previous_id' => null,
+            'transcription_pages' => ['SYNTHETIC'], 'reference' => 'SYNTHETIC', 'confirmed' => true];
+        foreach ([[''], ["  \n"], [str_repeat('x', 250001)], [1 => 'nonsequential']] as $pages) {
+            $this->postJson($url, array_replace($body, ['transcription_pages' => $pages]))->assertStatus(422);
+        }
+        $this->postJson($url, array_replace($body, ['source_sha256' => str_repeat('0', 64)]))->assertStatus(409);
+        $other = $this->rx();
+        $this->postJson("/api/pharmacy/prescriptions/$other/sources/{$source['id']}/transcriptions", $body)->assertNotFound();
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) throw new \RuntimeException('SYNTHETIC transcription audit failure');
+        });
+        $this->postJson($url, $body)->assertStatus(500);
+        $this->assertSame(0, DB::table('pharmacy_source_transcriptions')->count());
+        $fail = false;
+        $this->postJson($url, $body)->assertCreated();
+        $path = DB::table('pharmacy_source_documents')->where('id', $source['id'])->value('path');
+        \Illuminate\Support\Facades\Storage::disk('documents')->put($path, 'SYNTHETIC corruption');
+        $this->postJson($url, array_replace($body, ['request_id' => (string) Str::uuid(), 'previous_id' => DB::table('pharmacy_source_transcriptions')->max('id')]))->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_source_transcriptions')->count());
+        $this->assertSame(1, DB::table('pharmacy_events')->where('action', 'source_transcription_retained')->count());
+    }
+
     public function test_original_source_files_are_private_immutable_and_location_scoped(): void
     {
         \Illuminate\Support\Facades\Storage::fake('documents');
