@@ -10,8 +10,8 @@ return new class extends Migration {
         Schema::create('pharmacy_rx_transfer_receipts', function (Blueprint $t) {
             $t->id();
             $t->foreignId('organization_id')->constrained('organizations');
-            $t->foreignId('source_prescription_id')->unique()->constrained('pharmacy_prescriptions');
-            $t->foreignId('destination_prescription_id')->unique()->constrained('pharmacy_prescriptions');
+            $t->foreignId('source_prescription_id')->unique('pharm_rx_transfer_source')->constrained('pharmacy_prescriptions', indexName: 'pharm_rx_transfer_source_fk');
+            $t->foreignId('destination_prescription_id')->unique('pharm_rx_transfer_destination')->constrained('pharmacy_prescriptions', indexName: 'pharm_rx_transfer_destination_fk');
             $t->foreignId('source_location_id')->constrained('pharmacy_locations');
             $t->foreignId('destination_location_id')->constrained('pharmacy_locations');
             $t->longText('source_snapshot');
