@@ -10,6 +10,8 @@ class PharmacyQuantity
 {
     public function balance($rx): array
     {
+        $authority = app(PharmacyAuthorizationLimits::class)->forPrescription($rx);
+        $limits = $authority['limits'];
         $all = DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->orderBy('id')->get();
         $fills = $all->where('fulfillment_status', '!=', 'cancelled');
         $history = DB::table('pharmacy_allowance_closures')->where('prescription_id', $rx->id)->orderBy('id')->get();
@@ -25,13 +27,20 @@ class PharmacyQuantity
             'prescription' => [$rx->id, $rx->quantity, $rx->refills_authorized, $rx->controlled, $rx->compounded, $rx->discontinued_at, $rx->expires_on],
             'fills' => $all->map(fn ($f) => [$f->id, $f->version, $f->quantity, $f->authorization_number, $f->fulfillment_status])->all(),
             'closures' => $history->all(),
+            'incoming_transfer' => $authority['transfer'],
             'corrections' => $corrections->map(fn ($c) => [$c->id, $c->closure_id, $c->status, $c->created_by, $c->reviewed_by, $c->reviewed_at])->all(),
         ], JSON_THROW_ON_ERROR));
-        $quantity = PharmacyStock::milli($rx->quantity);
         $legacy = $fills->whereNull('authorization_number')->count();
+        if ($authority['transfer'] && $legacy > 0) {
+            throw ValidationException::withMessages(['quantity' => 'Transferred allowances cannot be reconciled with unnumbered historical fills.']);
+        }
         $restricted = (bool) $rx->controlled || (bool) $rx->compounded;
         $groups = [];
         foreach ($fills->whereNotNull('authorization_number')->groupBy('authorization_number') as $number => $items) {
+            $limit = $limits[(int) $number] ?? null;
+            if ($limit === null) {
+                throw ValidationException::withMessages(['quantity' => 'A fill references an unauthorized allowance. Investigate the retained ledger.']);
+            }
             $handed = 0;
             $reserved = 0;
             foreach ($items as $fill) {
@@ -44,26 +53,26 @@ class PharmacyQuantity
             }
             $closure = $closures->get($number);
             $closed = $closure ? PharmacyStock::milli($closure->quantity) : 0;
-            if ($handed + $reserved + $closed > $quantity || ($closure && ($reserved !== 0 || $handed <= 0 || $closed <= 0 || $handed + $closed !== $quantity))) {
+            if ($handed + $reserved + $closed > $limit || ($closure && ($reserved !== 0 || $handed <= 0 || $closed <= 0 || $handed + $closed !== $limit))) {
                 throw ValidationException::withMessages(['quantity' => 'The retained quantity ledger is inconsistent. Investigate before creating another fill.']);
             }
-            $groups[(int) $number] = ['number' => (int) $number, 'authorized' => PharmacyStock::decimal($quantity), 'handed_over' => PharmacyStock::decimal($handed), 'reserved' => PharmacyStock::decimal($reserved), 'remaining' => PharmacyStock::decimal($quantity - $handed - $reserved - $closed), 'closed_quantity' => PharmacyStock::decimal($closed), 'closure' => $closure ? array_intersect_key((array) $closure, array_flip(['id', 'quantity', 'actor_id', 'basis', 'occurred_on', 'reason', 'evidence', 'created_at'])) : null];
+            $groups[(int) $number] = ['number' => (int) $number, 'authorized' => PharmacyStock::decimal($limit), 'handed_over' => PharmacyStock::decimal($handed), 'reserved' => PharmacyStock::decimal($reserved), 'remaining' => PharmacyStock::decimal($limit - $handed - $reserved - $closed), 'closed_quantity' => PharmacyStock::decimal($closed), 'closure' => $closure ? array_intersect_key((array) $closure, array_flip(['id', 'quantity', 'actor_id', 'basis', 'occurred_on', 'reason', 'evidence', 'created_at'])) : null];
         }
         if ($closures->keys()->diff(array_keys($groups))->isNotEmpty()) {
             throw ValidationException::withMessages(['quantity' => 'A closed allowance has no retained supply history. Investigate before creating another fill.']);
         }
         ksort($groups);
         $next = $legacy + 1;
-        $available = $quantity;
+        $available = $limits[$next] ?? 0;
         foreach ($groups as $number => $group) {
             // Only the last allowance may be unfinished. Never skip or pool allowances.
             if ($number !== $next) {
                 throw ValidationException::withMessages(['quantity' => 'The retained authorization sequence needs investigation.']);
             }
             $available = PharmacyStock::milli($group['remaining']);
-            if (PharmacyStock::milli($group['handed_over']) + PharmacyStock::milli($group['closed_quantity']) === $quantity) {
+            if (PharmacyStock::milli($group['handed_over']) + PharmacyStock::milli($group['closed_quantity']) === $limits[$number]) {
                 $next++;
-                $available = $quantity;
+                $available = $limits[$next] ?? 0;
             }
         }
         $remaining = max(0, (int) $rx->refills_authorized + 1 - $next + 1);
@@ -90,7 +99,7 @@ class PharmacyQuantity
             $row['corrections'] = $corrections->where('closure_id', $c->id)->map(fn ($r) => array_intersect_key((array) $r, array_flip(['id', 'created_by', 'reason', 'evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at'])))->values()->all();
             return $row;
         })->all();
-        return ['closure_history' => $retained, 'correctable_closure_id' => $correctable, 'pending_correction_id' => $pending->first()?->id, 'closable_authorization_number' => $closable ? $next : null, 'ledger_token' => $token, 'mode' => $restricted ? 'restricted' : 'quantity', 'legacy_allowances_used' => $legacy,
+        return ['authorization_limits' => array_map(fn ($amount) => PharmacyStock::decimal($amount), $limits), 'incoming_transfer' => $authority['transfer'], 'closure_history' => $retained, 'correctable_closure_id' => $correctable, 'pending_correction_id' => $pending->first()?->id, 'closable_authorization_number' => $closable ? $next : null, 'ledger_token' => $token, 'mode' => $restricted ? 'restricted' : 'quantity', 'legacy_allowances_used' => $legacy,
             'next_authorization_number' => $remaining ? $next : null,
             'available_quantity' => PharmacyStock::decimal($available),
             'allowances_remaining' => $remaining, 'allowances' => array_values($groups)];

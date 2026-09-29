@@ -2982,6 +2982,201 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
     }
 
+    /** Synthetic accepted-receipt fixture only; no transfer acceptance endpoint exists yet. */
+    private function transferredAllowanceFixture(): array
+    {
+        $source = $this->rx(['quantity' => '0.300', 'refills_authorized' => 1]);
+        $lot = $this->lot(['quantity' => '1.000']);
+        $fill = $this->postJson("/api/pharmacy/prescriptions/$source/fills", $this->fillBody($lot, ['quantity' => '0.125', 'partial_reason' => 'SYNTHETIC partial before transfer']))->assertOk()->json('data.fills.0');
+        $this->complete($source, $fill);
+        $snapshot = app(\App\Services\PharmacyTransferBalance::class)->snapshot(DB::table('pharmacy_prescriptions')->find($source));
+        $this->postJson("/api/pharmacy/prescriptions/$source/discontinue", ['request_id' => (string) Str::uuid(), 'reason' => 'SYNTHETIC transfer fixture only', 'reference' => 'NOT VALID'])->assertOk();
+        $destination = $this->rx(['location_id' => $this->otherLocation, 'quantity' => '0.300', 'refills_authorized' => 1]);
+        $reviewer = $this->independentReviewer();
+        $json = json_encode($snapshot, JSON_THROW_ON_ERROR);
+        $receipt = DB::table('pharmacy_rx_transfer_receipts')->insertGetId(['organization_id' => 1, 'source_prescription_id' => $source,
+            'destination_prescription_id' => $destination, 'source_location_id' => $this->location, 'destination_location_id' => $this->otherLocation,
+            'source_snapshot' => $json, 'snapshot_sha256' => hash('sha256', $json), 'sent_by' => $this->actor->id, 'accepted_by' => $reviewer->id,
+            'sending_evidence' => 'SYNTHETIC fixture only', 'receiving_evidence' => 'SYNTHETIC fixture only', 'accepted_at' => now()]);
+        DB::table('pharmacy_prescriptions')->where('id', $destination)->update(['incoming_transfer_id' => $receipt]);
+        return [$source, $destination, $receipt];
+    }
+
+    public function test_transferred_allowance_limits_conserve_supply_across_locations(): void
+    {
+        [$source, $rx, $receipt] = $this->transferredAllowanceFixture();
+        $url = "/api/pharmacy/prescriptions/$rx"; $lot = $this->lot(['location_id' => $this->otherLocation, 'quantity' => '1.000']);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '0.175')
+            ->assertJsonPath('data.quantity_balance.incoming_transfer.id', $receipt);
+        $this->postJson($url.'/fills', $this->fillBody($lot, ['quantity' => '0.176']))->assertUnprocessable();
+        $fill = $this->postJson($url.'/fills', $this->fillBody($lot, ['quantity' => '0.175']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $fill);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.quantity_balance.next_authorization_number', 2)
+            ->assertJsonPath('data.quantity_balance.available_quantity', '0.300')->assertJsonPath('data.quantity_balance.allowances.0.authorized', '0.175');
+        $snapshot = app(\App\Services\PharmacyTransferBalance::class)->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+        $this->assertSame([['source_authorization_number' => 2, 'quantity' => '0.300']], $snapshot['allowances']);
+        $last = $this->postJson($url.'/fills', $this->fillBody($lot, ['quantity' => '0.300']))->assertOk()->json('data.fills.1');
+        $this->complete($rx, $last);
+        $this->postJson($url.'/fills', $this->fillBody($lot, ['quantity' => '0.001']))->assertUnprocessable();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.quantity_balance.next_authorization_number', null);
+        $supplied = DB::table('pharmacy_fills')->whereIn('prescription_id', [$source, $rx])->where('fulfillment_status', 'collected')->get()->sum(fn ($f) => \App\Services\PharmacyStock::milli($f->quantity));
+        $this->assertSame(600, $supplied);
+        $this->assertSame(1, DB::table('pharmacy_rx_transfer_receipts')->count());
+        $this->assertSame(0, DB::table('invoices')->count()); $this->assertSame(0, DB::table('payments')->count());
+    }
+
+    public function test_transferred_allowance_closure_uses_received_remainder_and_cannot_be_amended(): void
+    {
+        [$source, $rx, $receipt] = $this->transferredAllowanceFixture();
+        $url = "/api/pharmacy/prescriptions/$rx"; $lot = $this->lot(['location_id' => $this->otherLocation]);
+        $fill = $this->postJson($url.'/fills', $this->fillBody($lot, ['quantity' => '0.075', 'partial_reason' => 'SYNTHETIC received partial']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $fill);
+        $this->postJson($url.'/allowances/close', $this->closureBody($rx))->assertOk()
+            ->assertJsonPath('data.quantity_balance.allowances.0.closed_quantity', '0.100')->assertJsonPath('data.quantity_balance.available_quantity', '0.300');
+        $closure = DB::table('pharmacy_allowance_closures')->where('prescription_id', $rx)->value('id');
+        $correction = $this->postJson($url."/allowances/$closure/corrections", $this->allowanceCorrectionBody($rx))->assertOk()->json('data.quantity_balance.pending_correction_id');
+        $reviewer = User::findOrFail(DB::table('pharmacy_rx_transfer_receipts')->where('id', $receipt)->value('accepted_by'));
+        DB::table('pharmacy_staff_assignments')->insert(['location_id' => $this->otherLocation, 'user_id' => $reviewer->id, 'active' => true, 'valid_until' => now()->addYear()->toDateString()]);
+        $reviewer->withAccessToken(new Token(['expires_at' => now()->addHour()])); $this->actingAs($reviewer, 'api');
+        $this->postJson($url."/allowance-corrections/$correction/review", $this->allowanceCorrectionReview($rx))->assertOk()
+            ->assertJsonPath('data.quantity_balance.available_quantity', '0.100');
+        $this->getJson($url.'/amendments')->assertOk()->assertJsonPath('data.hold_reason', 'A transferred prescription retains its received order and allowance limits. Obtain a separately authorized replacement.');
+    }
+
+    public function test_transferred_allowance_rejects_inconsistent_receipt_and_order_without_reserving_stock(): void
+    {
+        [$source, $rx, $receipt] = $this->transferredAllowanceFixture();
+        $url = "/api/pharmacy/prescriptions/$rx"; $lot = $this->lot(['location_id' => $this->otherLocation]);
+        $original = DB::table('pharmacy_prescriptions')->find($rx);
+        foreach (['refills_authorized' => 2, 'quantity' => '0.301', 'directions' => 'Changed', 'location_id' => $this->location, 'controlled' => true] as $field => $value) {
+            DB::table('pharmacy_prescriptions')->where('id', $rx)->update([$field => $value]);
+            $this->postJson($url.'/fills', $this->fillBody($lot, ['quantity' => '0.001', 'partial_reason' => 'SYNTHETIC']))->assertUnprocessable();
+            DB::table('pharmacy_prescriptions')->where('id', $rx)->update([$field => $original->$field]);
+        }
+        $record = DB::table('pharmacy_rx_transfer_receipts')->find($receipt);
+        DB::table('pharmacy_rx_transfer_receipts')->where('id', $receipt)->update(['source_snapshot' => '{}']);
+        $this->getJson($url)->assertUnprocessable();
+        DB::table('pharmacy_rx_transfer_receipts')->where('id', $receipt)->update(['source_snapshot' => $record->source_snapshot]);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '0.175');
+        foreach ([['source_authorization_number' => 0, 'quantity' => '0.175'], ['source_authorization_number' => 1, 'quantity' => '0.301']] as $invalid) {
+            $snapshot = json_decode($record->source_snapshot, true, 512, JSON_THROW_ON_ERROR);
+            $snapshot['allowances'][0] = $invalid;
+            $bytes = json_encode($snapshot, JSON_THROW_ON_ERROR);
+            DB::table('pharmacy_rx_transfer_receipts')->where('id', $receipt)->update(['source_snapshot' => $bytes, 'snapshot_sha256' => hash('sha256', $bytes)]);
+            $this->getJson($url)->assertUnprocessable();
+        }
+        DB::table('pharmacy_rx_transfer_receipts')->where('id', $receipt)->update(['source_snapshot' => $record->source_snapshot, 'snapshot_sha256' => $record->snapshot_sha256]);
+        $sourceOrder = DB::table('pharmacy_prescriptions')->find($source);
+        DB::table('pharmacy_prescriptions')->where('id', $source)->update(['directions' => 'Changed retained source order']);
+        $this->getJson($url)->assertUnprocessable();
+        DB::table('pharmacy_prescriptions')->where('id', $source)->update(['directions' => $sourceOrder->directions, 'discontinued_at' => null]);
+        $this->postJson($url.'/fills', $this->fillBody($lot, ['quantity' => '0.001', 'partial_reason' => 'SYNTHETIC']))->assertUnprocessable();
+        $this->assertSame(0, DB::table('pharmacy_fills')->where('prescription_id', $rx)->count());
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+    }
+
+    public function test_transfer_balance_preserves_partial_and_future_allowances_without_mutations(): void
+    {
+        $rx = $this->rx(['quantity' => '0.300', 'refills_authorized' => 2]); $lot = $this->lot(['quantity' => '1.000']);
+        $project = fn () => app(\App\Services\PharmacyTransferBalance::class)->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+        $initial = $project(); $this->assertSame('0.900', $initial['remaining_quantity']);
+        $first = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '0.125', 'partial_reason' => 'SYNTHETIC partial']))->assertOk()->json('data.fills.0');
+        $held = $project(); $this->assertContains('open_fill', $held['holds']); $this->assertSame([], $held['allowances']); $this->assertNull($held['remaining_quantity']);
+        $this->complete($rx, $first);
+        $tables = ['pharmacy_prescriptions', 'pharmacy_fills', 'pharmacy_events', 'pharmacy_stock_lots', 'pharmacy_stock_events', 'pharmacy_allowance_closures', 'invoices', 'payments'];
+        $before = []; foreach ($tables as $table) $before[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+        $snapshot = $project();
+        $this->assertSame([], $snapshot['holds']);
+        $this->assertSame([['source_authorization_number' => 1, 'quantity' => '0.175'], ['source_authorization_number' => 2, 'quantity' => '0.300'], ['source_authorization_number' => 3, 'quantity' => '0.300']], $snapshot['allowances']);
+        $this->assertSame('0.775', $snapshot['remaining_quantity']);
+        $this->assertFalse($snapshot['transfer_authorized']);
+        $this->assertNotSame($initial['source_token'], $snapshot['source_token']);
+        $this->assertSame($snapshot, $project());
+        foreach ($tables as $table) $this->assertSame($before[$table], DB::table($table)->orderBy('id')->get()->toJson(), $table);
+        $second = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '0.175']))->assertOk()->json('data.fills.1');
+        $this->act($rx, $second, 'cancel');
+        $cancelled = $project(); $this->assertSame($snapshot['allowances'], $cancelled['allowances']);
+        $this->assertNotSame($snapshot['source_token'], $cancelled['source_token']);
+    }
+
+    public function test_transfer_balance_does_not_reopen_closed_or_unknown_authorization(): void
+    {
+        $rx = $this->rx(['quantity' => '10.000', 'refills_authorized' => 1]); $lot = $this->lot();
+        $fill = $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot, ['quantity' => '2.000', 'partial_reason' => 'SYNTHETIC partial']))->assertOk()->json('data.fills.0');
+        $this->complete($rx, $fill);
+        $url = "/api/pharmacy/prescriptions/$rx";
+        $close = ['request_id' => (string) Str::uuid(), 'ledger_token' => $this->getJson($url)->json('data.quantity_balance.ledger_token'), 'authorization_number' => 1,
+            'basis' => 'patient_request', 'occurred_on' => now()->toDateString(), 'reason' => 'SYNTHETIC closure', 'evidence' => 'SYNTHETIC patient request', 'confirmed' => true];
+        $this->postJson($url.'/allowances/close', $close)->assertOk();
+        $snapshot = app(\App\Services\PharmacyTransferBalance::class)->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+        $this->assertSame([['source_authorization_number' => 2, 'quantity' => '10.000']], $snapshot['allowances']);
+        $this->assertSame('10.000', $snapshot['remaining_quantity']);
+        $legacy = $this->rx(); $f = $this->fill($legacy, $lot); $this->complete($legacy, $f);
+        DB::table('pharmacy_fills')->where('id', $f['id'])->update(['authorization_number' => null]);
+        $legacySnapshot = app(\App\Services\PharmacyTransferBalance::class)->snapshot(DB::table('pharmacy_prescriptions')->find($legacy));
+        $this->assertContains('historical_allowances_unresolved', $legacySnapshot['holds']);
+        $this->assertSame([], $legacySnapshot['allowances']); $this->assertNull($legacySnapshot['remaining_quantity']);
+    }
+
+    public function test_transfer_balance_waits_for_independent_correction_and_restores_only_the_remainder(): void
+    {
+        [$rx, $lot, $closure] = $this->closedAllowanceFixture();
+        $project = fn () => app(\App\Services\PharmacyTransferBalance::class)->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+        $closed = $project();
+        $this->assertSame([['source_authorization_number' => 2, 'quantity' => '10.000']], $closed['allowances']);
+        $correction = $this->postJson("/api/pharmacy/prescriptions/$rx/allowances/$closure/corrections", $this->allowanceCorrectionBody($rx))
+            ->assertOk()->json('data.quantity_balance.pending_correction_id');
+        $pending = $project();
+        $this->assertContains('allowance_correction_pending', $pending['holds']);
+        $this->assertSame([], $pending['allowances']); $this->assertNull($pending['remaining_quantity']);
+        $this->assertNotSame($closed['source_token'], $pending['source_token']);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("/api/pharmacy/prescriptions/$rx/allowance-corrections/$correction/review", $this->allowanceCorrectionReview($rx))->assertOk();
+        $applied = $project();
+        $this->assertSame([], $applied['holds']);
+        $this->assertSame([['source_authorization_number' => 1, 'quantity' => '6.000'], ['source_authorization_number' => 2, 'quantity' => '10.000']], $applied['allowances']);
+        $this->assertSame('16.000', $applied['remaining_quantity']);
+        $this->assertNotSame($pending['source_token'], $applied['source_token']);
+        $this->assertFalse($applied['transfer_authorized']);
+    }
+
+    public function test_transfer_balance_exhaustion_and_date_changes_cannot_recreate_authority(): void
+    {
+        $rx = $this->rx(['refills_authorized' => 0, 'expires_on' => now()->toDateString()]); $lot = $this->lot();
+        $project = fn () => app(\App\Services\PharmacyTransferBalance::class)->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+        $initial = $project(); $this->assertSame('10.000', $initial['remaining_quantity']);
+        $this->travel(1)->days();
+        try {
+            $expired = $project();
+            $this->assertContains('prescription_expired', $expired['holds']);
+            $this->assertSame([], $expired['allowances']); $this->assertNull($expired['remaining_quantity']);
+            $this->assertNotSame($initial['source_token'], $expired['source_token']);
+        } finally { $this->travelBack(); }
+        $fill = $this->fill($rx, $lot); $this->complete($rx, $fill);
+        $exhausted = $project();
+        $this->assertContains('allowances_exhausted', $exhausted['holds']);
+        $this->assertSame([], $exhausted['allowances']); $this->assertNull($exhausted['remaining_quantity']);
+        $this->assertFalse($exhausted['transfer_authorized']);
+    }
+
+    public function test_transfer_balance_restricts_unsupported_orders_and_binds_source_evidence(): void
+    {
+        foreach ([['controlled' => true], ['compounded' => true], ['expires_on' => now()->subDay()->toDateString()]] as $values) {
+            $rx = $this->rx($values); $snapshot = app(\App\Services\PharmacyTransferBalance::class)->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+            $this->assertNotEmpty($snapshot['holds']); $this->assertSame([], $snapshot['allowances']); $this->assertFalse($snapshot['transfer_authorized']);
+        }
+        $rx = $this->rx(); $service = app(\App\Services\PharmacyTransferBalance::class);
+        $before = $service->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'SYNTHETIC transfer source',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('source.pdf', "%PDF-1.4\n% SYNTHETIC ONLY\n%%EOF")], ['Accept' => 'application/json'])->assertCreated();
+        $after = $service->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+        $this->assertNotSame($before['source_token'], $after['source_token']); $this->assertSame($before['allowances'], $after['allowances']);
+        $this->postJson("/api/pharmacy/prescriptions/$rx/discontinue", ['request_id' => (string) Str::uuid(), 'reason' => 'SYNTHETIC stop', 'reference' => 'SYNTHETIC only'])->assertOk();
+        $stopped = $service->snapshot(DB::table('pharmacy_prescriptions')->find($rx));
+        $this->assertContains('prescription_discontinued', $stopped['holds']); $this->assertSame([], $stopped['allowances']);
+    }
+
     public function test_partial_quantities_share_an_allowance_and_cannot_exceed_it(): void
     {
         $rx = $this->rx(['quantity' => '0.300', 'refills_authorized' => 1]);

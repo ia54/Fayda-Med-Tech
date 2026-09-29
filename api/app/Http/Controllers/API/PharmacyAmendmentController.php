@@ -41,6 +41,7 @@ class PharmacyAmendmentController extends Controller
 
     private function hold(object $rx): ?string
     {
+        if ($rx->incoming_transfer_id ?? null) return 'A transferred prescription retains its received order and allowance limits. Obtain a separately authorized replacement.';
         if ($rx->controlled || $rx->compounded) return 'Controlled and compounded amendments require their dedicated workflow.';
         if ($rx->discontinued_at || $rx->expires_on < now()->toDateString()) return 'Receive a new prescription for a discontinued or expired order.';
         if (DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->whereIn('fulfillment_status', ['collected', 'delivered'])->exists()) return 'A supply has already been handed over. Use a separately received replacement to preserve its authorization history.';
