@@ -80,12 +80,12 @@ class PharmacyQuantity
             $available = 0;
         }
         $current = $groups[$next] ?? null;
-        $closable = $pending->isEmpty() && ! $restricted && ! $rx->discontinued_at && $rx->expires_on >= now()->toDateString()
+        $closable = $pending->isEmpty() && ! ($rx->pending_transfer_id ?? null) && ! $restricted && ! $rx->discontinued_at && $rx->expires_on >= now()->toDateString()
             && $remaining > 0 && $current && ! $current['closure']
             && PharmacyStock::milli($current['handed_over']) > 0 && $available > 0
             && ! $fills->contains(fn ($f) => ! in_array($f->fulfillment_status, ['collected', 'delivered'], true));
         $correctable = null;
-        if (! $restricted && ! $rx->discontinued_at && $rx->expires_on >= now()->toDateString()
+        if (! ($rx->pending_transfer_id ?? null) && ! $restricted && ! $rx->discontinued_at && $rx->expires_on >= now()->toDateString()
             && ! $fills->contains(fn ($f) => ! in_array($f->fulfillment_status, ['collected', 'delivered'], true))) {
             foreach ($closures as $number => $closure) {
                 if (! $fills->contains(fn ($f) => $f->authorization_number === null || (int) $f->authorization_number > (int) $number)) {
@@ -99,7 +99,7 @@ class PharmacyQuantity
             $row['corrections'] = $corrections->where('closure_id', $c->id)->map(fn ($r) => array_intersect_key((array) $r, array_flip(['id', 'created_by', 'reason', 'evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at'])))->values()->all();
             return $row;
         })->all();
-        return ['authorization_limits' => array_map(fn ($amount) => PharmacyStock::decimal($amount), $limits), 'incoming_transfer' => $authority['transfer'], 'closure_history' => $retained, 'correctable_closure_id' => $correctable, 'pending_correction_id' => $pending->first()?->id, 'closable_authorization_number' => $closable ? $next : null, 'ledger_token' => $token, 'mode' => $restricted ? 'restricted' : 'quantity', 'legacy_allowances_used' => $legacy,
+        return ['pending_transfer_id' => $rx->pending_transfer_id ?? null, 'authorization_limits' => array_map(fn ($amount) => PharmacyStock::decimal($amount), $limits), 'incoming_transfer' => $authority['transfer'], 'closure_history' => $retained, 'correctable_closure_id' => $correctable, 'pending_correction_id' => $pending->first()?->id, 'closable_authorization_number' => $closable ? $next : null, 'ledger_token' => $token, 'mode' => $restricted ? 'restricted' : 'quantity', 'legacy_allowances_used' => $legacy,
             'next_authorization_number' => $remaining ? $next : null,
             'available_quantity' => PharmacyStock::decimal($available),
             'allowances_remaining' => $remaining, 'allowances' => array_values($groups)];

@@ -41,6 +41,7 @@ class PharmacyAmendmentController extends Controller
 
     private function hold(object $rx): ?string
     {
+        if ($rx->pending_transfer_id ?? null) return 'Resolve the pending prescription transfer before amending the order.';
         if ($rx->incoming_transfer_id ?? null) return 'A transferred prescription retains its received order and allowance limits. Obtain a separately authorized replacement.';
         if ($rx->controlled || $rx->compounded) return 'Controlled and compounded amendments require their dedicated workflow.';
         if ($rx->discontinued_at || $rx->expires_on < now()->toDateString()) return 'Receive a new prescription for a discontinued or expired order.';

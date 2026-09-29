@@ -413,6 +413,7 @@ class PharmacyController extends Controller
                 abort_unless((int) $prior->actor_id === (int) $r->user()->id && hash_equals($prior->request_hash, $this->hash($d)), 409, 'This request already has different retained evidence.');
                 return;
             }
+            abort_if($rx->pending_transfer_id ?? null, 422, 'Resolve the pending prescription transfer before closing an allowance.');
             abort_if($rx->controlled || $rx->compounded, 422, 'This closure workflow does not apply to controlled or compounded prescriptions.');
             abort_if($rx->discontinued_at || $rx->expires_on < now()->toDateString(), 422, 'This prescription is no longer active for further supply.');
             $balance = app(PharmacyQuantity::class)->balance($rx);
@@ -505,6 +506,7 @@ class PharmacyController extends Controller
 
                 return;
             }
+            abort_if($rx->pending_transfer_id ?? null, 422, 'Resolve the pending prescription transfer before creating another fill.');
             abort_if($rx->discontinued_at, 422, 'This prescription is discontinued. No new fill can be created.');
             if ($rx->expires_on < now()->toDateString()) {
                 $this->fail('Prescription has expired. Obtain an updated prescription.');

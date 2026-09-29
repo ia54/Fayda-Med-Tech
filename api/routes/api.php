@@ -59,6 +59,14 @@ Route::post('signatures/docusign/webhook', [SignatureController::class, 'docusig
 // Protected routes
 Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
     Route::middleware(['role:pharmacist,pharmacy_technician,medical_biller,admin', \App\Http\Middleware\PharmacyPreviewOnly::class, \App\Http\Middleware\PharmacyWriteTransaction::class])->prefix('pharmacy')->group(function () {
+        $rxTransfer = \App\Http\Controllers\API\PharmacyPrescriptionTransferController::class;
+        Route::get('/prescriptions/{id}/transfer-destinations', [$rxTransfer, 'destinations']);
+        Route::get('/prescriptions/{id}/transfer-preview', [$rxTransfer, 'preview']);
+        Route::post('/prescriptions/{id}/transfers', [$rxTransfer, 'store']);
+        Route::get('/prescription-transfers', [$rxTransfer, 'index']);
+        Route::get('/prescription-transfers/{id}', [$rxTransfer, 'show']);
+        Route::get('/prescription-transfers/{id}/sources/{sourceId}/file', [$rxTransfer, 'sourceFile']);
+        Route::post('/prescription-transfers/{id}/review', [$rxTransfer, 'review']);
         $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;
         Route::post('/batch-worksheets/{id}/execution', [$execution, 'store']);
         Route::post('/batch-worksheets/{id}/execution/addenda', [$execution, 'addendum']);

@@ -7,11 +7,12 @@ use Illuminate\Support\Facades\DB;
 /** Read-only input to the transfer workflow, not authorization to issue a transfer. */
 class PharmacyTransferBalance
 {
-    public function snapshot(object $rx): array
+    public function snapshot(object $rx, ?int $ignorePendingTransferId = null): array
     {
         $balance = app(PharmacyQuantity::class)->balance($rx);
         $fills = DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->orderBy('id')->get();
         $holds = [];
+        if (($rx->pending_transfer_id ?? null) && (int) $rx->pending_transfer_id !== $ignorePendingTransferId) $holds[] = 'transfer_pending';
         if ($rx->controlled) $holds[] = 'controlled_transfer_unvalidated';
         if ($rx->compounded) $holds[] = 'compounded_transfer_unvalidated';
         if ($rx->discontinued_at) $holds[] = 'prescription_discontinued';
@@ -36,7 +37,7 @@ class PharmacyTransferBalance
         $order = array_intersect_key((array) $rx, array_flip(['id', 'organization_id', 'episode_id', 'location_id', 'rx_number', 'medication',
             'strength', 'dosage_form', 'directions', 'quantity', 'quantity_unit', 'refills_authorized', 'written_on', 'expires_on',
             'prescriber_name', 'prescriber_identifier', 'source_reference', 'amendment_revision', 'controlled', 'compounded', 'discontinued_at']));
-        $sources = DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->orderBy('id')->get(['id', 'sha256']);
+        $sources = DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->orderBy('id')->get(['id', 'sha256', 'original_name', 'mime_type', 'size', 'reference']);
         return [
             'source_token' => hash('sha256', json_encode([$order, $balance['ledger_token'], $sources, $holds], JSON_THROW_ON_ERROR)),
             'order' => $order,
