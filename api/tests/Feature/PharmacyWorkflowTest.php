@@ -1428,6 +1428,55 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->where('id', $lot)->value('on_hand'));
     }
 
+    public function test_controlled_intake_retains_explicit_classification_without_enabling_dispensing(): void
+    {
+        $body = $this->body(['controlled' => true, 'controlled_schedule' => 'II', 'controlled_source_format' => 'paper',
+            'controlled_classification_reference' => 'SYNTHETIC source comparison only', 'refills_authorized' => 0]);
+        foreach (['controlled_schedule', 'controlled_source_format', 'controlled_classification_reference'] as $field) {
+            $missing = $body; unset($missing[$field]);
+            $this->postJson('/api/pharmacy/prescriptions', $missing)->assertUnprocessable()->assertJsonValidationErrors($field);
+        }
+        foreach (['I', '2', 'none'] as $schedule) {
+            $this->postJson('/api/pharmacy/prescriptions', array_replace($body, ['controlled_schedule' => $schedule]))->assertUnprocessable();
+        }
+        $this->postJson('/api/pharmacy/prescriptions', array_replace($body, ['controlled_source_format' => 'certified']))->assertUnprocessable();
+        $this->postJson('/api/pharmacy/prescriptions', array_replace($body, ['controlled' => false]))->assertUnprocessable();
+        $this->assertSame(0, DB::table('pharmacy_prescriptions')->count());
+        $id = $this->postJson('/api/pharmacy/prescriptions', $body)->assertCreated()->json('data.id');
+        $this->postJson('/api/pharmacy/prescriptions', $body)->assertCreated()->assertJsonPath('data.id', $id);
+        $this->postJson('/api/pharmacy/prescriptions', array_replace($body, ['controlled_schedule' => 'III']))->assertConflict();
+        $this->getJson("/api/pharmacy/prescriptions/$id")->assertOk()->assertJsonPath('data.controlled_schedule', 'II')
+            ->assertJsonPath('data.controlled_source_format', 'paper')->assertJsonPath('data.controlled_classification_reference', $body['controlled_classification_reference']);
+        $event = DB::table('pharmacy_events')->where('prescription_id', $id)->where('action', 'prescription_received')->sole();
+        $this->assertSame(['schedule' => 'II', 'source_format' => 'paper', 'reference' => $body['controlled_classification_reference']], json_decode($event->details, true)['controlled_classification']);
+        $this->assertSame($this->actor->id, $event->actor_id);
+        $fill = $this->fill($id, $this->lot());
+        $this->act($id, $fill, 'approve', $this->checks(), 422);
+        $this->assertEquals(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+        $this->assertSame('pending', DB::table('pharmacy_fills')->where('id', $fill['id'])->value('review_status'));
+    }
+
+    public function test_controlled_intake_unknown_and_historical_fields_are_never_inferred(): void
+    {
+        $id = $this->rx(['controlled' => true]);
+        $this->getJson("/api/pharmacy/prescriptions/$id")->assertOk()->assertJsonPath('data.controlled_schedule', 'unknown')
+            ->assertJsonPath('data.controlled_source_format', 'unknown');
+        $codes = array_column($this->getJson("/api/pharmacy/prescriptions/$id/assistant")->assertOk()->json('data.checks'), 'code');
+        $this->assertContains('controlled_classification_unresolved', $codes);
+        $legacy = $this->rx();
+        DB::table('pharmacy_prescriptions')->where('id', $legacy)->update(['controlled' => true]);
+        $this->getJson("/api/pharmacy/prescriptions/$legacy")->assertOk()->assertJsonPath('data.controlled_schedule', null)
+            ->assertJsonPath('data.controlled_source_format', null)->assertJsonPath('data.controlled_classification_reference', null);
+        $this->assertContains('controlled_classification_unresolved', array_column($this->getJson("/api/pharmacy/prescriptions/$legacy/assistant")->assertOk()->json('data.checks'), 'code'));
+        $this->assertNull(DB::table('pharmacy_prescriptions')->where('id', $legacy)->value('controlled_schedule'));
+        $this->actor->role = 'pharmacy_technician';
+        $body = $this->body(['controlled' => true, 'controlled_schedule' => 'V', 'controlled_source_format' => 'electronic']);
+        $new = $this->postJson('/api/pharmacy/prescriptions', $body)->assertCreated()->json('data.id');
+        $this->getJson("/api/pharmacy/prescriptions/$new")->assertOk()->assertJsonPath('data.controlled_source_format', 'electronic');
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson("/api/pharmacy/prescriptions/$new")->assertNotFound();
+    }
+
     public function test_assistant_surfaces_record_gaps_without_inference_external_calls_or_writes(): void
     {
         Http::preventStrayRequests();
@@ -1528,6 +1577,10 @@ class PharmacyWorkflowTest extends TestCase
 
     private function body(array $overrides = []): array
     {
+        if (! empty($overrides['controlled'])) {
+            $overrides += ['controlled_schedule' => 'unknown', 'controlled_source_format' => 'unknown', 'controlled_classification_reference' => 'SYNTHETIC unresolved intake'];
+        }
+
         if (! empty($overrides['pharmacy_patient_id'])) {
             $overrides += ['case_link_reference' => 'SYNTHETIC case and chart identity evidence', 'case_link_confirmed' => true,
                 'patient_version' => DB::table('pharmacy_patients')->where('id', $overrides['pharmacy_patient_id'])->value('version') ?? 1];
