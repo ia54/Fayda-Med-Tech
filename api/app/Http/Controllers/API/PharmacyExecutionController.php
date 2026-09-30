@@ -27,11 +27,12 @@ class PharmacyExecutionController extends Controller
         $d = $r->validate(['version' => 'required|integer|min:1', 'prepared_on' => 'required|date_format:Y-m-d|after_or_equal:today|before_or_equal:today',
             'personnel_reference' => 'required|string|max:2000', 'equipment_reference' => 'required|string|max:2000',
             'process_record_reference' => 'required|string|max:5000', 'quality_results_reference' => 'required|string|max:5000',
-            'yield_quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3', 'yield_unit' => 'required|in:mg,g,mL,each,capsule,tablet',
+            'yield_quantity' => 'required|numeric|min:0|max:999999.999|decimal:0,3', 'zero_yield_evidence' => 'nullable|string|max:5000', 'yield_unit' => 'required|in:mg,g,mL,each,capsule,tablet',
             'deviations' => 'required|string|max:5000', 'environment_reference' => 'nullable|string|max:5000', 'hazard_control_reference' => 'nullable|string|max:5000',
             'ingredients' => 'required|array|min:1|max:30', 'ingredients.*' => 'array:key,quantity,unit,measurement_reference',
             'ingredients.*.key' => 'required|string|max:40|distinct:strict', 'ingredients.*.quantity' => 'required|numeric|min:0.001|max:999999.999|decimal:0,3',
             'ingredients.*.unit' => 'required|in:mg,g,mL,each,capsule,tablet', 'ingredients.*.measurement_reference' => 'required|string|max:2000']);
+        abort_if(PharmacyStock::milli($d['yield_quantity']) === 0 && trim((string) ($d['zero_yield_evidence'] ?? '')) === '', 422, 'A zero-output preparation requires failure findings and retained-material custody evidence.');
         abort_unless((int) $batch->version === $d['version'], 409, 'Worksheet changed. Refresh before recording execution.');
         abort_if(DB::table('pharmacy_batch_executions')->where('batch_id', $id)->exists(), 409, 'Execution is already recorded. Do not repeat consumption.');
         abort_unless($batch->status === 'reviewed', 422, 'Independent worksheet review is required.');

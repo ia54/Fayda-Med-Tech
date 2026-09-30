@@ -4820,6 +4820,31 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(0, DB::table('pharmacy_fills')->count());
     }
 
+    public function test_zero_output_execution_requires_evidence_and_retains_consumption_without_finished_stock(): void
+    {
+        [$b, $lot] = $this->reservedWorksheet();
+        $url = "/api/pharmacy/batch-worksheets/$b/execution";
+        $body = array_replace($this->executionBody(), ['yield_quantity' => 0]);
+        $before = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $this->postJson($url, $body)->assertUnprocessable();
+        $this->postJson($url, array_replace($body, ['zero_yield_evidence' => '   ']))->assertUnprocessable();
+        $this->assertEquals($before, DB::table('pharmacy_ingredient_lots')->find($lot));
+        $body['zero_yield_evidence'] = 'SYNTHETIC failed preparation; retained material held for investigation, no disposal claimed';
+        $this->postJson($url, array_replace($body, ['yield_quantity' => '-0.001']))->assertUnprocessable();
+        $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.execution.record.yield_quantity', 0)
+            ->assertJsonPath('data.execution.record.zero_yield_evidence', $body['zero_yield_evidence'])
+            ->assertJsonPath('data.production_release_enabled', false);
+        $this->postJson($url, $body)->assertStatus(409);
+        $this->assertEquals(3, DB::table('pharmacy_ingredient_lots')->find($lot)->on_hand);
+        $this->assertEquals(0, DB::table('pharmacy_ingredient_lots')->find($lot)->reserved);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("$url/review", ['version' => 1, 'decision' => 'rejected', 'evidence' => 'SYNTHETIC failed output retained for follow-up'])
+            ->assertOk()->assertJsonPath('data.output_status', 'quarantined')->assertJsonPath('data.production_release_enabled', false);
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'consumed_in_preparation')->count());
+        $this->assertSame(0, DB::table('pharmacy_stock_lots')->count());
+        $this->assertSame(0, DB::table('pharmacy_fills')->count());
+    }
+
     public function test_execution_addenda_retain_original_reset_review_and_never_change_stock(): void
     {
         [$b, $lot] = $this->reservedWorksheet();
