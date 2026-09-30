@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Services\PharmacyAccess;
 use App\Services\PharmacyStock;
+use App\Services\PharmacyCompoundingIncident;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -100,6 +101,7 @@ class PharmacyIngredientController extends Controller
         $lot = $this->lot($r, $id);
         $d = $r->validate(['version' => 'required|integer|min:1', 'status' => 'required|in:available,quarantined', 'evidence' => 'required|string|max:5000']);
         abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh before reviewing.');
+        if ($d['status'] === 'available') app(PharmacyCompoundingIncident::class)->assertLotClear((int) $lot->organization_id, (int) $lot->id);
         abort_if($d['status'] === 'available' && DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)->where('status', 'pending')->exists(), 422, 'Resolve the pending stock discrepancy before releasing quarantine.');
         abort_if($lot->recall_reference !== null, 422, 'A recalled receipt cannot be released or cleared through a stock status change.');
         abort_if($d['status'] === $lot->status, 422, 'Status is unchanged.');
@@ -122,6 +124,7 @@ class PharmacyIngredientController extends Controller
             abort_unless((int) $old->created_by === (int) $r->user()->id && hash_equals($old->request_hash, $hash), 409, 'This request identifier belongs to another count.');
             return $this->show($r, $id);
         }
+        app(PharmacyCompoundingIncident::class)->assertLotClear((int) $lot->organization_id, (int) $lot->id);
         abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh and recount.');
         abort_if(DB::table('pharmacy_ingredient_counts')->where('ingredient_lot_id', $id)->where('status', 'pending')->exists(), 409, 'A discrepancy is already awaiting review.');
         abort_if($lot->recall_reference !== null, 422, 'Recalled stock requires a separate disposition workflow; do not adjust it through a physical count.');
@@ -150,6 +153,7 @@ class PharmacyIngredientController extends Controller
         abort_if((int) $count->created_by === (int) $r->user()->id, 422, 'A different pharmacist must review this discrepancy.');
         $delta = 0;
         if ($d['decision'] === 'apply') {
+            app(PharmacyCompoundingIncident::class)->assertLotClear((int) $lot->organization_id, (int) $lot->id);
             abort_unless((int) $lot->version === (int) $count->lot_version && $lot->status === 'quarantined', 409, 'Stock changed after this count. Reject this proposal and record a fresh count.');
             $counted = PharmacyStock::milli($count->counted_quantity);
             abort_unless($counted >= PharmacyStock::milli($lot->reserved), 422, 'Count is below reserved stock. Resolve worksheet reservations, reject this proposal and recount.');
@@ -187,11 +191,13 @@ class PharmacyIngredientController extends Controller
         $d = $r->validate(['version' => 'required|integer|min:1', 'action' => 'required|in:reserve,release', 'evidence' => 'required|string|max:5000',
             'lots' => 'required_if:action,reserve|array|min:1|max:30', 'lots.*' => 'array:key,lot_id', 'lots.*.key' => 'required|string|max:40|distinct:strict', 'lots.*.lot_id' => 'required|integer']);
         abort_unless((int) $batch->version === $d['version'], 409, 'Worksheet changed. Refresh before allocating.');
+        app(PharmacyCompoundingIncident::class)->assertBatchClear($org, (int) $id);
         $allocations = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $id)->get();
         if ($d['action'] === 'release') {
             abort_unless($allocations->isNotEmpty() && $allocations->every(fn ($a) => $a->status === 'reserved'), 422, 'No active reservation. Released worksheets cannot reserve again.');
             foreach ($allocations as $a) {
                 $lot = $this->lot($r, $a->ingredient_lot_id);
+                app(PharmacyCompoundingIncident::class)->assertLotClear($org, (int) $lot->id);
                 $amount = PharmacyStock::milli($a->quantity);
                 $reserved = PharmacyStock::milli($lot->reserved);
                 abort_unless($reserved >= $amount, 422, 'Ingredient reconciliation is required.');
@@ -214,6 +220,7 @@ class PharmacyIngredientController extends Controller
                 $selection = $selections->get($line['key']);
                 abort_unless($selection, 422, 'Missing ingredient stock selection.');
                 $lot = $this->lot($r, $selection['lot_id']);
+                app(PharmacyCompoundingIncident::class)->assertLotClear($org, (int) $lot->id);
                 abort_unless((int) $lot->location_id === (int) $batch->location_id, 404);
                 $spec = $specs->get($line['key']);
                 abort_unless($lot->status === 'available' && $lot->expires_on >= $record['planned_on'], 422, 'Ingredient stock is expired or quarantined.');

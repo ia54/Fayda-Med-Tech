@@ -71,6 +71,9 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/prescription-transfers/{id}', [$rxTransfer, 'show']);
         Route::get('/prescription-transfers/{id}/sources/{sourceId}/file', [$rxTransfer, 'sourceFile']);
         Route::post('/prescription-transfers/{id}/review', [$rxTransfer, 'review']);
+        $incidents = \App\Http\Controllers\API\PharmacyCompoundingIncidentController::class;
+        Route::get('/batch-worksheets/{id}/incidents', [$incidents, 'index']);
+        Route::post('/batch-worksheets/{id}/incidents', [$incidents, 'store']);
         $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;
         Route::post('/batch-worksheets/{id}/execution', [$execution, 'store']);
         Route::post('/batch-worksheets/{id}/execution/addenda', [$execution, 'addendum']);

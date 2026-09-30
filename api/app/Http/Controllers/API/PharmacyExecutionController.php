@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Services\PharmacyAccess;
 use App\Services\PharmacyStock;
+use App\Services\PharmacyCompoundingIncident;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -46,6 +47,7 @@ class PharmacyExecutionController extends Controller
         abort_if($formula->hazardous && empty($d['hazard_control_reference']), 422, 'Hazardous preparation requires containment and handling evidence.');
         $f = json_decode($formula->record, true, 512, JSON_THROW_ON_ERROR);
         abort_unless($d['yield_unit'] === $f['output_unit'] && PharmacyStock::milli($d['yield_quantity']) <= PharmacyStock::milli($f['output_quantity']), 422, 'Yield must use the reviewed output unit and cannot exceed the planned output in this preview.');
+        app(PharmacyCompoundingIncident::class)->assertBatchClear((int) $batch->organization_id, (int) $id);
         $allocations = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $id)->get();
         $actual = collect($d['ingredients'])->keyBy('key');
         abort_unless($allocations->count() === count($record['ingredients']) && $allocations->count() === $actual->count() && $allocations->every(fn ($a) => $a->status === 'reserved'), 422, 'Every ingredient must have an active stock reservation.');
@@ -53,6 +55,7 @@ class PharmacyExecutionController extends Controller
             $line = $actual->get($a->ingredient_key);
             $lot = DB::table('pharmacy_ingredient_lots')->where('id', $a->ingredient_lot_id)->where('organization_id', $r->user()->organization_id)->where('location_id', $batch->location_id)->first();
             abort_unless($lot, 404);
+            app(PharmacyCompoundingIncident::class)->assertLotClear((int) $batch->organization_id, (int) $lot->id);
             abort_unless($lot->status === 'available' && $lot->expires_on >= $d['prepared_on'], 422, 'A reserved ingredient is expired or quarantined.');
             abort_unless($line && $line['unit'] === $lot->quantity_unit && PharmacyStock::milli($line['quantity']) === PharmacyStock::milli($a->quantity), 422, 'This preview supports exact reserved quantities only. Do not misstate a differing actual measurement; deviation reconciliation is not available yet.');
             $amount = PharmacyStock::milli($a->quantity);

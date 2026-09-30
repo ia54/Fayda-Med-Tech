@@ -141,6 +141,9 @@ class PharmacyCompoundingController extends Controller
             ->join('pharmacy_ingredient_lots as l', 'l.id', '=', 'a.ingredient_lot_id')
             ->where('a.batch_id', $id)
             ->select('a.*', 'l.status as lot_status', 'l.expires_on as lot_expires_on', 'l.lot_number', 'l.quantity_unit')->get();
+        $incidents = app(\App\Services\PharmacyCompoundingIncident::class);
+        $b->incident_custody_hold = $incidents->holdsBatch($b->organization_id, $id)
+            || $b->allocations->contains(fn ($allocation) => $incidents->holdsLot($b->organization_id, $allocation->ingredient_lot_id));
         $b->execution = DB::table('pharmacy_batch_executions')->where('batch_id', $id)->first();
         if ($b->execution) {
             $b->execution->record = json_decode($b->execution->record, true, 512, JSON_THROW_ON_ERROR);

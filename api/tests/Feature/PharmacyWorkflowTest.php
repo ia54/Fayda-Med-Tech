@@ -4820,6 +4820,193 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(0, DB::table('pharmacy_fills')->count());
     }
 
+    public function test_incident_routes_retain_observations_and_reject_production_access(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->first();
+        $url = "/api/pharmacy/batch-worksheets/$batch/incidents";
+        $body = ['request_id' => (string) Str::uuid(), 'version' => 3, 'observed_at' => now()->format('Y-m-d H:i:s'),
+            'findings' => 'SYNTHETIC uncertain consumption', 'custody_evidence' => 'SYNTHETIC material held',
+            'follow_up_owner' => 'Synthetic pharmacist', 'ingredients' => [['allocation_id' => $allocation->id,
+                'observed_quantity' => null, 'measurement_evidence' => 'SYNTHETIC measurement unavailable']]];
+        $this->getJson("/api/pharmacy/batch-worksheets/$batch")->assertOk()->assertJsonPath('data.incident_custody_hold', false);
+        $this->actor->role = 'pharmacy_technician';
+        $this->postJson($url, $body)->assertForbidden();
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 0);
+        $this->actor->role = 'pharmacist';
+        $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.status', 'unresolved');
+        $this->postJson($url, $body)->assertOk();
+        $this->getJson("/api/pharmacy/batch-worksheets/$batch")->assertOk()->assertJsonPath('data.incident_custody_hold', true);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 1)
+            ->assertJsonPath('data.data.0.ingredients.0.observed_quantity', null);
+        $this->getJson($url.'?page=0')->assertUnprocessable();
+        $this->getJson($url.'?page=2')->assertOk()->assertJsonCount(0, 'data.data');
+        $this->app->instance('env', 'production');
+        $this->getJson($url)->assertStatus(503);
+        $this->postJson($url, $body)->assertStatus(503);
+        $this->assertSame(1, DB::table('pharmacy_compounding_incidents')->count());
+        $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->find($lot)->on_hand);
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+    }
+
+    public function test_internal_incident_capture_retains_actual_observations_and_holds_without_consumption(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet(true);
+        $allocations = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->orderBy('id')->get();
+        $body = ['request_id' => (string) Str::uuid(), 'version' => 3, 'observed_at' => now()->format('Y-m-d H:i:s'),
+            'findings' => 'SYNTHETIC differing measurements', 'custody_evidence' => 'SYNTHETIC retained material', 'follow_up_owner' => 'Synthetic pharmacist',
+            'ingredients' => [['allocation_id' => $allocations[0]->id, 'observed_quantity' => null, 'measurement_evidence' => 'SYNTHETIC unknown'],
+                ['allocation_id' => $allocations[1]->id, 'observed_quantity' => 0, 'measurement_evidence' => 'SYNTHETIC observed zero']]];
+        $call = function ($data) use ($batch) {
+            $r = \Illuminate\Http\Request::create('/internal-test-only', 'POST', $data);
+            app()->instance('request', $r); $r->setUserResolver(fn () => $this->actor);
+            return app(\App\Http\Controllers\API\PharmacyCompoundingIncidentController::class)->store($r, $batch);
+        };
+        $refuse = function ($status) use ($call, $body) {
+            try { $call($body); $this->fail('Unauthorized incident capture accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame($status, $e->getStatusCode()); }
+        };
+        $this->actor->role = 'pharmacy_technician'; $refuse(403);
+        $this->actor->role = 'medical_biller'; $refuse(403);
+        $this->actor->role = 'pharmacist'; $this->actor->organization_id = 2; $refuse(404);
+        $this->actor->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $refuse(404);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        $stockBefore = DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson();
+        $eventsBefore = DB::table('pharmacy_ingredient_events')->orderBy('id')->get()->toJson();
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) {
+                throw new \RuntimeException('SYNTHETIC incident audit failure');
+            }
+        });
+        try { $call($body); $this->fail('Expected audit failure'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC incident audit failure', $e->getMessage()); }
+        $fail = false;
+        $this->assertSame($stockBefore, DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson());
+        $this->assertSame($eventsBefore, DB::table('pharmacy_ingredient_events')->orderBy('id')->get()->toJson());
+        $this->assertSame(0, DB::table('pharmacy_compounding_incidents')->count());
+        $this->assertSame(0, DB::table('pharmacy_compounding_incident_lines')->count());
+        $this->assertEquals(3, DB::table('pharmacy_batch_worksheets')->find($batch)->version);
+        $first = $call($body); $this->assertSame(201, $first->getStatusCode());
+        $id = $first->getData(true)['data']['id'];
+        $this->assertSame(200, $call($body)->getStatusCode());
+        $this->assertSame(1, DB::table('pharmacy_compounding_incidents')->count());
+        $lines = DB::table('pharmacy_compounding_incident_lines')->where('incident_id', $id)->orderBy('id')->get();
+        $this->assertNull($lines[0]->observed_quantity); $this->assertEquals(0, $lines[1]->observed_quantity);
+        $stock = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $this->assertEquals(5, $stock->on_hand); $this->assertEquals(4, $stock->reserved);
+        $this->assertSame('quarantined', $stock->status);
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'preparation_incident_hold')->count());
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+        $incident = DB::table('pharmacy_compounding_incidents')->find($id);
+        $this->assertSame($incident->source_hash, app(\App\Services\PharmacyCompoundingIncident::class)->digest(json_decode($incident->source_snapshot, true)));
+        $read = function ($batchId) {
+            $r = \Illuminate\Http\Request::create('/internal-test-only', 'GET');
+            app()->instance('request', $r); $r->setUserResolver(fn () => $this->actor);
+            return app(\App\Http\Controllers\API\PharmacyCompoundingIncidentController::class)->index($r, $batchId)->getData(true)['data'];
+        };
+        foreach (['pharmacist', 'pharmacy_technician'] as $role) {
+            $this->actor->role = $role;
+            $history = $read($batch);
+            $this->assertSame(1, $history['total']);
+            $this->assertSame($id, $history['data'][0]['id']);
+            $this->assertNull($history['data'][0]['ingredients'][0]['observed_quantity']);
+            $this->assertEquals(0, $history['data'][0]['ingredients'][1]['observed_quantity']);
+            foreach (['source_snapshot', 'request_id', 'request_hash'] as $private) {
+                $this->assertArrayNotHasKey($private, $history['data'][0]);
+            }
+        }
+        $denyRead = function ($status) use ($read, $batch) {
+            try { $read($batch); $this->fail('Unauthorized history exposed'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame($status, $e->getStatusCode()); }
+        };
+        $this->actor->role = 'medical_biller'; $denyRead(403);
+        $this->actor->role = 'pharmacist'; $this->actor->organization_id = 2; $denyRead(404);
+        $this->actor->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $denyRead(404);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        try { $call(array_replace($body, ['findings' => 'Changed'])); $this->fail('Changed retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+    }
+
+    public function test_compounding_incident_hold_foundation_preserves_unknown_and_zero_observations(): void
+    {
+        [$b, $lot] = $this->reservedWorksheet();
+        $service = app(\App\Services\PharmacyCompoundingIncident::class);
+        $this->assertFalse($service->holdsBatch(1, $b));
+        $this->assertFalse($service->holdsLot(1, $lot));
+        $stock = DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson();
+        $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $b)->first();
+        foreach ([null, '0.000'] as $observed) {
+            $incident = DB::table('pharmacy_compounding_incidents')->insertGetId([
+                'organization_id' => 1, 'location_id' => $this->location, 'batch_id' => $b,
+                'created_by' => $this->actor->id, 'request_id' => (string) Str::uuid(), 'request_hash' => str_repeat('a', 64),
+                'batch_version' => 3, 'source_snapshot' => '{}', 'source_hash' => str_repeat('b', 64),
+                'observed_at' => now(), 'findings' => 'SYNTHETIC observation', 'custody_evidence' => 'SYNTHETIC hold',
+                'follow_up_owner' => 'Synthetic lead', 'created_at' => now(),
+            ]);
+            $line = DB::table('pharmacy_compounding_incident_lines')->insertGetId([
+                'incident_id' => $incident, 'allocation_id' => $allocation->id, 'ingredient_lot_id' => $lot,
+                'ingredient_key' => $allocation->ingredient_key, 'quantity_unit' => 'g',
+                'reserved_quantity' => $allocation->quantity, 'observed_quantity' => $observed,
+                'measurement_evidence' => 'SYNTHETIC explicit observation state',
+            ]);
+            $value = DB::table('pharmacy_compounding_incident_lines')->find($line)->observed_quantity;
+            if ($observed === null) $this->assertNull($value); else $this->assertEquals(0, $value);
+            $this->assertTrue($service->holdsBatch(1, $b));
+            $this->assertTrue($service->holdsLot(1, $lot));
+            $this->assertFalse($service->holdsLot(2, $lot));
+            $this->assertFalse($service->holdsBatch(2, $b));
+            try { $service->assertLotClear(1, $lot); $this->fail('Unresolved incident did not hold stock'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        }
+        $this->assertSame($stock, DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson());
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/execution", $this->executionBody())->assertUnprocessable();
+        $this->postJson("/api/pharmacy/batch-worksheets/$b/allocation", ['version' => 3, 'action' => 'release', 'evidence' => 'SYNTHETIC'])->assertUnprocessable();
+        $version = (int) DB::table('pharmacy_ingredient_lots')->find($lot)->version;
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/counts", ['request_id' => (string) Str::uuid(), 'version' => $version,
+            'counted_quantity' => '3', 'reason' => 'physical_count', 'evidence' => 'SYNTHETIC'])->assertUnprocessable();
+        $this->assertSame($stock, DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson());
+        // Strengthening custody is permitted; ordinary release is not.
+        $other = (array) DB::table('pharmacy_batch_worksheets')->find($b);
+        unset($other['id']);
+        $other['batch_number'] = 'SYNTHETIC-COMPETING'; $other['request_id'] = (string) Str::uuid(); $other['version'] = 2;
+        $otherBatch = DB::table('pharmacy_batch_worksheets')->insertGetId($other);
+        $this->postJson("/api/pharmacy/batch-worksheets/$otherBatch/allocation", ['version' => 2, 'action' => 'reserve',
+            'evidence' => 'SYNTHETIC competing allocation', 'lots' => [['key' => 'A', 'lot_id' => $lot]]])->assertUnprocessable()
+            ->assertJsonPath('message', 'This ingredient receipt has unresolved preparation-consumption evidence.');
+        // Simulate another reservation that already existed when the incident was reported.
+        $otherAllocation = (array) $allocation; unset($otherAllocation['id']); $otherAllocation['batch_id'] = $otherBatch;
+        DB::table('pharmacy_ingredient_allocations')->insert($otherAllocation);
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['reserved' => '4.000']);
+        $this->getJson("/api/pharmacy/batch-worksheets/$otherBatch")->assertOk()->assertJsonPath('data.incident_custody_hold', true);
+        $this->postJson("/api/pharmacy/batch-worksheets/$otherBatch/execution", array_replace($this->executionBody(), ['version' => 2]))
+            ->assertUnprocessable()->assertJsonPath('message', 'This ingredient receipt has unresolved preparation-consumption evidence.');
+        $this->postJson("/api/pharmacy/batch-worksheets/$otherBatch/allocation", ['version' => 2, 'action' => 'release', 'evidence' => 'SYNTHETIC'])
+            ->assertUnprocessable()->assertJsonPath('message', 'This ingredient receipt has unresolved preparation-consumption evidence.');
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/status", ['version' => $version, 'status' => 'quarantined', 'evidence' => 'SYNTHETIC hold'])->assertOk();
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/status", ['version' => $version + 1, 'status' => 'available', 'evidence' => 'SYNTHETIC'])->assertUnprocessable();
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/recall", ['version' => $version + 1, 'reference' => 'SYNTHETIC recall', 'evidence' => 'SYNTHETIC'])->assertOk();
+        $this->assertTrue($service->holdsLot(1, $lot));
+        $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->find($lot)->on_hand);
+        $this->assertEquals(4, DB::table('pharmacy_ingredient_lots')->find($lot)->reserved);
+        $count = DB::table('pharmacy_ingredient_counts')->insertGetId(['ingredient_lot_id' => $lot, 'created_by' => $this->actor->id,
+            'request_id' => (string) Str::uuid(), 'request_hash' => str_repeat('c', 64), 'recorded_quantity' => '5.000',
+            'counted_quantity' => '4.000', 'lot_version' => $version + 1, 'reason' => 'physical_count',
+            'evidence' => 'SYNTHETIC preexisting count', 'created_at' => now()]);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/counts/$count/review", ['decision' => 'apply', 'evidence' => 'SYNTHETIC'])
+            ->assertUnprocessable()->assertJsonPath('message', 'This ingredient receipt has unresolved preparation-consumption evidence.');
+        $this->postJson("/api/pharmacy/ingredient-lots/$lot/counts/$count/review", ['decision' => 'reject', 'evidence' => 'SYNTHETIC incident holds custody'])->assertOk();
+        $this->assertEquals(5, DB::table('pharmacy_ingredient_lots')->find($lot)->on_hand);
+        $this->assertEquals(4, DB::table('pharmacy_ingredient_lots')->find($lot)->reserved);
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+    }
+
     public function test_zero_output_execution_requires_evidence_and_retains_consumption_without_finished_stock(): void
     {
         [$b, $lot] = $this->reservedWorksheet();
