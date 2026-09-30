@@ -6,6 +6,7 @@ import {useGetPrescriptionSourcesQuery,useAddPrescriptionSourceMutation} from '@
 import {Card,CardHeader,CardTitle,CardContent} from '@/components/ui/card'
 import {Button} from '@/components/ui/button'
 import {Field,errorMessage} from './fields'
+import {ExtractionDrafts} from './extraction-drafts'
 import {SourceTranscriptions} from './source-transcriptions'
 
 export function PrescriptionSources({id}:{id:number}){
@@ -40,5 +41,5 @@ export function PrescriptionSources({id}:{id:number}){
  <label className="grid gap-1 text-sm">Prescription file (PDF, PNG or JPEG; up to 10 MB)<input className="w-full min-w-0" type="file" name="file" accept="application/pdf,image/png,image/jpeg" required onChange={()=>setRequestId(crypto.randomUUID())}/></label>
  <Button disabled={isLoading}>{isLoading?'Retaining source file…':'Retain original evidence'}</Button>
  {error&&<p role="alert">{error}</p>}{success&&<p role="status">{success}</p>}
- </form></CardContent></Card>
+ </form><ExtractionDrafts id={id}/></CardContent></Card>
 }

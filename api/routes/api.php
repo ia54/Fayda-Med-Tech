@@ -59,6 +59,10 @@ Route::post('signatures/docusign/webhook', [SignatureController::class, 'docusig
 // Protected routes
 Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
     Route::middleware(['role:pharmacist,pharmacy_technician,medical_biller,admin', \App\Http\Middleware\PharmacyPreviewOnly::class, \App\Http\Middleware\PharmacyWriteTransaction::class])->prefix('pharmacy')->group(function () {
+        $extraction = \App\Http\Controllers\API\PharmacyExtractionController::class;
+        Route::get('/prescriptions/{id}/extractions', [$extraction, 'index']);
+        Route::get('/extractions/{id}', [$extraction, 'show']);
+        Route::post('/extractions/{id}/review', [$extraction, 'review']);
         $rxTransfer = \App\Http\Controllers\API\PharmacyPrescriptionTransferController::class;
         Route::get('/prescriptions/{id}/transfer-destinations', [$rxTransfer, 'destinations']);
         Route::get('/prescriptions/{id}/transfer-preview', [$rxTransfer, 'preview']);

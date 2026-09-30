@@ -46,6 +46,115 @@ class PharmacyWorkflowTest extends TestCase
         }
     }
 
+    private function extractionFixture(): array
+    {
+        \Illuminate\Support\Facades\Storage::fake('documents');
+        Http::preventStrayRequests();
+        $rx = $this->rx();
+        $source = $this->post("/api/pharmacy/prescriptions/$rx/sources", ['request_id' => (string) Str::uuid(), 'reference' => 'SYNTHETIC original',
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('synthetic.pdf', "%PDF-1.4\n% SYNTHETIC ONLY\n%%EOF")], ['Accept' => 'application/json'])->assertCreated()->json('data.id');
+        $sha = DB::table('pharmacy_source_documents')->where('id', $source)->value('sha256');
+        $text = $this->postJson("/api/pharmacy/prescriptions/$rx/sources/$source/transcriptions", ['request_id' => (string) Str::uuid(), 'source_sha256' => $sha,
+            'previous_id' => null, 'transcription_pages' => ['SYNTHETIC medication A. Quantity: 5 tablets.'], 'reference' => 'SYNTHETIC transcription fixture', 'confirmed' => true])->assertCreated()->json('data.id');
+        $fields = array_fill_keys(\App\Services\PharmacyExtractionDraft::FIELDS, []);
+        $fields['medication'] = [['value' => 'SYNTHETIC medication A', 'page' => 1, 'quote' => 'SYNTHETIC medication A.']];
+        $completion = ['id' => 'synthetic-completion-1', 'model' => 'synthetic-model', 'choices' => [['finish_reason' => 'stop', 'message' => ['role' => 'assistant', 'content' => json_encode(['schema_version' => 1, 'fields' => $fields])]]]];
+        return [$rx, $source, $text, $completion];
+    }
+
+    private function extractionReviewBody(object $attempt): array
+    {
+        $fields = array_fill_keys(\App\Services\PharmacyExtractionDraft::FIELDS, ['action' => 'reject', 'candidate_index' => null, 'value' => null, 'reason' => 'SYNTHETIC not present; original needs human review']);
+        $fields['medication'] = ['action' => 'accept', 'candidate_index' => 0, 'value' => null, 'reason' => 'SYNTHETIC exact source comparison only'];
+        return ['request_id' => (string) Str::uuid(), 'draft_sha256' => $attempt->draft_sha256, 'decision' => 'review', 'fields' => $fields,
+            'evidence' => 'SYNTHETIC documentary review; no clinical decision', 'confirmed' => true];
+    }
+
+    public function test_extraction_attempts_and_field_reviews_retain_evidence_without_changing_orders(): void
+    {
+        [$rx, $source, $text, $completion] = $this->extractionFixture();
+        $ledger = app(\App\Services\PharmacyExtractionLedger::class);
+        $order = (array) DB::table('pharmacy_prescriptions')->find($rx);
+        $input = ['request_id' => (string) Str::uuid(), 'model' => 'synthetic-model', 'provider_reference' => 'SYNTHETIC FIXTURE — no provider call'];
+        $attempt = $ledger->begin($this->actor, $rx, $text, $input);
+        $this->assertSame('pending', $attempt->status);
+        $this->assertSame($attempt->id, $ledger->begin($this->actor, $rx, $text, $input)->id);
+        $this->getJson("/api/pharmacy/extractions/{$attempt->id}")->assertOk()->assertJsonPath('data.draft', null)->assertJsonPath('provider_connected', false);
+        $completed = $ledger->complete($this->actor, $attempt->id, $completion);
+        $this->assertSame('completed', $completed->status);
+        $this->assertSame($completed->draft, $ledger->complete($this->actor, $attempt->id, $completion)->draft);
+        $this->getJson("/api/pharmacy/extractions/{$attempt->id}")->assertOk()->assertJsonPath('data.draft.status', 'needs_human_review')->assertJsonMissingPath('data.request_hash')->assertJsonMissingPath('data.context_token')->assertJsonPath('data.current_order_values.medication', $order['medication']);
+        $this->getJson("/api/pharmacy/prescriptions/$rx/extractions")->assertOk()->assertJsonPath('data.total', 1);
+        $body = $this->extractionReviewBody($completed);
+        $body['fields']['quantity'] = ['action' => 'correct', 'candidate_index' => null, 'value' => '5', 'reason' => 'SYNTHETIC manual comparison with original quantity'];
+        $url = "/api/pharmacy/extractions/{$attempt->id}/review";
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.review.fields.medication.value', 'SYNTHETIC medication A')->assertJsonPath('data.review.fields.quantity.value', '5');
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['evidence' => 'changed']))->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_extraction_attempts')->count());
+        $this->assertSame(1, DB::table('pharmacy_extraction_reviews')->count());
+        $this->assertSame($order, (array) DB::table('pharmacy_prescriptions')->find($rx));
+        $this->assertSame(0, DB::table('pharmacy_fills')->count());
+        Http::assertNothingSent();
+    }
+
+    public function test_extraction_stale_context_invalid_output_and_review_access_fail_closed(): void
+    {
+        [$rx, $source, $text, $completion] = $this->extractionFixture();
+        $ledger = app(\App\Services\PharmacyExtractionLedger::class);
+        $begin = fn () => $ledger->begin($this->actor, $rx, $text, ['request_id' => (string) Str::uuid(), 'model' => 'synthetic-model', 'provider_reference' => 'SYNTHETIC']);
+        $attempt = $begin();
+        $bad = $completion; $bad['choices'][0]['finish_reason'] = 'length';
+        $failed = $ledger->complete($this->actor, $attempt->id, $bad);
+        $this->assertSame('failed', $failed->status); $this->assertSame('invalid_response', $failed->failure_code); $this->assertNull($failed->draft);
+        $this->assertSame($failed->id, $ledger->complete($this->actor, $attempt->id, $bad)->id);
+        $fresh = $begin(); $completed = $ledger->complete($this->actor, $fresh->id, $completion); $body = $this->extractionReviewBody($completed);
+        $url = "/api/pharmacy/extractions/{$fresh->id}";
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->getJson($url)->assertOk(); $this->postJson("$url/review", $body)->assertForbidden();
+        $this->actor->role = 'medical_biller'; $this->actor->save(); $this->getJson($url)->assertForbidden();
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]); $this->getJson($url)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save(); $this->getJson($url)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        $malformed = $body; $malformed['fields']['quantity'] = 'approve'; $this->postJson("$url/review", $malformed)->assertStatus(422);
+        $missing = $body; unset($missing['fields']['quantity']); $this->postJson("$url/review", $missing)->assertStatus(422);
+        $invented = $body; $invented['fields']['medication']['candidate_index'] = 9; $this->postJson("$url/review", $invented)->assertStatus(422);
+        $overridden = $body; $overridden['fields']['medication']['value'] = 'Invented'; $this->postJson("$url/review", $overridden)->assertStatus(422);
+        $this->assertSame(0, DB::table('pharmacy_extraction_reviews')->count());
+        $this->patient->first_name = 'Synthetic changed identity'; $this->patient->save();
+        $this->postJson("$url/review", $body)->assertStatus(409);
+        $dismiss = array_replace($body, ['decision' => 'dismiss', 'fields' => [], 'evidence' => 'SYNTHETIC stale identity; reassess']);
+        $this->postJson("$url/review", $dismiss)->assertOk()->assertJsonPath('data.review.decision', 'dismiss');
+        $this->assertSame(1, DB::table('pharmacy_extraction_reviews')->count());
+        $uncertain = $begin(); $ledger->fail($this->actor, $uncertain->id, 'delivery_uncertain');
+        $this->assertSame('delivery_uncertain', $ledger->fail($this->actor, $uncertain->id, 'delivery_uncertain')->failure_code);
+        Http::assertNothingSent();
+    }
+
+    public function test_extraction_audit_failures_roll_back_begin_completion_and_review(): void
+    {
+        [$rx, $source, $text, $completion] = $this->extractionFixture();
+        $ledger = app(\App\Services\PharmacyExtractionLedger::class); $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) throw new \RuntimeException('SYNTHETIC extraction audit failure');
+        });
+        $input = ['request_id' => (string) Str::uuid(), 'model' => 'synthetic-model', 'provider_reference' => 'SYNTHETIC'];
+        try { $ledger->begin($this->actor, $rx, $text, $input); $this->fail('Expected audit failure'); } catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC extraction audit failure', $e->getMessage()); }
+        $this->assertSame(0, DB::table('pharmacy_extraction_attempts')->count());
+        $fail = false; $attempt = $ledger->begin($this->actor, $rx, $text, $input); $fail = true;
+        try { $ledger->complete($this->actor, $attempt->id, $completion); $this->fail('Expected audit failure'); } catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC extraction audit failure', $e->getMessage()); }
+        $this->assertSame('pending', DB::table('pharmacy_extraction_attempts')->where('id', $attempt->id)->value('status'));
+        $fail = false; $completed = $ledger->complete($this->actor, $attempt->id, $completion); $fail = true;
+        $body = $this->extractionReviewBody($completed); $url = "/api/pharmacy/extractions/{$attempt->id}/review";
+        $this->postJson($url, $body)->assertStatus(500); $this->assertSame(0, DB::table('pharmacy_extraction_reviews')->count());
+        $fail = false; $this->postJson($url, $body)->assertOk();
+        $this->assertSame(1, DB::table('pharmacy_extraction_reviews')->count());
+        $this->assertSame(0, DB::table('pharmacy_fills')->count());
+        Http::assertNothingSent();
+    }
+
     public function test_source_transcriptions_preserve_literal_pages_history_and_location_boundaries(): void
     {
         \Illuminate\Support\Facades\Storage::fake('documents');
