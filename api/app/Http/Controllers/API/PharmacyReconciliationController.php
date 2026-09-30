@@ -62,6 +62,7 @@ class PharmacyReconciliationController extends Controller
             $author = User::find($proposal->created_by);
             abort_unless($author && $author->role === 'pharmacist' && (int) $author->organization_id === $org && $author->status === 'active', 422, 'Proposal author no longer has current pharmacy authority.');
             app(PharmacyAccess::class)->requireLocation($author, $incident->location_id);
+            app(\App\Services\PharmacyIncidentGroup::class)->assertIndividualClear($incidentId);
             abort_unless($incident->status === 'unresolved' && (int) $incident->version === (int) $proposal->incident_version + 1, 409, 'Incident changed.');
             $lines = DB::table('pharmacy_compounding_incident_lines')->where('incident_id', $incidentId)->orderBy('allocation_id')->get();
             $lots = DB::table('pharmacy_ingredient_lots')->where('organization_id', $org)->where('location_id', $incident->location_id)->whereIn('id', $lines->pluck('ingredient_lot_id'))->orderBy('id')->lockForUpdate()->get();
@@ -158,6 +159,7 @@ class PharmacyReconciliationController extends Controller
 
                 return response()->json(['data' => ['id' => $old->id, 'status' => $old->status]]);
             }
+            app(\App\Services\PharmacyIncidentGroup::class)->assertIndividualClear($id);
             abort_unless((int) $incident->version === $d['version'] && $incident->status === 'unresolved', 409, 'Incident changed; refresh before proposing reconciliation.');
             abort_if(DB::table('pharmacy_compounding_reconciliations')->where('incident_id', $id)->where('status', 'pending')->exists(), 409, 'A reconciliation proposal is already pending.');
             $lines = DB::table('pharmacy_compounding_incident_lines')->where('incident_id', $id)->orderBy('allocation_id')->get();

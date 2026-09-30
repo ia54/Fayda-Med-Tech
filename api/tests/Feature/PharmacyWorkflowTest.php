@@ -5129,7 +5129,7 @@ class PharmacyWorkflowTest extends TestCase
 
     }
 
-    public function test_custody_routes_reject_unscoped_access_and_production_use(): void
+    public function test_custody_routes_reject_unscoped_access_and_production_use(bool $priorAccounted = false): void
     {
         [$batch, $lot] = $this->reservedWorksheet();
         $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->first();
@@ -5140,6 +5140,19 @@ class PharmacyWorkflowTest extends TestCase
                 'observed_quantity' => null, 'measurement_evidence' => 'SYNTHETIC unknown']],
         ])->assertCreated()->json('data.id');
         $this->getJson('/api/pharmacy/incidents')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.id', $incident);
+        $groupService = app(\App\Services\PharmacyIncidentGroup::class);
+        $group = $groupService->discover($this->actor, $incident);
+        $this->assertSame([$incident], $group['incident_ids']);
+        $this->assertSame([$lot], $group['ingredient_lot_ids']);
+        $this->actor->organization_id = 2;
+        try { $groupService->discover($this->actor, $incident); $this->fail('Foreign incident discovery accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        $this->actor->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        try { $groupService->discover($this->actor, $incident); $this->fail('Revoked location discovery accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+
         $this->getJson('/api/pharmacy/incidents?status=reconciled')->assertOk()->assertJsonPath('data.total', 0);
         $this->getJson('/api/pharmacy/incidents?status=invalid')->assertUnprocessable();
         $this->actor->organization_id = 2;
@@ -5181,6 +5194,259 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson($url)->assertStatus(503);
         foreach ([$url, "$url/1/apply", "$url/1/reject"] as $path) $this->postJson($path, [])->assertStatus(503);
         $this->assertSame(0, DB::table('pharmacy_compounding_custody_decisions')->count());
+
+        $this->app->instance('env', 'testing');
+        $second = DB::table('pharmacy_compounding_incidents')->insertGetId(array_replace($template, ['request_id' => (string) Str::uuid()]));
+        $line = (array) DB::table('pharmacy_compounding_incident_lines')->where('incident_id', $incident)->first();
+        unset($line['id']); $line['incident_id'] = $second;
+        DB::table('pharmacy_compounding_incident_lines')->insert($line);
+
+        try { $groupService->discover($this->actor, $incident); $this->fail('Duplicate allocation group accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $batchCopy = (array) DB::table('pharmacy_batch_worksheets')->find($batch);
+        unset($batchCopy['id']); $batchCopy['batch_number'] = 'SYNTHETIC-JOINT-SECOND'; $batchCopy['request_id'] = (string) Str::uuid();
+        $secondBatch = DB::table('pharmacy_batch_worksheets')->insertGetId($batchCopy);
+        $allocationCopy = (array) $allocation; unset($allocationCopy['id']); $allocationCopy['batch_id'] = $secondBatch;
+        $secondAllocation = DB::table('pharmacy_ingredient_allocations')->insertGetId($allocationCopy);
+        DB::table('pharmacy_compounding_incidents')->where('id', $second)->update(['batch_id' => $secondBatch]);
+        DB::table('pharmacy_compounding_incident_lines')->where('incident_id', $second)->update(['allocation_id' => $secondAllocation]);
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['reserved' => '4.000']);
+        foreach (['released', 'consumed', 'incident_accounted'] as $invalidStatus) {
+            DB::table('pharmacy_ingredient_allocations')->where('id', $secondAllocation)->update(['status' => $invalidStatus]);
+            try { $groupService->discover($this->actor, $incident); $this->fail('Inconsistent allocation custody accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        }
+        DB::table('pharmacy_ingredient_allocations')->where('id', $secondAllocation)->update(['status' => 'reserved']);
+        if ($priorAccounted) {
+            $quantities = app(\App\Services\PharmacyIncidentAccounting::class)->line(['reserved_quantity' => 2, 'additional_taken' => 0, 'consumed' => 1, 'unused_retained' => 1, 'disposed_unused' => 0, 'unaccounted' => 0]);
+            $priorEntries = [['allocation_id' => $secondAllocation, 'ingredient_lot_id' => $lot, 'unit' => $line['quantity_unit'], 'accounting' => $quantities, 'evidence' => 'SYNTHETIC previously applied accounting fixture']];
+            $digest = app(\App\Services\PharmacyCompoundingIncident::class);
+            DB::table('pharmacy_compounding_reconciliations')->insert(['incident_id' => $second, 'created_by' => $this->actor->id, 'request_id' => (string) Str::uuid(), 'request_hash' => $digest->digest($priorEntries), 'incident_version' => 1, 'proposal' => json_encode($priorEntries), 'proposal_hash' => $digest->digest($priorEntries), 'source_snapshot' => '{}', 'source_hash' => $digest->digest([]), 'evidence' => 'SYNTHETIC prior accounting fixture', 'status' => 'applied', 'created_at' => now()]);
+            DB::table('pharmacy_compounding_incidents')->where('id', $second)->update(['status' => 'accounted_custody_held']);
+            DB::table('pharmacy_ingredient_allocations')->where('id', $secondAllocation)->update(['status' => 'incident_accounted']);
+            DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['on_hand' => '4.000', 'reserved' => '3.000']);
+        }
+        $stockBeforeGroup = DB::table('pharmacy_ingredient_lots')->get()->toJson();
+        $request = ['request_id' => (string) Str::uuid(), 'evidence' => 'SYNTHETIC joint investigation'];
+
+        $groupAuditWrites = 0; $failGroupAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$groupAuditWrites, &$failGroupAudit) {
+            if ($failGroupAudit && str_contains($query, 'insert into') && str_contains($query, 'pharmacy_compounding_events')) {
+                $groupAuditWrites++;
+                if ($groupAuditWrites === 2) throw new \RuntimeException('SYNTHETIC final group audit failure');
+            }
+        });
+        try { $groupService->retain($this->actor, $incident, $request); $this->fail('Expected final group audit failure'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC final group audit failure', $e->getMessage()); }
+        $failGroupAudit = false;
+        $this->assertSame(0, DB::table('pharmacy_incident_groups')->count());
+        $this->assertSame(0, DB::table('pharmacy_incident_group_members')->count());
+        $this->assertSame(0, DB::table('pharmacy_compounding_events')->where('action', 'joint_incident_group_retained')->count());
+        $this->assertSame($stockBeforeGroup, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        $groupId = $groupService->retain($this->actor, $incident, $request);
+        $this->assertSame($groupId, $groupService->retain($this->actor, $incident, $request));
+        foreach ([$incident, $second] as $memberId) {
+            try { $groupService->assertIndividualClear($memberId); $this->fail('Active joint member allowed individual accounting'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        }
+        $reconciliationBody = ['request_id' => (string) Str::uuid(), 'version' => DB::table('pharmacy_compounding_incidents')->find($incident)->version,
+            'evidence' => 'SYNTHETIC conflicting individual proposal', 'ingredients' => [['allocation_id' => $allocation->id,
+                'additional_taken' => 0, 'consumed' => 1, 'unused_retained' => 1, 'disposed_unused' => 0, 'unaccounted' => 0, 'evidence' => 'SYNTHETIC']]];
+        $this->postJson("/api/pharmacy/incidents/$incident/reconciliations", $reconciliationBody)->assertConflict();
+        $this->assertSame($priorAccounted ? 1 : 0, DB::table('pharmacy_compounding_reconciliations')->count());
+
+        $this->assertSame(2, DB::table('pharmacy_incident_group_members')->where('group_id', $groupId)->count());
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'joint_incident_group_retained')->count());
+        $this->assertSame($stockBeforeGroup, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        foreach ([array_replace($request, ['evidence' => 'Changed evidence']), array_replace($request, ['request_id' => (string) Str::uuid()])] as $conflict) {
+            try { $groupService->retain($this->actor, $incident, $conflict); $this->fail('Conflicting joint group accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        }
+
+        try { $groupService->reject($this->actor, $groupId, 'SYNTHETIC rejection'); $this->fail('Self-review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $jointReviewer = $this->independentReviewer();
+        $groupAuditWrites = 0; $failGroupAudit = true;
+        try { $groupService->reject($jointReviewer, $groupId, 'SYNTHETIC rejection'); $this->fail('Missing group rejection rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC final group audit failure', $e->getMessage()); }
+        $failGroupAudit = false;
+        $this->assertSame('pending', DB::table('pharmacy_incident_groups')->find($groupId)->status);
+        $this->assertSame(0, DB::table('pharmacy_compounding_events')->where('action', 'joint_incident_group_rejected')->count());
+        $groupService->reject($jointReviewer, $groupId, 'SYNTHETIC rejection');
+        $groupService->reject($jointReviewer, $groupId, 'SYNTHETIC rejection');
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'joint_incident_group_rejected')->count());
+        $this->assertSame($stockBeforeGroup, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        $this->assertTrue(app(\App\Services\PharmacyCompoundingIncident::class)->holdsLot(1, $lot));
+        $groupService->assertIndividualClear($incident);
+        $replacementRequest = array_replace($request, ['request_id' => (string) Str::uuid()]);
+        $replacement = $groupService->retain($this->actor, $incident, $replacementRequest);
+        $this->assertNotSame($groupId, $replacement);
+        $this->assertSame([$incident, $second], $groupService->current($this->actor, $replacement)['snapshot']['incident_ids']);
+        $versionBefore = DB::table('pharmacy_ingredient_lots')->find($lot)->version;
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['version' => $versionBefore + 1]);
+        try { $groupService->current($this->actor, $replacement); $this->fail('Stale joint stock accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['version' => $versionBefore]);
+        $memberRecord = DB::table('pharmacy_incident_group_members')->where('group_id', $replacement)->first();
+        DB::table('pharmacy_incident_group_members')->where('id', $memberRecord->id)->update(['allocation_snapshot' => '[]']);
+        try { $groupService->current($this->actor, $replacement); $this->fail('Altered membership accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_incident_group_members')->where('id', $memberRecord->id)->update(['allocation_snapshot' => $memberRecord->allocation_snapshot]);
+        $this->assertSame($replacement, (int) $groupService->current($this->actor, $replacement)['group']->id);
+        $jointData = ['request_id' => (string) Str::uuid(), 'version' => 1, 'evidence' => 'SYNTHETIC joint accounting proposal', 'ingredients' => []];
+        foreach ([$allocation->id, $secondAllocation] as $allocationId) $jointData['ingredients'][] = ['allocation_id' => $allocationId, 'additional_taken' => 0, 'consumed' => 1, 'unused_retained' => 1, 'disposed_unused' => 0, 'unaccounted' => 0, 'evidence' => 'SYNTHETIC confirmed quantities'];
+        $jointAccounting = app(\App\Services\PharmacyJointAccounting::class);
+        if ($priorAccounted) $jointData['ingredients'][1]['consumed'] = 0;
+        $groupAuditWrites = 0; $failGroupAudit = true;
+        try { $jointAccounting->retain($this->actor, $replacement, $jointData); $this->fail('Expected joint proposal audit rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC final group audit failure', $e->getMessage()); }
+        $failGroupAudit = false;
+        $this->assertSame(0, DB::table('pharmacy_incident_group_proposals')->count());
+        $this->assertSame(1, DB::table('pharmacy_incident_groups')->find($replacement)->version);
+        $jointProposal = $jointAccounting->retain($this->actor, $replacement, $jointData);
+        $this->assertSame($jointProposal, $jointAccounting->retain($this->actor, $replacement, $jointData));
+        $this->assertSame(1, DB::table('pharmacy_incident_group_proposals')->count());
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'joint_accounting_proposed')->count());
+        try { $jointAccounting->reject($this->actor, $replacement, $jointProposal, 'SYNTHETIC reject'); $this->fail('Joint accounting self-review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $groupAuditWrites = 0; $failGroupAudit = true;
+        try { $jointAccounting->reject($jointReviewer, $replacement, $jointProposal, 'SYNTHETIC reject'); $this->fail('Expected joint rejection audit rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC final group audit failure', $e->getMessage()); }
+        $failGroupAudit = false;
+        $this->assertSame('pending', DB::table('pharmacy_incident_group_proposals')->find($jointProposal)->status);
+        $this->assertSame(2, DB::table('pharmacy_incident_groups')->find($replacement)->version);
+        $jointAccounting->reject($jointReviewer, $replacement, $jointProposal, 'SYNTHETIC reject');
+        $jointAccounting->reject($jointReviewer, $replacement, $jointProposal, 'SYNTHETIC reject');
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'joint_accounting_rejected')->count());
+        $this->assertTrue(app(\App\Services\PharmacyCompoundingIncident::class)->holdsLot(1, $lot));
+        $jointData['request_id'] = (string) Str::uuid(); $jointData['version'] = 3;
+        $correctedProposal = $jointAccounting->retain($this->actor, $replacement, $jointData);
+        $this->assertNotSame($jointProposal, $correctedProposal);
+        $assertJointBlocked = function (int $status) use ($jointAccounting, $jointReviewer, $replacement, $correctedProposal, $stockBeforeGroup) {
+            try { $jointAccounting->apply($jointReviewer, $replacement, $correctedProposal, 'SYNTHETIC approval'); $this->fail('Unsafe joint application accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame($status, $e->getStatusCode()); }
+            $this->assertSame($stockBeforeGroup, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+            $this->assertSame('pending', DB::table('pharmacy_incident_group_proposals')->find($correctedProposal)->status);
+        };
+        DB::table('pharmacy_staff_assignments')->where('user_id', $jointReviewer->id)->update(['active' => false]);
+        $assertJointBlocked(404);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $jointReviewer->id)->update(['active' => true]);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $assertJointBlocked(404);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        $retainedProposal = DB::table('pharmacy_incident_group_proposals')->find($correctedProposal);
+        DB::table('pharmacy_incident_group_proposals')->where('id', $correctedProposal)->update(['proposal' => '[]']);
+        $assertJointBlocked(409);
+        DB::table('pharmacy_incident_group_proposals')->where('id', $correctedProposal)->update(['proposal' => $retainedProposal->proposal]);
+        DB::table('pharmacy_incident_group_proposals')->where('id', $correctedProposal)->update(['source_snapshot' => '{}']);
+        $assertJointBlocked(409);
+        DB::table('pharmacy_incident_group_proposals')->where('id', $correctedProposal)->update(['source_snapshot' => $retainedProposal->source_snapshot]);
+        DB::table('pharmacy_incident_group_proposals')->where('id', $correctedProposal)->update(['group_version' => 1]);
+        $assertJointBlocked(409);
+        DB::table('pharmacy_incident_group_proposals')->where('id', $correctedProposal)->update(['group_version' => $retainedProposal->group_version]);
+        try { $jointAccounting->apply($this->actor, $replacement, $correctedProposal, 'SYNTHETIC approval'); $this->fail('Self approval accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $groupAuditWrites = 0; $failGroupAudit = true;
+        try { $jointAccounting->apply($jointReviewer, $replacement, $correctedProposal, 'SYNTHETIC approval'); $this->fail('Expected application rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC final group audit failure', $e->getMessage()); }
+        $failGroupAudit = false;
+        $this->assertSame($stockBeforeGroup, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        $this->assertSame('pending', DB::table('pharmacy_incident_group_proposals')->find($correctedProposal)->status);
+        $this->assertSame(0, DB::table('pharmacy_ingredient_events')->where('action', 'joint_incident_accounting_applied')->count());
+        $this->assertSame(0, DB::table('pharmacy_compounding_events')->where('action', 'joint_accounting_applied')->count());
+        $jointAccounting->apply($jointReviewer, $replacement, $correctedProposal, 'SYNTHETIC approval');
+        $stockBeforeGroup = DB::table('pharmacy_ingredient_lots')->get()->toJson();
+        $jointAccounting->apply($jointReviewer, $replacement, $correctedProposal, 'SYNTHETIC approval');
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'joint_incident_accounting_applied')->count());
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'joint_accounting_applied')->count());
+        $this->assertSame('accounted_custody_held', DB::table('pharmacy_incident_groups')->find($replacement)->status);
+        $this->assertEquals($priorAccounted ? 1 : 2, DB::table('pharmacy_ingredient_events')->where('action', 'joint_incident_accounting_applied')->value('quantity'));
+
+        $custodyService = app(\App\Services\PharmacyJointCustody::class);
+        $custodyData = ['request_id' => (string) Str::uuid(), 'version' => 5, 'evidence' => 'SYNTHETIC unused custody', 'ingredients' => []];
+        foreach ([$allocation->id, $secondAllocation] as $id) $custodyData['ingredients'][] = ['allocation_id' => $id, 'return_to_quarantine' => '0.750', 'disposed_unused' => '0.250', 'evidence' => 'SYNTHETIC measured unused material'];
+        $groupAuditWrites = 0; $failGroupAudit = true;
+        try { $custodyService->retain($this->actor, $replacement, $custodyData); $this->fail('Expected custody proposal rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC final group audit failure', $e->getMessage()); }
+        $failGroupAudit = false;
+        $this->assertSame(0, DB::table('pharmacy_incident_group_proposals')->where('phase', 'custody')->count());
+        $this->assertSame(5, DB::table('pharmacy_incident_groups')->find($replacement)->version);
+        $custodyProposal = $custodyService->retain($this->actor, $replacement, $custodyData);
+        $this->assertSame($custodyProposal, $custodyService->retain($this->actor, $replacement, $custodyData));
+        $this->assertSame(1, DB::table('pharmacy_incident_group_proposals')->where('phase', 'custody')->count());
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'joint_custody_proposed')->count());
+        try { $custodyService->reject($this->actor, $replacement, $custodyProposal, 'SYNTHETIC correction needed'); $this->fail('Custody self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $groupAuditWrites = 0; $failGroupAudit = true;
+        try { $custodyService->reject($jointReviewer, $replacement, $custodyProposal, 'SYNTHETIC correction needed'); $this->fail('Expected custody rejection rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC final group audit failure', $e->getMessage()); }
+        $failGroupAudit = false;
+        $this->assertSame('pending', DB::table('pharmacy_incident_group_proposals')->find($custodyProposal)->status);
+        $this->assertSame(6, DB::table('pharmacy_incident_groups')->find($replacement)->version);
+        $custodyService->reject($jointReviewer, $replacement, $custodyProposal, 'SYNTHETIC correction needed');
+        $custodyService->reject($jointReviewer, $replacement, $custodyProposal, 'SYNTHETIC correction needed');
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'joint_custody_rejected')->count());
+        $this->assertSame('accounted_custody_held', DB::table('pharmacy_incident_groups')->find($replacement)->status);
+        $custodyData['request_id'] = (string) Str::uuid(); $custodyData['version'] = 7;
+        $replacementCustody = $custodyService->retain($this->actor, $replacement, $custodyData);
+        $this->assertNotSame($custodyProposal, $replacementCustody);
+        $this->assertSame(2, DB::table('pharmacy_incident_group_proposals')->where('phase', 'custody')->count());
+
+
+        $stock = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $this->assertEquals(3, $stock->on_hand); $this->assertEquals(2, $stock->reserved);
+        foreach ([$incident, $second] as $memberId) $this->assertSame('accounted_custody_held', DB::table('pharmacy_compounding_incidents')->find($memberId)->status);
+        $this->assertTrue(app(\App\Services\PharmacyCompoundingIncident::class)->holdsLot(1, $lot));
+        try { $jointAccounting->apply($jointReviewer, $replacement, $correctedProposal, 'SYNTHETIC changed'); $this->fail('Changed retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+
+
+        $this->assertSame($stockBeforeGroup, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+
+
+        try { $custodyService->apply($this->actor, $replacement, $replacementCustody, 'SYNTHETIC final review'); $this->fail('Custody self approval accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $groupAuditWrites = 0; $failGroupAudit = true;
+        try { $custodyService->apply($jointReviewer, $replacement, $replacementCustody, 'SYNTHETIC final review'); $this->fail('Expected final custody rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC final group audit failure', $e->getMessage()); }
+        $failGroupAudit = false;
+        $this->assertSame($stockBeforeGroup, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        $this->assertSame('pending', DB::table('pharmacy_incident_group_proposals')->find($replacementCustody)->status);
+        foreach ([$incident, $second] as $memberId) $this->assertSame('accounted_custody_held', DB::table('pharmacy_compounding_incidents')->find($memberId)->status);
+        $this->assertSame(0, DB::table('pharmacy_ingredient_events')->where('action', 'joint_unused_custody_resolved')->count());
+        $custodyService->apply($jointReviewer, $replacement, $replacementCustody, 'SYNTHETIC final review');
+        $finalStock = DB::table('pharmacy_ingredient_lots')->get()->toJson();
+        $custodyService->apply($jointReviewer, $replacement, $replacementCustody, 'SYNTHETIC final review');
+        $this->assertSame($finalStock, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'joint_unused_custody_resolved')->count());
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'joint_custody_applied')->count());
+        $this->assertSame('reconciled', DB::table('pharmacy_incident_groups')->find($replacement)->status);
+        foreach ([$incident, $second] as $memberId) $this->assertSame('reconciled', DB::table('pharmacy_compounding_incidents')->find($memberId)->status);
+        $stock = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $this->assertEquals(2.5, $stock->on_hand); $this->assertEquals(0, $stock->reserved);
+        $this->assertSame('quarantined', $stock->status);
+        $this->assertFalse(app(\App\Services\PharmacyCompoundingIncident::class)->holdsLot(1, $lot));
+        $this->assertSame($replacement, $groupService->retain($this->actor, $incident, $replacementRequest));
+        $this->actingAs($this->actor, 'api');
+        $this->getJson("/api/pharmacy/incidents/$incident/joint-groups")->assertOk()->assertJsonPath('data.data.0.id', $replacement)->assertJsonPath('data.data.0.status', 'reconciled')->assertJsonPath('joint_managed', true);
+        $view = $this->getJson("/api/pharmacy/incident-groups/$replacement")->assertOk()->assertJsonPath('data.group.status', 'reconciled')->assertJsonCount(2, 'data.members');
+        $this->assertArrayNotHasKey('source_snapshot', $view->json('data.group'));
+        $this->assertArrayNotHasKey('source_snapshot', $view->json('data.proposals.data.0'));
+        $this->postJson("/api/pharmacy/incidents/$incident/joint-groups", $replacementRequest)->assertCreated()->assertJsonPath('data.id', $replacement);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $this->getJson("/api/pharmacy/incident-groups/$replacement")->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        $this->app->instance('env', 'production');
+        $this->getJson("/api/pharmacy/incident-groups/$replacement")->assertStatus(503);
+        $this->postJson("/api/pharmacy/incidents/$incident/joint-groups", $replacementRequest)->assertStatus(503);
+        $this->app->instance('env', 'testing');
+
+
+    }
+
+    public function test_joint_workflow_preserves_previously_accounted_incident_consumption(): void
+    {
+        $this->test_custody_routes_reject_unscoped_access_and_production_use(true);
     }
 
     public function test_reconciliation_cannot_apply_unaccounted_or_excess_material(): void

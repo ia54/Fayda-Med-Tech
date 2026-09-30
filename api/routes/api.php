@@ -83,6 +83,15 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/incidents/{id}/reconciliations/{proposalId}/reject', [$reconciliation, 'reject']);
         $incidents = \App\Http\Controllers\API\PharmacyCompoundingIncidentController::class;
         Route::get('/incidents', [$incidents, 'worklist']);
+        $joint = \App\Http\Controllers\API\PharmacyIncidentGroupController::class;
+        Route::get('/incidents/{incidentId}/joint-preview', [$joint, 'discover']);
+        Route::get('/incidents/{incidentId}/joint-groups', [$joint, 'history']);
+        Route::post('/incidents/{incidentId}/joint-groups', [$joint, 'store']);
+        Route::get('/incident-groups/{groupId}', [$joint, 'show']);
+        Route::post('/incident-groups/{groupId}/reject', [$joint, 'reject']);
+        Route::post('/incident-groups/{groupId}/{phase}', [$joint, 'propose'])->whereIn('phase', ['accounting', 'custody']);
+        Route::post('/incident-groups/{groupId}/{phase}/{proposalId}/{decision}', [$joint, 'review'])->whereIn('phase', ['accounting', 'custody'])->whereIn('decision', ['apply', 'reject']);
+
         Route::get('/batch-worksheets/{id}/incidents', [$incidents, 'index']);
         Route::post('/batch-worksheets/{id}/incidents', [$incidents, 'store']);
         $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;
