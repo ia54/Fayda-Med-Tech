@@ -68,7 +68,7 @@ export const pharmacyApi=apiSlice.injectEndpoints({endpoints:(b)=>({
  getPharmacyPatient:b.query<{data:PharmacyPatient},number>({query:id=>`/pharmacy/patients/${id}`,providesTags:[TAG_TYPES.PHARMACY]}),
  getPharmacyLocations:b.query<{data:{id:number;name:string;address:string;license_reference:string;active:boolean}[]},void>({query:()=>'/pharmacy/locations',providesTags:[TAG_TYPES.PHARMACY]}),
  getStockTransferDestinations:b.query<{data:{id:number;name:string}[]},void>({query:()=>'/pharmacy/stock-transfer-destinations',providesTags:[TAG_TYPES.PHARMACY]}),
- getStockTransfers:b.query<{data:{data:StockTransfer[];last_page:number;total:number}},{page:number;status?:string}>({query:params=>({url:'/pharmacy/stock-transfers',params}),providesTags:[TAG_TYPES.PHARMACY]}),
+ getStockTransfers:b.query<{data:{data:StockTransfer[];last_page:number;total:number}},{page:number;status?:string;variance_review?:string}>({query:params=>({url:'/pharmacy/stock-transfers',params}),providesTags:[TAG_TYPES.PHARMACY]}),
  getStockTransfer:b.query<{data:StockTransfer},{id:number;correction_page:number;event_page:number;resolution_page?:number}>({query:({id,...params})=>({url:`/pharmacy/stock-transfers/${id}`,params}),providesTags:[TAG_TYPES.PHARMACY]}),
  getPharmacyStock:b.query<{data:{data:PharmacyLot[];total:number;last_page:number}},{location_id?:number;search?:string;page?:number;status?:string}>({query:params=>({url:'/pharmacy/stock',params}),providesTags:[TAG_TYPES.PHARMACY]}),
  getStockDispositions:b.query<{data:{pending:boolean;records:{data:StockDisposition[];last_page:number;total:number}}},{id:number;page:number}>({query:({id,...params})=>({url:`/pharmacy/stock/${id}/dispositions`,params}),providesTags:[TAG_TYPES.PHARMACY]}),

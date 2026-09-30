@@ -33,8 +33,20 @@ class PharmacyTransferController extends Controller
     }
     public function index(Request $r)
     {
-        $d = $r->validate(['page' => 'nullable|integer|min:1', 'status' => 'nullable|in:planned,dispatched,received,received_corrected,received_reconciled,received_discrepancy,cancelled']);
+        $d = $r->validate(['page' => 'nullable|integer|min:1', 'status' => 'nullable|in:planned,dispatched,received,received_corrected,received_reconciled,received_discrepancy,cancelled', 'variance_review' => 'nullable|in:pending,independent']);
         $q = $this->scoped($r);
+        if (!empty($d['variance_review'])) {
+            $independent = $d['variance_review'] === 'independent';
+            abort_if($independent && $r->user()->role !== 'pharmacist', 403);
+            if ($independent) {
+                $q->whereIn('source_location_id', app(PharmacyAccess::class)->locations($r->user())->select('id'));
+            }
+            $q->whereExists(function ($pending) use ($r, $independent) {
+                $pending->selectRaw('1')->from('pharmacy_transfer_resolutions as resolution')
+                    ->whereColumn('resolution.transfer_id', 'pharmacy_stock_transfers.id')->where('resolution.status', 'pending');
+                if ($independent) $pending->where('resolution.created_by', '<>', $r->user()->id);
+            });
+        }
         if (! empty($d['status'])) { $q->where('status', $d['status']); }
         $page = $q->select('id', 'source_lot_id', 'source_location_id', 'destination_location_id', 'quantity', 'received_quantity', 'corrected_received_quantity', 'product', 'status', 'version', 'created_at')->orderByDesc('id')->paginate(25);
         $page->getCollection()->transform(function ($t) { $t->product = json_decode($t->product, true); return $t; });

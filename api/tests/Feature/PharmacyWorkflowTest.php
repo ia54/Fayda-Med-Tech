@@ -466,6 +466,33 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson($base)->assertForbidden();
     }
 
+    public function test_variance_review_queue_requires_independent_source_access_and_clears_after_decision(): void
+    {
+        [$id, $dest, $receiver, $body] = $this->varianceResolutionFixture();
+        $base = '/api/pharmacy/stock-transfers';
+        $proposal = $this->postJson("$base/$id/resolutions", $body)->assertCreated()->json('data.id');
+        $this->getJson("$base?variance_review=pending")->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.id', $id);
+        $this->getJson("$base?variance_review=independent")->assertOk()->assertJsonPath('data.total', 0);
+        $this->actingAs($this->actor, 'api');
+        $this->getJson("$base?variance_review=independent")->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson("$base?variance_review=independent&status=received")->assertOk()->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson("$base?variance_review=pending")->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson("$base?variance_review=independent")->assertOk()->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->getJson("$base?variance_review=pending")->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson("$base?variance_review=independent")->assertForbidden();
+        $this->actor->role = 'pharmacist'; $this->actor->organization_id = 2; $this->actor->save();
+        $this->getJson("$base?variance_review=pending")->assertOk()->assertJsonPath('data.total', 0);
+        $this->actor->organization_id = 1; $this->actor->save();
+        $this->postJson("$base/$id/resolutions/$proposal/review", ['request_id' => (string) Str::uuid(),
+            'version' => (int) DB::table('pharmacy_stock_transfers')->find($id)->version, 'decision' => 'reject', 'evidence' => 'SYNTHETIC retained rejection'])->assertOk();
+        $this->getJson("$base?variance_review=pending")->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson("$base?variance_review=independent")->assertOk()->assertJsonPath('data.total', 0);
+        $this->assertSame('quarantined', DB::table('pharmacy_stock_lots')->find($dest)->status);
+    }
+
     private function investigationBody(int $transfer): array
     {
         return ['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_transfers')->find($transfer)->version,
