@@ -130,6 +130,8 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/stock-transfers/{id}/corrections/{correctionId}/review', [\App\Http\Controllers\API\PharmacyTransferController::class, 'reviewCorrection']);
         Route::post('/stock-transfers/{id}/actions', [\App\Http\Controllers\API\PharmacyTransferController::class, 'action']);
         Route::post('/stock-transfers/{id}/investigation-notes', [\App\Http\Controllers\API\PharmacyTransferController::class, 'investigationNote']);
+        Route::post('/stock-transfers/{id}/resolutions', [\App\Http\Controllers\API\PharmacyTransferController::class, 'proposeResolution']);
+        Route::post('/stock-transfers/{id}/resolutions/{resolutionId}/review', [\App\Http\Controllers\API\PharmacyTransferController::class, 'reviewResolution']);
         Route::get('/stock', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'index']);
         Route::post('/stock', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'store']);
         Route::get('/stock/{id}', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'show']);

@@ -64,6 +64,9 @@ class PharmacyStock
                 $correction = DB::table('pharmacy_transfer_corrections')->where('id', $transfer->receipt_correction_id)->where('transfer_id', $transfer->id)->where('status', 'applied')->first();
                 $verifiedReceipt = $correction && $transfer->corrected_received_quantity !== null && self::milli($transfer->quantity) === self::milli($transfer->corrected_received_quantity);
             }
+            if ($transfer && $transfer->status === 'received_reconciled') {
+                $verifiedReceipt = app(PharmacyTransferResolution::class)->verifiedReceipt($transfer, $lot);
+            }
             if (! $verifiedReceipt || (int) $transfer->destination_lot_id !== (int) $lot->id || (int) $transfer->destination_location_id !== (int) $lot->location_id) {
                 $this->fail('Stock custody or receipt discrepancy requires reconciliation before release or use.');
             }

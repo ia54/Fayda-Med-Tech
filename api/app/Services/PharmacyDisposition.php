@@ -36,9 +36,12 @@ class PharmacyDisposition
                 $correction = DB::table('pharmacy_transfer_corrections')->where('id', $transfer->receipt_correction_id)->where('transfer_id', $transfer->id)->where('status', 'applied')->first();
                 $valid = $correction && $transfer->corrected_received_quantity !== null && PharmacyStock::milli($transfer->quantity) === PharmacyStock::milli($transfer->corrected_received_quantity);
             }
+            if ($transfer && $transfer->status === 'received_reconciled') {
+                $valid = app(PharmacyTransferResolution::class)->verifiedReceipt($transfer, $lot);
+            }
             abort_unless($valid && (int) $transfer->destination_lot_id === (int) $lot->id && (int) $transfer->destination_location_id === (int) $lot->location_id,
                 422, 'Resolve the transfer discrepancy before disposition. This action cannot write off an unexplained loss or excess.');
-            $source['chain'][count($source['chain']) - 1]['transfer'] = ['id' => $transfer->id, 'status' => $transfer->status, 'correction_id' => $transfer->receipt_correction_id];
+            $source['chain'][count($source['chain']) - 1]['transfer'] = ['id' => $transfer->id, 'status' => $transfer->status, 'correction_id' => $transfer->receipt_correction_id, 'resolution_id' => $transfer->variance_resolution_id ?? null];
             $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $org)->where('id', $transfer->source_lot_id)->first();
             abort_unless($lot && (int) $lot->location_id === (int) $transfer->source_location_id, 422, 'Source custody is incomplete.');
         }

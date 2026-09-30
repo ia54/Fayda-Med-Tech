@@ -33,7 +33,7 @@ class PharmacyTransferController extends Controller
     }
     public function index(Request $r)
     {
-        $d = $r->validate(['page' => 'nullable|integer|min:1', 'status' => 'nullable|in:planned,dispatched,received,received_corrected,received_discrepancy,cancelled']);
+        $d = $r->validate(['page' => 'nullable|integer|min:1', 'status' => 'nullable|in:planned,dispatched,received,received_corrected,received_reconciled,received_discrepancy,cancelled']);
         $q = $this->scoped($r);
         if (! empty($d['status'])) { $q->where('status', $d['status']); }
         $page = $q->select('id', 'source_lot_id', 'source_location_id', 'destination_location_id', 'quantity', 'received_quantity', 'corrected_received_quantity', 'product', 'status', 'version', 'created_at')->orderByDesc('id')->paginate(25);
@@ -42,7 +42,7 @@ class PharmacyTransferController extends Controller
     }
     public function show(Request $r, $id)
     {
-        $r->validate(['correction_page' => 'nullable|integer|min:1', 'event_page' => 'nullable|integer|min:1']);
+        $r->validate(['correction_page' => 'nullable|integer|min:1', 'event_page' => 'nullable|integer|min:1', 'resolution_page' => 'nullable|integer|min:1']);
         $t = $this->scoped($r)->where('id', $id)->first(); abort_unless($t, 404);
         unset($t->request_id, $t->request_hash);
         $t->product = json_decode($t->product, true);
@@ -51,6 +51,10 @@ class PharmacyTransferController extends Controller
         $t->corrections = DB::table('pharmacy_transfer_corrections as c')->join('pharmacy_stock_counts as count', 'count.id', '=', 'c.stock_count_id')->where('c.transfer_id', $id)->orderByDesc('c.id')->paginate(20, ['c.id', 'c.stock_count_id', 'c.created_by', 'c.lot_version', 'c.evidence', 'c.status', 'c.reviewed_by', 'c.review_evidence', 'c.reviewed_at', 'c.created_at', 'count.counted_quantity as verified_quantity', 'count.evidence as count_evidence', 'count.review_evidence as count_review_evidence', 'count.reviewed_by as count_reviewed_by'], 'correction_page');
         $t->correction_candidates = $t->can_receive && $t->status === 'received_discrepancy' ? DB::table('pharmacy_stock_counts')->where('stock_lot_id', $t->destination_lot_id)->where('status', 'applied')->where('reason', 'physical_count')->orderByDesc('id')->limit(20)->get(['id', 'counted_quantity', 'reviewed_by', 'reviewed_at']) : [];
         $t->correction_pending = DB::table('pharmacy_transfer_corrections')->where('transfer_id', $id)->where('status', 'pending')->exists();
+        $t->resolution_pending = DB::table('pharmacy_transfer_resolutions')->where('transfer_id', $id)->where('status', 'pending')->exists();
+        $t->latest_investigation = DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->where('action', 'investigation_noted')->orderByDesc('id')->first(['id', 'actor_id', 'details', 'created_at']);
+        $t->resolutions = DB::table('pharmacy_transfer_resolutions')->where('transfer_id', $id)->orderByDesc('id')->paginate(20, ['id', 'stock_count_id', 'investigation_event_id', 'created_by', 'kind', 'snapshot', 'evidence', 'reporting_assessment', 'classification_evidence', 'external_return_evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at'], 'resolution_page');
+        $t->resolutions->getCollection()->transform(function ($record) { $record->snapshot = json_decode($record->snapshot, true); return $record; });
         $t->events = DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->orderByDesc('id')->paginate(25, ['id', 'actor_id', 'action', 'details', 'created_at'], 'event_page');
         return response()->json(['data' => $t]);
     }
@@ -145,6 +149,84 @@ class PharmacyTransferController extends Controller
         return $this->show($r, $id)->setStatusCode(201);
     }
 
+    private function resolutionResult(int $id, int $status = 200)
+    {
+        $record = DB::table('pharmacy_transfer_resolutions')->where('id', $id)->first();
+        unset($record->request_id, $record->request_hash);
+        $record->snapshot = json_decode($record->snapshot, true, 512, JSON_THROW_ON_ERROR);
+        return response()->json(['data' => $record], $status);
+    }
+
+    public function proposeResolution(Request $r, $id)
+    {
+        $this->org($r, true);
+        $d = $r->validate([
+            'request_id' => 'required|uuid', 'version' => 'required|integer|min:1',
+            'stock_count_id' => 'required|integer', 'investigation_event_id' => 'required|integer',
+            'kind' => 'required|in:confirmed_shortage,excess_returned',
+            'evidence' => 'required|string|max:5000', 'reporting_assessment' => 'required|string|max:5000',
+            'classification_evidence' => 'required|string|max:5000',
+            'ordinary_manufactured_stock_confirmed' => 'required|accepted',
+            'external_return_evidence' => 'required_if:kind,excess_returned|nullable|string|max:5000',
+        ]);
+        $t = $this->scoped($r)->where('id', $id)->lockForUpdate()->first(); abort_unless($t, 404);
+        app(PharmacyAccess::class)->requireLocation($r->user(), $t->destination_location_id);
+        $old = DB::table('pharmacy_transfer_resolutions')->where('transfer_id', $id)->where('request_id', $d['request_id'])->first();
+        if ($old) {
+            abort_unless((int) $old->created_by === (int) $r->user()->id && hash_equals($old->request_hash, $this->hash($d)), 409);
+            return $this->resolutionResult((int) $old->id);
+        }
+        abort_if(DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->where('request_id', $d['request_id'])->exists(), 409, 'This request identifier was already used.');
+        abort_unless((int) $t->version === (int) $d['version'], 409, 'Transfer changed. Refresh before proposing resolution.');
+        abort_if(DB::table('pharmacy_transfer_resolutions')->where('transfer_id', $id)->where('status', 'pending')->exists(), 409, 'A variance resolution is already awaiting review.');
+        $service = app(\App\Services\PharmacyTransferResolution::class);
+        $snapshot = $service->snapshot($t, (int) $d['stock_count_id'], (int) $d['investigation_event_id'], $d['kind']);
+        $resolution = DB::table('pharmacy_transfer_resolutions')->insertGetId([
+            'transfer_id' => $id, 'stock_count_id' => $d['stock_count_id'], 'investigation_event_id' => $d['investigation_event_id'],
+            'created_by' => $r->user()->id, 'request_id' => $d['request_id'], 'request_hash' => $this->hash($d),
+            'kind' => $d['kind'], 'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR), 'snapshot_hash' => $service->digest($snapshot),
+            'evidence' => $d['evidence'], 'reporting_assessment' => $d['reporting_assessment'],
+            'classification_evidence' => $d['classification_evidence'], 'external_return_evidence' => $d['external_return_evidence'] ?? null, 'created_at' => now(),
+        ]);
+        DB::table('pharmacy_stock_transfers')->where('id', $id)->update(['version' => $t->version + 1, 'updated_at' => now()]);
+        $this->event($r, (int) $id, $d + ['action' => 'variance_resolution_proposed'], ['resolution_id' => $resolution, 'snapshot_hash' => $service->digest($snapshot), 'ordinary_manufactured_stock_confirmed' => true]);
+        return $this->resolutionResult($resolution, 201);
+    }
+
+    public function reviewResolution(Request $r, $id, $resolutionId)
+    {
+        $this->org($r, true);
+        $d = $r->validate(['request_id' => 'required|uuid', 'version' => 'required|integer|min:1', 'decision' => 'required|in:apply,reject', 'evidence' => 'required|string|max:5000']);
+        $t = $this->scoped($r)->where('id', $id)->lockForUpdate()->first(); abort_unless($t, 404);
+        app(PharmacyAccess::class)->requireLocation($r->user(), $t->source_location_id);
+        $record = DB::table('pharmacy_transfer_resolutions')->where('transfer_id', $id)->where('id', $resolutionId)->first(); abort_unless($record, 404);
+        $eventData = $d + ['resolution_id' => (int) $resolutionId, 'action' => 'variance_resolution_reviewed'];
+        $old = DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->where('request_id', $d['request_id'])->first();
+        if ($old) {
+            abort_unless((int) $old->actor_id === (int) $r->user()->id && hash_equals($old->request_hash, $this->hash($eventData)), 409);
+            return $this->resolutionResult((int) $record->id);
+        }
+        abort_unless((int) $t->version === (int) $d['version'] && $record->status === 'pending', 409, 'Transfer or resolution changed. Refresh before review.');
+        abort_if((int) $record->created_by === (int) $r->user()->id, 422, 'A different sending-location pharmacist must review the resolution.');
+        $update = ['version' => $t->version + 1, 'updated_at' => now()];
+        if ($d['decision'] === 'apply') {
+            $author = \App\Models\User::find($record->created_by);
+            abort_unless($author && $author->role === 'pharmacist' && (int) $author->organization_id === (int) $t->organization_id, 422, 'The proposing pharmacist no longer has the required role.');
+            app(PharmacyAccess::class)->requireLocation($author, $t->destination_location_id);
+            $service = app(\App\Services\PharmacyTransferResolution::class);
+            $stored = json_decode($record->snapshot, true, 512, JSON_THROW_ON_ERROR);
+            abort_unless(hash_equals($record->snapshot_hash, $service->digest($stored)), 409, 'Retained resolution evidence failed integrity verification.');
+            $current = $service->snapshot($t, (int) $record->stock_count_id, (int) $record->investigation_event_id, $record->kind);
+            abort_unless(hash_equals($record->snapshot_hash, $service->digest($current)), 409, 'Stock or source evidence changed. Reject this proposal and investigate again.');
+            $update += ['status' => 'received_reconciled', 'variance_resolution_id' => $record->id];
+            app(PharmacyStock::class)->event($r->user(), (object) ['id' => $t->destination_lot_id], 'variance_resolution_applied', '0.000', ['transfer_id' => (int) $id, 'resolution_id' => $record->id, 'kind' => $record->kind, 'snapshot_hash' => $record->snapshot_hash, 'quarantine_retained' => true]);
+        }
+        DB::table('pharmacy_transfer_resolutions')->where('id', $record->id)->update(['status' => $d['decision'] === 'apply' ? 'applied' : 'rejected', 'reviewed_by' => $r->user()->id, 'review_evidence' => $d['evidence'], 'reviewed_at' => now()]);
+        DB::table('pharmacy_stock_transfers')->where('id', $id)->update($update);
+        $this->event($r, (int) $id, $eventData, ['resolution_id' => (int) $resolutionId, 'decision' => $d['decision'], 'evidence' => $d['evidence']]);
+        return $this->resolutionResult((int) $record->id);
+    }
+
     private function correctionStock($t)
     {
         $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $t->organization_id)->where('location_id', $t->destination_location_id)->where('id', $t->destination_lot_id)->lockForUpdate()->first();
@@ -176,6 +258,7 @@ class PharmacyTransferController extends Controller
         abort_if(DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->where('request_id', $d['request_id'])->exists(), 409, 'This request identifier was already used for another custody action.');
         abort_unless((int) $t->version === (int) $d['version'], 409, 'Transfer changed. Refresh before proposing a correction.');
         abort_if(DB::table('pharmacy_transfer_corrections')->where('transfer_id', $id)->where('status', 'pending')->exists(), 409, 'A receipt correction is already awaiting source review.');
+        abort_if(DB::table('pharmacy_transfer_resolutions')->where('transfer_id', $id)->where('status', 'pending')->exists(), 409, 'Resolve the pending variance proposal before correcting the receipt entry.');
         $lot = $this->correctionStock($t);
         $this->validateCorrectionCount($t, $lot, (int) $d['stock_count_id']);
         $correction = DB::table('pharmacy_transfer_corrections')->insertGetId(['transfer_id' => $id, 'stock_count_id' => $d['stock_count_id'], 'created_by' => $r->user()->id, 'request_id' => $d['request_id'], 'request_hash' => $this->hash($d), 'lot_version' => $lot->version, 'evidence' => $d['evidence'], 'created_at' => now()]);

@@ -316,6 +316,156 @@ class PharmacyWorkflowTest extends TestCase
         return [$id, $source, $destination];
     }
 
+    public function test_variance_resolution_snapshot_preserves_shortage_and_returned_excess_without_stock_movement(): void
+    {
+        $receiver = $this->receivingPharmacist();
+        foreach (['confirmed_shortage' => ['9.125', '9.125'], 'excess_returned' => ['11.125', '10.125']] as $kind => [$received, $physical]) {
+            [$id, $source, $dest] = $this->receivedDiscrepancy($receiver, $received);
+            $this->postJson("/api/pharmacy/stock/$dest/product", $this->productBody())->assertCreated();
+            $this->postJson("/api/pharmacy/stock-transfers/$id/investigation-notes", $this->investigationBody($id))->assertCreated();
+            $event = DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->where('action', 'investigation_noted')->value('id');
+            $count = $this->postJson("/api/pharmacy/stock/$dest/counts", $this->stockCountBody($dest, ['counted_quantity' => $physical]))->assertCreated()->json('data.counts.data.0.id');
+            $this->actingAs($this->actor, 'api');
+            $this->postJson("/api/pharmacy/stock/$dest/counts/$count/review", ['decision' => 'apply', 'evidence' => 'SYNTHETIC independent physical evidence'])->assertOk();
+            $before = DB::table('pharmacy_stock_lots')->orderBy('id')->get()->toJson();
+            $snapshot = app(\App\Services\PharmacyTransferResolution::class)->snapshot(DB::table('pharmacy_stock_transfers')->find($id), $count, $event, $kind);
+            $this->assertSame($kind, $snapshot['kind']);
+            $this->assertSame('1.000', $snapshot['variance_quantity']);
+            $this->assertSame($physical, $snapshot['verified_quantity']);
+            $this->assertSame($before, DB::table('pharmacy_stock_lots')->orderBy('id')->get()->toJson());
+            $this->assertSame('received_discrepancy', DB::table('pharmacy_stock_transfers')->find($id)->status);
+            $this->assertSame(0, DB::table('pharmacy_transfer_resolutions')->count());
+            DB::table('pharmacy_stock_lots')->where('id', $dest)->increment('version');
+            try {
+                app(\App\Services\PharmacyTransferResolution::class)->snapshot(DB::table('pharmacy_stock_transfers')->find($id), $count, $event, $kind);
+                $this->fail('Stale count was accepted');
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+                $this->assertSame(409, $e->getStatusCode());
+            }
+        }
+    }
+
+    private function varianceResolutionFixture(string $kind = 'confirmed_shortage'): array
+    {
+        $receiver = $this->receivingPharmacist();
+        [$id, $source, $dest] = $this->receivedDiscrepancy($receiver, $kind === 'confirmed_shortage' ? '9.125' : '11.125');
+        $this->postJson("/api/pharmacy/stock/$dest/product", $this->productBody())->assertCreated();
+        $this->postJson("/api/pharmacy/stock-transfers/$id/investigation-notes", $this->investigationBody($id))->assertCreated();
+        $event = DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->where('action', 'investigation_noted')->value('id');
+        $count = $this->postJson("/api/pharmacy/stock/$dest/counts", $this->stockCountBody($dest, ['counted_quantity' => $kind === 'confirmed_shortage' ? '9.125' : '10.125']))->assertCreated()->json('data.counts.data.0.id');
+        $this->actingAs($this->actor, 'api');
+        $this->postJson("/api/pharmacy/stock/$dest/counts/$count/review", ['decision' => 'apply', 'evidence' => 'SYNTHETIC independent physical evidence'])->assertOk();
+        $this->actingAs($receiver, 'api');
+        return [$id, $dest, $receiver, ['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_transfers')->find($id)->version,
+            'stock_count_id' => $count, 'investigation_event_id' => $event, 'kind' => $kind,
+            'evidence' => 'SYNTHETIC investigation outcome', 'reporting_assessment' => 'SYNTHETIC operator reporting assessment',
+            'classification_evidence' => 'SYNTHETIC manufactured noncontrolled nonhazardous product evidence',
+            'ordinary_manufactured_stock_confirmed' => true, 'external_return_evidence' => $kind === 'excess_returned' ? 'SYNTHETIC completed return reference and recipient' : null]];
+    }
+
+    public function test_variance_resolution_requires_independent_review_and_never_moves_stock_twice(): void
+    {
+        foreach (['confirmed_shortage', 'excess_returned'] as $kind) {
+            [$id, $dest, $receiver, $body] = $this->varianceResolutionFixture($kind);
+            $url = "/api/pharmacy/stock-transfers/$id/resolutions";
+            $stock = DB::table('pharmacy_stock_lots')->orderBy('id')->get()->toJson();
+            $proposal = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.status', 'pending')->json('data.id');
+            $this->postJson($url, $body)->assertOk()->assertJsonPath('data.id', $proposal);
+            $this->postJson($url, array_replace($body, ['evidence' => 'Changed']))->assertStatus(409);
+            $review = ['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_transfers')->find($id)->version, 'decision' => 'apply', 'evidence' => 'SYNTHETIC independent resolution review'];
+            $this->postJson("$url/$proposal/review", $review)->assertStatus(422);
+            $this->actingAs($this->actor, 'api');
+            $this->postJson("$url/$proposal/review", $review)->assertOk()->assertJsonPath('data.status', 'applied');
+            $this->postJson("$url/$proposal/review", $review)->assertOk();
+            $this->assertSame($stock, DB::table('pharmacy_stock_lots')->orderBy('id')->get()->toJson());
+            $this->assertSame('received_reconciled', DB::table('pharmacy_stock_transfers')->find($id)->status);
+            $this->assertSame('quarantined', DB::table('pharmacy_stock_lots')->find($dest)->status);
+            $this->assertSame(1, DB::table('pharmacy_stock_events')->where('stock_lot_id', $dest)->where('action', 'variance_resolution_applied')->count());
+            $this->assertEquals(0, DB::table('pharmacy_stock_events')->where('stock_lot_id', $dest)->where('action', 'variance_resolution_applied')->value('quantity'));
+            $version = (int) DB::table('pharmacy_stock_lots')->find($dest)->version;
+            $this->putJson("/api/pharmacy/stock/$dest/status", ['version' => $version, 'status' => 'available', 'note' => 'SYNTHETIC separate release review'])->assertOk();
+            $provenance = app(\App\Services\PharmacyDisposition::class)->source(DB::table('pharmacy_stock_lots')->find($dest));
+            $this->assertEquals($proposal, $provenance['chain'][0]['transfer']['resolution_id']);
+            $record = DB::table('pharmacy_transfer_resolutions')->find($proposal);
+            DB::table('pharmacy_transfer_resolutions')->where('id', $proposal)->update(['snapshot_hash' => str_repeat('0', 64)]);
+            $this->assertNotNull(app(\App\Services\PharmacyStock::class)->custodyHold(DB::table('pharmacy_stock_lots')->find($dest)));
+            DB::table('pharmacy_transfer_resolutions')->where('id', $proposal)->update(['snapshot_hash' => $record->snapshot_hash]);
+            $sourceLot = DB::table('pharmacy_stock_transfers')->find($id)->source_lot_id;
+            $this->recallStock($sourceLot)->assertOk();
+            $this->assertNotNull(app(\App\Services\PharmacyStock::class)->custodyHold(DB::table('pharmacy_stock_lots')->find($dest)));
+
+        }
+    }
+
+    public function test_variance_resolution_audit_failure_rolls_back_and_new_findings_invalidate_proposal(): void
+    {
+        [$id, $dest, $receiver, $body] = $this->varianceResolutionFixture(); $url = "/api/pharmacy/stock-transfers/$id/resolutions";
+        $proposal = $this->postJson($url, $body)->assertCreated()->json('data.id');
+        $this->actingAs($this->actor, 'api'); $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_stock_events')) throw new \RuntimeException('SYNTHETIC audit failure');
+        });
+        $review = ['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_transfers')->find($id)->version, 'decision' => 'apply', 'evidence' => 'SYNTHETIC'];
+        $this->postJson("$url/$proposal/review", $review)->assertStatus(500);
+        $this->assertSame('pending', DB::table('pharmacy_transfer_resolutions')->find($proposal)->status);
+        $this->assertSame('received_discrepancy', DB::table('pharmacy_stock_transfers')->find($id)->status);
+        $fail = false;
+        $this->postJson("/api/pharmacy/stock-transfers/$id/investigation-notes", $this->investigationBody($id))->assertCreated();
+        $review['version'] = (int) DB::table('pharmacy_stock_transfers')->find($id)->version;
+        $this->postJson("$url/$proposal/review", $review)->assertStatus(409);
+        $this->postJson("$url/$proposal/review", array_replace($review, ['decision' => 'reject']))->assertOk()->assertJsonPath('data.status', 'rejected');
+        $this->assertSame('received_discrepancy', DB::table('pharmacy_stock_transfers')->find($id)->status);
+    }
+
+    public function test_variance_resolution_classification_scope_and_revoked_author_fail_closed(): void
+    {
+        [$id, $dest, $receiver, $body] = $this->varianceResolutionFixture('excess_returned');
+        $url = "/api/pharmacy/stock-transfers/$id/resolutions";
+        foreach (['classification_evidence', 'reporting_assessment', 'external_return_evidence'] as $field) {
+            $this->postJson($url, array_replace($body, [$field => '']))->assertStatus(422);
+        }
+        $this->postJson($url, array_replace($body, ['ordinary_manufactured_stock_confirmed' => false]))->assertStatus(422);
+        $receiver->role = 'pharmacy_technician'; $receiver->save();
+        $this->postJson($url, $body)->assertForbidden();
+        $receiver->role = 'pharmacist'; $receiver->save();
+        $proposal = $this->postJson($url, $body)->assertCreated()->json('data.id');
+        $review = ['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_transfers')->find($id)->version, 'decision' => 'apply', 'evidence' => 'SYNTHETIC'];
+        $this->actingAs($this->actor, 'api');
+        $this->actor->organization_id = 2; $this->actor->save();
+        $this->postJson("$url/$proposal/review", $review)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $receiver->id)->where('location_id', $this->otherLocation)->update(['active' => false]);
+        $this->postJson("$url/$proposal/review", $review)->assertNotFound();
+        $this->assertSame('pending', DB::table('pharmacy_transfer_resolutions')->find($proposal)->status);
+        $this->assertSame('received_discrepancy', DB::table('pharmacy_stock_transfers')->find($id)->status);
+        $this->postJson("$url/$proposal/review", array_replace($review, ['decision' => 'reject']))->assertOk()->assertJsonPath('data.status', 'rejected');
+        $this->assertSame('quarantined', DB::table('pharmacy_stock_lots')->find($dest)->status);
+    }
+
+    public function test_variance_resolution_history_is_scoped_and_pending_proposal_blocks_receipt_correction(): void
+    {
+        [$id, $dest, $receiver, $body] = $this->varianceResolutionFixture();
+        $base = "/api/pharmacy/stock-transfers/$id";
+        $proposal = $this->postJson("$base/resolutions", $body)->assertCreated()->json('data.id');
+        $history = $this->getJson($base)->assertOk()->assertJsonPath('data.resolution_pending', true)
+            ->assertJsonPath('data.resolutions.total', 1)->assertJsonPath('data.resolutions.data.0.id', $proposal)
+            ->assertJsonPath('data.latest_investigation.id', $body['investigation_event_id'])->json('data.resolutions.data.0');
+        $this->assertArrayNotHasKey('request_id', $history);
+        $this->assertArrayNotHasKey('request_hash', $history);
+        $this->assertIsArray($history['snapshot']);
+        $this->getJson("$base?resolution_page=2")->assertOk()->assertJsonCount(0, 'data.resolutions.data');
+        $this->getJson("$base?resolution_page=0")->assertStatus(422);
+        $this->postJson("$base/corrections", ['request_id' => (string) Str::uuid(),
+            'version' => (int) DB::table('pharmacy_stock_transfers')->find($id)->version,
+            'stock_count_id' => $body['stock_count_id'], 'evidence' => 'SYNTHETIC conflicting correction'])->assertStatus(409);
+        $this->assertSame(0, DB::table('pharmacy_transfer_corrections')->where('transfer_id', $id)->count());
+        $receiver->organization_id = 2; $receiver->save();
+        $this->getJson($base)->assertNotFound();
+        $receiver->organization_id = 1; $receiver->save();
+        $receiver->role = 'medical_biller'; $receiver->save();
+        $this->getJson($base)->assertForbidden();
+    }
+
     private function investigationBody(int $transfer): array
     {
         return ['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_transfers')->find($transfer)->version,
