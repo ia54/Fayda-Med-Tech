@@ -96,13 +96,13 @@ export default function BillingDashboard() {
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-primary">Billing Operations</h1>
-          <p className="text-muted-foreground">Process claims, handle denials, and generate AI-powered appeals</p>
+          <p className="text-muted-foreground">Process claims, handle denials, and generate appeal drafts</p>
         </div>
         <div className="flex gap-2">
           <Link href="/dashboard/billing/appeals/create">
             <Button variant="outline">
               <Bot className="h-4 w-4 mr-2" />
-              AI Appeal
+              Appeal Draft
             </Button>
           </Link>
           <Link href="/dashboard/billing/upload">
@@ -145,7 +145,7 @@ export default function BillingDashboard() {
               { label: "Review Invoices", icon: CheckCircle, href: "/dashboard/billing/invoices" },
               { label: "Work Queue", icon: AlertTriangle, href: "/dashboard/billing/queue" },
               { label: "Code Validation", icon: CheckCircle, href: "/dashboard/billing/validation" },
-              { label: "AI Appeals", icon: Bot, href: "/dashboard/billing/appeals" },
+              { label: "Appeal Drafts", icon: Bot, href: "/dashboard/billing/appeals" },
               { label: "Bulk Upload", icon: Upload, href: "/dashboard/billing/upload" },
               { label: "Billing Analytics", icon: BarChart3, href: "/dashboard/billing/analytics" },
             ].map((action, i) => (
@@ -202,9 +202,9 @@ export default function BillingDashboard() {
           <div>
             <CardTitle className="flex items-center gap-2 text-primary">
               <Bot className="h-5 w-5" />
-              Recent AI Appeals
+              Recent Appeal Drafts
             </CardTitle>
-            <CardDescription>Latest recovery efforts powered by AI</CardDescription>
+            <CardDescription>Saved drafts for human review</CardDescription>
           </div>
           <Link href="/dashboard/billing/appeals">
             <Button variant="ghost" size="sm">View History</Button>

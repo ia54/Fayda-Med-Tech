@@ -1,6 +1,16 @@
-# Current release status — September 29, 2026
+# Current release status — September 30, 2026
 
 This is the current launch checklist. `OUTSTANDING.md` retains the historical evidence and older increments; older counts and statements there are not current acceptance claims.
+
+## September 30 client pilot and dependency work
+
+The owner authorized a narrower synthetic shared-platform client pilot while the full multi-location pharmacy mission continues. See [CLIENT-PILOT.md](CLIENT-PILOT.md) and [PROVIDER-OPERATIONS-REGISTER.md](PROVIDER-OPERATIONS-REGISTER.md). Dr. Ghadeh is the identified pharmacy/co-owner and proposed operational approver; her account inventory and operating acceptance remain pending. No provider contract, account or clinical approval is inferred from her identification.
+
+An isolated synthetic pilot database preserves the original pharmacy fixture. Fresh real-HTTP checks cover six-role password/MFA, case retrieval and logout revocation; patient/attorney unassigned-case denial is verified. Fresh Chrome evidence covers provider draft/submission, biller review/receipt/reversal/duplicate prevention and patient paid-balance/correction visibility. Attorney and firm-admin settlement/correction/report journeys are verified in Chrome; private document HTTP retrieval and browser fallback are verified. Super Admin password/MFA and dashboard totals match the pilot database. EOB manual entry/review/filter/rejection/error-retry and saved appeal generation/view/search/status filtering are verified in Chrome. Missing organization dates exposed a display defect; its corrected list display now passes rebuilt Chrome acceptance. Workspace evidence: `audit-evidence/client-pilot-20260930/acceptance.md`.
+
+Local unpublished corrections remove false AI/clinical-verification claims from appeal templates, constrain EOB links to live records in the same organization, prevent manually supplied AI confidence from being saved, and distinguish missing/unverified EOB scores. Combined backend regression passed 305 tests / 5,855 assertions, and the combined admin build passed 120 pages. Subsequent EOB changes replace simulated reconciliation and inactive controls with manual review, rejection and status filtering; these paths are verified in Chrome. An outage check exposed invisible error feedback, now corrected with a persistent inline alert; the final 120-page build and Chrome inline error/retry acceptance now pass. These changes are not included in the published 11bf827 candidate. The latest completed 120-page build includes EOB recovery and appeal history fixes. The organization-date correction passed the subsequent 120-page build and Chrome list check. The 305-test full backend result predates the appeal-list query change; focused appeal coverage subsequently passed 27 assertions including foreign-organization search exclusion.
+
+The full launch tracker remains 4/20 gates cleared. This is neither code completion nor an estimate of effort remaining. Local pilot acceptance cannot clear production or pharmacy operating gates. Production access, recovery, approved providers and professional acceptance are still outstanding.
 
 ## Release decision
 

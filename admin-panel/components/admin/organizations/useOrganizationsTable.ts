@@ -1,4 +1,5 @@
 "use client";
+import { formatOrganizationDate } from "./formatOrganizationDate";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import {
@@ -176,7 +177,7 @@ export function useOrganizationsTable(filters?: OrganizationFilters) {
           ? `$${org.yearly_revenue.toLocaleString()}`
           : "N/A",
         "Tax/BIN": org.tax_bin_no || "N/A",
-        Created: new Date(org.created_at).toLocaleDateString(),
+        Created: formatOrganizationDate(org.created_at),
       }));
 
       // Dynamic import to reduce bundle size

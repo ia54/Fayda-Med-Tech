@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Bot, FileText, Send, Sparkles, ChevronLeft } from "lucide-react"
+import { Bot, FileText, Sparkles, ChevronLeft } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useSearchParams } from "next/navigation"
@@ -51,7 +51,7 @@ export default function CreateAppealPage() {
       setGeneratedLetter(result.data.content)
       toast({
         title: "Appeal Generated",
-        description: "The AI has successfully drafted the appeal letter.",
+        description: "A template draft was saved for review. No insurer submission was made.",
       })
     } catch (err: any) {
       toast({
@@ -71,8 +71,8 @@ export default function CreateAppealPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold text-primary">New AI Appeal</h1>
-          <p className="text-muted-foreground">Draft a claim appeal letter using artificial intelligence</p>
+          <h1 className="text-3xl font-bold text-primary">New Appeal Draft</h1>
+          <p className="text-muted-foreground">Prepare a template draft for human review. No AI provider is connected to this workflow.</p>
         </div>
       </div>
 
@@ -83,7 +83,7 @@ export default function CreateAppealPage() {
               <Sparkles className="h-5 w-5 text-accent" />
               Appeal Configuration
             </CardTitle>
-            <CardDescription>Select a denied claim and provide context for the AI</CardDescription>
+            <CardDescription>Select a denied invoice and add verified supporting context</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -124,7 +124,7 @@ export default function CreateAppealPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Additional Context (Optional)</label>
               <Textarea
-                placeholder="Add any specific details the AI should include in the letter..."
+                placeholder="Add verified details and references for the reviewer..."
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
                 rows={4}
@@ -144,7 +144,7 @@ export default function CreateAppealPage() {
               <FileText className="h-5 w-5" />
               Generated Letter
             </CardTitle>
-            <CardDescription>Review and refine the AI-generated draft</CardDescription>
+            <CardDescription>Verify all details and supporting evidence before using this template draft</CardDescription>
           </CardHeader>
           <CardContent>
             {generatedLetter ? (
@@ -152,21 +152,14 @@ export default function CreateAppealPage() {
                 <div className="p-4 bg-muted/50 rounded-lg whitespace-pre-wrap font-mono text-sm border">
                   {generatedLetter}
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1">
-                    Edit Content
-                  </Button>
-                  <Button className="flex-1">
-                    Send to Payer
-                    <Send className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
+                <p className="text-sm text-muted-foreground">Saved as a draft. Payer submission is not connected; nothing has been sent.</p>
+                <Link href="/dashboard/billing/appeals" className="inline-block text-sm font-medium text-primary underline">View saved appeal drafts</Link>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-20 text-center space-y-3 opacity-50">
                 <Bot className="h-12 w-12" />
                 <p className="text-sm text-muted-foreground max-w-[250px]">
-                  Select an invoice and click generate to see the AI-crafted appeal letter here.
+                  Select an invoice to prepare a template draft for review.
                 </p>
               </div>
             )}

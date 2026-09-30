@@ -103,7 +103,7 @@ export const billingApiSlice = apiSlice.injectEndpoints({
       }),
       providesTags: ['Payment'],
     }),
-    getAppeals: builder.query<{ data: { data: Appeal[] } }, any>({
+    getAppeals: builder.query<{ data: { data: Appeal[]; next_page_url?: string | null } }, any>({
       query: (params) => ({
         url: '/billing/appeals',
         params,

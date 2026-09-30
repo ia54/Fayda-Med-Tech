@@ -15,6 +15,10 @@ def render(source, destination):
     passed = sum(g['status'] == 'passed' for g in gates)
     percent = round(100 * passed / len(gates))
     esc = lambda value: html.escape(str(value), quote=True)
+    pilot = data.get('pilot')
+    pilot_html = ''
+    if pilot:
+        pilot_html = '<section><h2>Client pilot · ' + esc(pilot['status']) + '</h2><p>' + esc(pilot['scope']) + '</p><p>' + esc(pilot['evidence']) + '</p><p><strong>Next:</strong> ' + esc(pilot['next_action']) + '</p><p class="muted">Separate demonstration track; no full-scope gates are waived.</p></section>'
     summaries = []
     for key, name in data['groups'].items():
         rows = [g for g in gates if g['group'] == key]
@@ -39,8 +43,9 @@ def render(source, destination):
 <progress value="__PASSED__" max="__TOTAL__" aria-label="Completed launch gates"></progress>
 <p class="muted">__METHOD__</p>
 <div class="metrics">__SUMMARIES__</div>
-<h2>Critical path</h2><ol><li>Verify host identity and restore authenticated access; establish production inventory and recovery.</li><li>Publish the local review changes, verify the final candidate and rehearse the release.</li><li>Complete pharmacy operating requirements and provider dependencies, including controlled dispensing and compounding release.</li><li>Complete real-origin acceptance and controlled cutover with a recoverable rollback.</li></ol>
-<p><strong>Timing:</strong> no reliable full-scope launch date is established. A limited platform rollout is a separate scope decision, not completion of this checklist. Provider and pharmacist dependencies prevent a defensible day-count for the requested full pharmacy launch.</p>
+__PILOT__
+<h2>Critical path</h2><ol><li>Verify host identity and restore authenticated access; establish production inventory and recovery.</li><li>Freeze the selected release candidate, verify its evidence and rehearse the release.</li><li>Complete pharmacy operating requirements and provider dependencies, including controlled dispensing and compounding release.</li><li>Complete real-origin acceptance and controlled cutover with a recoverable rollback.</li></ol>
+<p><strong>Timing:</strong> no reliable full-scope launch date is established. The authorized limited client pilot is tracked separately and does not complete this checklist. Provider and pharmacist dependencies prevent a defensible day-count for the requested full pharmacy launch.</p>
 <div class="controls"><label>Workstream<select id="group"><option value="all">All workstreams</option>__OPTIONS__</select></label><label>Status<select id="status"><option value="all">All statuses</option><option value="blocked">Blocked</option><option value="in_progress">In progress</option><option value="passed">Passed</option></select></label><button id="expand" type="button">Expand visible evidence</button></div>
 <p id="visible-count" aria-live="polite">__TOTAL__ gates shown</p><div id="gates">__DETAILS__</div>
 <footer><p>Baseline __BASELINE__ · Scope: __SCOPE__</p><p>__UPDATE__</p><p>Published source: <code>__COMMIT__</code>. __LOCAL_STATUS__. No private records or credentials are included.</p></footer>
@@ -49,7 +54,7 @@ const group=document.getElementById('group'),status=document.getElementById('sta
 function filter(){let n=0;for(const row of rows){row.hidden=!((group.value==='all'||row.dataset.group===group.value)&&(status.value==='all'||row.dataset.status===status.value));if(!row.hidden)n++;}count.textContent=n+' of '+rows.length+' gates shown';}
 group.addEventListener('change',filter);status.addEventListener('change',filter);document.getElementById('expand').addEventListener('click',()=>{for(const row of rows)if(!row.hidden)row.open=true;});
 </script></body></html>'''
-    replacements = {'DATE': esc(data['as_of']), 'PERCENT': percent, 'PASSED': passed, 'TOTAL': len(gates), 'METHOD': esc(data['method']), 'SUMMARIES': ''.join(summaries), 'OPTIONS': options, 'DETAILS': ''.join(details), 'BASELINE': esc(data['baseline']), 'SCOPE': esc(data['scope']), 'UPDATE': esc(data['update_policy']), 'COMMIT': esc(data['published_commit']), 'EVIDENCE_DATE': esc(data['evidence_through']), 'LOCAL_STATUS': 'New extraction-review changes remain local/unpublished' if data['local_unpublished_changes'] else 'No unpublished implementation changes recorded'}
+    replacements = {'PILOT': pilot_html, 'DATE': esc(data['as_of']), 'PERCENT': percent, 'PASSED': passed, 'TOTAL': len(gates), 'METHOD': esc(data['method']), 'SUMMARIES': ''.join(summaries), 'OPTIONS': options, 'DETAILS': ''.join(details), 'BASELINE': esc(data['baseline']), 'SCOPE': esc(data['scope']), 'UPDATE': esc(data['update_policy']), 'COMMIT': esc(data['published_commit']), 'EVIDENCE_DATE': esc(data['evidence_through']), 'LOCAL_STATUS': 'New local changes remain unpublished' if data['local_unpublished_changes'] else 'No unpublished implementation changes recorded'}
     for key, value in replacements.items():
         document = document.replace('__' + key + '__', str(value))
     destination.parent.mkdir(parents=True, exist_ok=True)

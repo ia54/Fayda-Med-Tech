@@ -183,7 +183,7 @@ export default function InvoicesPage() {
                     <TableRow key={invoice.id}>
                       <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{invoice.case?.title || "N/A"}</TableCell>
-                      <TableCell>${Number(invoice.amount).toLocaleString()}</TableCell>
+                      <TableCell>${Number(invoice.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                       <TableCell>${Number(invoice.total_paid || 0).toFixed(2)}</TableCell>
                       <TableCell>${(Number(invoice.amount) - Number(invoice.total_paid || 0)).toFixed(2)}</TableCell>
                       <TableCell>{invoice.due_date?.slice(0, 10) || 'Not set'}</TableCell>
