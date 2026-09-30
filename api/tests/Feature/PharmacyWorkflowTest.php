@@ -5081,6 +5081,27 @@ class PharmacyWorkflowTest extends TestCase
         $custodyBody['version'] = DB::table('pharmacy_compounding_incidents')->find($id)->version;
         $finalCustody = $custodyCall('store', $custodyBody, $this->actor)->getData(true)['data']['id'];
         $decision = ['evidence' => 'SYNTHETIC independent final custody review'];
+        $denyCustody = function ($actor, $expected) use ($custodyCall, $decision, $finalCustody) {
+            try { $custodyCall('apply', $decision, $actor, $finalCustody); $this->fail('Unsafe custody application accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame($expected, $e->getStatusCode()); }
+        };
+        $denyCustody($this->actor, 422);
+        $savedCustody = DB::table('pharmacy_compounding_custody_decisions')->find($finalCustody);
+        DB::table('pharmacy_compounding_custody_decisions')->where('id', $finalCustody)->update(['proposal' => '[]']);
+        $denyCustody($reviewer, 409);
+        DB::table('pharmacy_compounding_custody_decisions')->where('id', $finalCustody)->update(['proposal' => $savedCustody->proposal]);
+        $savedLotVersion = DB::table('pharmacy_ingredient_lots')->find($lot)->version;
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['version' => $savedLotVersion + 1]);
+        $denyCustody($reviewer, 409);
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['version' => $savedLotVersion]);
+        foreach ([$this->actor, $reviewer] as $person) {
+            DB::table('pharmacy_staff_assignments')->where('user_id', $person->id)->update(['active' => false]);
+            $denyCustody($reviewer, 404);
+            DB::table('pharmacy_staff_assignments')->where('user_id', $person->id)->update(['active' => true]);
+        }
+        $this->assertSame($custodyStock, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        $this->assertSame('pending', DB::table('pharmacy_compounding_custody_decisions')->find($finalCustody)->status);
+
         $fail = true;
         try { $custodyCall('apply', $decision, $reviewer, $finalCustody); $this->fail('Custody application must roll back without audit'); }
         catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC incident audit failure', $e->getMessage()); }
@@ -5118,12 +5139,24 @@ class PharmacyWorkflowTest extends TestCase
             'follow_up_owner' => 'Synthetic lead', 'ingredients' => [['allocation_id' => $allocation->id,
                 'observed_quantity' => null, 'measurement_evidence' => 'SYNTHETIC unknown']],
         ])->assertCreated()->json('data.id');
+        $this->getJson('/api/pharmacy/incidents')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.id', $incident);
+        $this->getJson('/api/pharmacy/incidents?status=reconciled')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/incidents?status=invalid')->assertUnprocessable();
+        $this->actor->organization_id = 2;
+        $this->getJson('/api/pharmacy/incidents')->assertOk()->assertJsonPath('data.total', 0);
+        $this->actor->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $this->getJson('/api/pharmacy/incidents')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/incidents?location_id='.$this->location)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
         $url = "/api/pharmacy/incidents/$incident/custody";
         $this->getJson($url)->assertOk()->assertJsonPath('data.total', 0);
         $this->actor->role = 'pharmacy_technician';
+        $this->getJson('/api/pharmacy/incidents')->assertOk()->assertJsonPath('data.total', 1);
         $this->getJson($url)->assertOk();
         foreach ([$url, "$url/1/apply", "$url/1/reject"] as $path) $this->postJson($path, [])->assertForbidden();
         $this->actor->role = 'medical_biller';
+        $this->getJson('/api/pharmacy/incidents')->assertForbidden();
         $this->getJson($url)->assertForbidden();
         $this->actor->role = 'pharmacist';
         $this->actor->organization_id = 2;
@@ -5132,7 +5165,19 @@ class PharmacyWorkflowTest extends TestCase
         DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
         $this->getJson($url)->assertNotFound();
         DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        $template = (array) DB::table('pharmacy_compounding_incidents')->find($incident);
+        unset($template['id']);
+        for ($n = 0; $n < 21; $n++) {
+            DB::table('pharmacy_compounding_incidents')->insert(array_replace($template, ['request_id' => (string) Str::uuid(), 'status' => 'reconciled']));
+        }
+        $this->getJson('/api/pharmacy/incidents')->assertOk()->assertJsonPath('data.total', 1);
+        $first = $this->getJson('/api/pharmacy/incidents?status=all')->assertOk()->assertJsonPath('data.total', 22)->assertJsonPath('data.last_page', 2)->json('data.data');
+        $last = $this->getJson('/api/pharmacy/incidents?status=all&page=2')->assertOk()->assertJsonCount(2, 'data.data')->json('data.data');
+        $this->assertCount(22, array_unique(array_column(array_merge($first, $last), 'id')));
+        foreach (['source_snapshot', 'source_hash', 'request_hash', 'findings', 'custody_evidence'] as $private) $this->assertArrayNotHasKey($private, $first[0]);
+        $this->getJson('/api/pharmacy/incidents?status=reconciled')->assertOk()->assertJsonPath('data.total', 21);
         $this->app->instance('env', 'production');
+        $this->getJson('/api/pharmacy/incidents')->assertStatus(503);
         $this->getJson($url)->assertStatus(503);
         foreach ([$url, "$url/1/apply", "$url/1/reject"] as $path) $this->postJson($path, [])->assertStatus(503);
         $this->assertSame(0, DB::table('pharmacy_compounding_custody_decisions')->count());

@@ -82,6 +82,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/incidents/{id}/reconciliations/{proposalId}/apply', [$reconciliation, 'apply']);
         Route::post('/incidents/{id}/reconciliations/{proposalId}/reject', [$reconciliation, 'reject']);
         $incidents = \App\Http\Controllers\API\PharmacyCompoundingIncidentController::class;
+        Route::get('/incidents', [$incidents, 'worklist']);
         Route::get('/batch-worksheets/{id}/incidents', [$incidents, 'index']);
         Route::post('/batch-worksheets/{id}/incidents', [$incidents, 'store']);
         $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;

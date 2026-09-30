@@ -11,6 +11,27 @@ use Illuminate\Support\Facades\DB;
 /** Observation retention only. No stock reconciliation or product release. */
 class PharmacyCompoundingIncidentController extends Controller
 {
+    public function worklist(Request $r)
+    {
+        abort_unless(in_array($r->user()?->role, ['pharmacist', 'pharmacy_technician'], true) && $r->user()->organization_id, 403);
+        $d = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'status' => 'nullable|in:open,reconciled,all']);
+        $q = DB::table('pharmacy_compounding_incidents as i')
+            ->join('pharmacy_batch_worksheets as b', 'b.id', '=', 'i.batch_id')
+            ->where('i.organization_id', $r->user()->organization_id)
+            ->where('b.organization_id', $r->user()->organization_id);
+        app(PharmacyAccess::class)->scope($q, $r->user(), 'i.location_id');
+        if (!empty($d['location_id'])) {
+            app(PharmacyAccess::class)->requireLocation($r->user(), $d['location_id']);
+            $q->where('i.location_id', $d['location_id']);
+        }
+        $status = $d['status'] ?? 'open';
+        if ($status === 'open') $q->where('i.status', '<>', 'reconciled');
+        if ($status === 'reconciled') $q->where('i.status', 'reconciled');
+        return response()->json(['data' => $q->orderBy('i.created_at')->orderBy('i.id')->paginate(20, [
+            'i.id', 'i.batch_id', 'i.location_id', 'i.status', 'i.follow_up_owner', 'i.observed_at', 'i.created_at', 'b.batch_number',
+        ])]);
+    }
+
     public function index(Request $r, $id)
     {
         abort_unless(in_array($r->user()?->role, ['pharmacist', 'pharmacy_technician'], true) && $r->user()->organization_id, 403);
