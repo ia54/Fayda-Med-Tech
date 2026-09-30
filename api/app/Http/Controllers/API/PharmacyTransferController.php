@@ -113,6 +113,38 @@ class PharmacyTransferController extends Controller
         return $this->show($r, $id);
     }
 
+    public function investigationNote(Request $r, $id)
+    {
+        $this->org($r, true);
+        $d = $r->validate([
+            'request_id' => 'required|uuid', 'version' => 'required|integer|min:1',
+            'evidence' => 'required|string|max:5000',
+            'follow_up_owner' => 'required|string|max:200',
+            'next_action' => 'required|string|max:2000',
+            'follow_up_on' => 'required|date_format:Y-m-d',
+        ]);
+        $t = $this->scoped($r)->where('id', $id)->lockForUpdate()->first();
+        abort_unless($t, 404);
+        $eventData = $d + ['action' => 'investigation_noted'];
+        $old = DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->where('request_id', $d['request_id'])->first();
+        if ($old) {
+            abort_unless((int) $old->actor_id === (int) $r->user()->id && hash_equals($old->request_hash, $this->hash($eventData)), 409, 'This request identifier belongs to another custody record.');
+            return $this->show($r, $id);
+        }
+        abort_unless((int) $t->version === (int) $d['version'], 409, 'Transfer changed. Refresh before recording investigation evidence.');
+        abort_unless($t->status === 'received_discrepancy', 422, 'Investigation notes require an unresolved receipt discrepancy.');
+        $lot = $this->correctionStock($t);
+        $this->event($r, (int) $id, $eventData, [
+            'evidence' => $d['evidence'], 'follow_up_owner' => $d['follow_up_owner'],
+            'next_action' => $d['next_action'], 'follow_up_on' => $d['follow_up_on'],
+            'dispatched_quantity' => $t->quantity, 'original_received_quantity' => $t->received_quantity,
+            'destination_quantity_at_recording' => $lot->on_hand, 'destination_version' => $lot->version,
+            'custody_status' => $t->status, 'resolves_discrepancy' => false,
+        ]);
+        DB::table('pharmacy_stock_transfers')->where('id', $id)->update(['version' => $t->version + 1, 'updated_at' => now()]);
+        return $this->show($r, $id)->setStatusCode(201);
+    }
+
     private function correctionStock($t)
     {
         $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $t->organization_id)->where('location_id', $t->destination_location_id)->where('id', $t->destination_lot_id)->lockForUpdate()->first();

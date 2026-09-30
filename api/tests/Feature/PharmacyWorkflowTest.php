@@ -316,6 +316,70 @@ class PharmacyWorkflowTest extends TestCase
         return [$id, $source, $destination];
     }
 
+    private function investigationBody(int $transfer): array
+    {
+        return ['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_transfers')->find($transfer)->version,
+            'evidence' => 'SYNTHETIC sealed-package shortage investigation', 'follow_up_owner' => 'Synthetic location lead',
+            'next_action' => 'Compare retained dispatch and receipt evidence', 'follow_up_on' => now()->addDay()->toDateString()];
+    }
+
+    public function test_transfer_investigation_retains_evidence_without_resolving_custody_or_stock(): void
+    {
+        $receiver = $this->receivingPharmacist();
+        [$id, $source, $dest] = $this->receivedDiscrepancy($receiver);
+        $url = "/api/pharmacy/stock-transfers/$id/investigation-notes"; $body = $this->investigationBody($id);
+        $before = DB::table('pharmacy_stock_lots')->orderBy('id')->get()->toJson();
+        $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.status', 'received_discrepancy');
+        $this->postJson($url, $body)->assertOk();
+        $this->postJson($url, array_replace($body, ['evidence' => 'Changed findings']))->assertStatus(409);
+        $this->postJson($url, array_replace($body, ['request_id' => (string) Str::uuid()]))->assertStatus(409);
+        $this->actingAs($this->actor, 'api');
+        $this->postJson($url, $body)->assertStatus(409);
+        $this->postJson($url, $this->investigationBody($id))->assertCreated();
+        $this->assertSame($before, DB::table('pharmacy_stock_lots')->orderBy('id')->get()->toJson());
+        $notes = DB::table('pharmacy_stock_transfer_events')->where('transfer_id', $id)->where('action', 'investigation_noted')->get();
+        $this->assertCount(2, $notes);
+        $details = json_decode($notes[0]->details, true);
+        $this->assertFalse($details['resolves_discrepancy']);
+        $this->assertEquals(9.125, $details['destination_quantity_at_recording']);
+        $this->assertEquals(10.125, $details['dispatched_quantity']);
+        $this->assertSame($body['follow_up_owner'], $details['follow_up_owner']);
+        $this->putJson("/api/pharmacy/stock/$dest/status", ['version' => 1, 'status' => 'available', 'note' => 'Synthetic'])->assertStatus(422);
+    }
+
+    public function test_transfer_investigation_requires_evidence_and_current_assigned_pharmacist(): void
+    {
+        $receiver = $this->receivingPharmacist(); [$id] = $this->receivedDiscrepancy($receiver, '11.125');
+        $url = "/api/pharmacy/stock-transfers/$id/investigation-notes"; $body = $this->investigationBody($id);
+        foreach (['evidence', 'follow_up_owner', 'next_action', 'follow_up_on'] as $field) {
+            $this->postJson($url, array_replace($body, [$field => '']))->assertStatus(422);
+        }
+        $receiver->role = 'pharmacy_technician'; $receiver->save();
+        $this->postJson($url, $body)->assertForbidden();
+        $receiver->role = 'pharmacist'; $receiver->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $receiver->id)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        $this->actingAs($this->actor, 'api'); $this->actor->organization_id = 2; $this->actor->save();
+        $this->postJson($url, $body)->assertNotFound();
+        $this->assertSame(0, DB::table('pharmacy_stock_transfer_events')->where('action', 'investigation_noted')->count());
+    }
+
+    public function test_transfer_investigation_audit_failure_is_atomic_and_non_discrepancy_is_rejected(): void
+    {
+        $receiver = $this->receivingPharmacist(); [$id] = $this->receivedDiscrepancy($receiver);
+        $url = "/api/pharmacy/stock-transfers/$id/investigation-notes"; $body = $this->investigationBody($id);
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_stock_transfer_events')) { throw new \RuntimeException('Synthetic audit failure'); }
+        });
+        $this->postJson($url, $body)->assertStatus(500);
+        $this->assertEquals($body['version'], DB::table('pharmacy_stock_transfers')->find($id)->version);
+        $fail = false;
+        DB::table('pharmacy_stock_transfers')->where('id', $id)->update(['status' => 'received']);
+        $this->postJson($url, $body)->assertStatus(422);
+        $this->assertSame(0, DB::table('pharmacy_stock_transfer_events')->where('action', 'investigation_noted')->count());
+    }
+
     private function correctedReceiptCount(int $lot, User $receiver): int
     {
         $this->actingAs($receiver, 'api');

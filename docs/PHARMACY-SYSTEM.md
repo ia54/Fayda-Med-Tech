@@ -445,3 +445,7 @@ Controlled, compounded, external and cross-organization transfer pathways remain
 ## Matching medication counts
 
 A physical medication count may match the recorded balance. It retains the same author, evidence, version and independent pharmacist review as a discrepancy, without inventing a stock loss or gain. Matching counts record zero-quantity `matching_count_recorded` and `matching_count_verified` audit events. Quarantine remains after review; no transfer, recall or disposition hold is cleared. The observed-loss reason still requires a reduced quantity. This addition is synthetic-only and does not establish physical or regulatory acceptance.
+
+## Transfer discrepancy investigation notes
+
+Assigned pharmacists at either transfer endpoint can append findings, evidence references, a follow-up owner, next action and date to an unresolved receipt discrepancy. The event retains the original dispatch and receipt quantities plus current destination quantity/version. Exact actor/payload retries return the retained record; changed or stale requests fail. The note and transfer-version advance share the existing organization write transaction. Notes cannot change stock, clear recalls, resolve custody, send notifications or establish regulatory reporting. Independent resolution of actual loss/excess remains required; this is the retained investigation record supporting that work.
