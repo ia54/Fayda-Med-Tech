@@ -141,12 +141,12 @@ class PharmacyInventoryController extends Controller
             return $this->show($r, $id);
         }
         abort_unless((int) $lot->version === $d['version'], 409, 'Stock changed. Refresh and recount.');
-        abort_if(DB::table('pharmacy_stock_counts')->where('stock_lot_id', $id)->where('status', 'pending')->exists(), 409, 'A discrepancy is already awaiting review.');
+        abort_if(DB::table('pharmacy_stock_counts')->where('stock_lot_id', $id)->where('status', 'pending')->exists(), 409, 'A physical count is already awaiting review.');
         abort_if($lot->recall_reference !== null || app(PharmacyRecall::class)->held($lot), 422, 'Recalled stock requires a separate disposition workflow; do not adjust it through a physical count.');
         abort_if(app(\App\Services\PharmacyDisposition::class)->pending((int) $id), 422, 'Resolve the pending disposition before a physical count adjustment.');
         $counted = PharmacyStock::milli($d['counted_quantity']);
         $recorded = PharmacyStock::milli($lot->on_hand);
-        abort_if($counted === $recorded, 422, 'There is no quantity discrepancy to reconcile.');
+        abort_if($counted === $recorded && $d['reason'] === 'observed_loss', 422, 'An observed loss must reduce stock; use physical count to confirm a matching balance.');
         abort_if($d['reason'] !== 'physical_count' && $counted > $recorded, 422, 'An observed loss cannot increase stock.');
         $countId = DB::table('pharmacy_stock_counts')->insertGetId([
             'stock_lot_id' => $id, 'created_by' => $r->user()->id, 'request_id' => $d['request_id'], 'request_hash' => $hash,
@@ -154,7 +154,7 @@ class PharmacyInventoryController extends Controller
             'reason' => $d['reason'], 'evidence' => $d['evidence'], 'created_at' => now(),
         ]);
         DB::table('pharmacy_stock_lots')->where('id', $id)->update(['status' => 'quarantined', 'version' => $lot->version + 1, 'updated_at' => now()]);
-        app(PharmacyStock::class)->event($r->user(), $lot, 'discrepancy_recorded', '0.000', ['count_id' => $countId, 'recorded_quantity' => $lot->on_hand, 'counted_quantity' => PharmacyStock::decimal($counted), 'status' => 'quarantined', 'evidence' => $d['evidence']]);
+        app(PharmacyStock::class)->event($r->user(), $lot, $counted === $recorded ? 'matching_count_recorded' : 'discrepancy_recorded', '0.000', ['count_id' => $countId, 'recorded_quantity' => $lot->on_hand, 'counted_quantity' => PharmacyStock::decimal($counted), 'status' => 'quarantined', 'evidence' => $d['evidence']]);
         return $this->show($r, $id)->setStatusCode(201);
     }
 
@@ -165,8 +165,8 @@ class PharmacyInventoryController extends Controller
         $d = $r->validate(['decision' => 'required|in:apply,reject', 'evidence' => 'required|string|max:5000']);
         $count = DB::table('pharmacy_stock_counts')->where('stock_lot_id', $id)->where('id', $countId)->first();
         abort_unless($count, 404);
-        abort_unless($count->status === 'pending', 409, 'This discrepancy has already been reviewed.');
-        abort_if((int) $count->created_by === (int) $r->user()->id, 422, 'A different pharmacist must review this discrepancy.');
+        abort_unless($count->status === 'pending', 409, 'This physical count has already been reviewed.');
+        abort_if((int) $count->created_by === (int) $r->user()->id, 422, 'A different pharmacist must review this physical count.');
         $delta = 0;
         if ($d['decision'] === 'apply') {
             abort_if(app(\App\Services\PharmacyDisposition::class)->pending((int) $id), 422, 'Resolve the pending disposition before applying a count.');
@@ -178,7 +178,7 @@ class PharmacyInventoryController extends Controller
         }
         DB::table('pharmacy_stock_counts')->where('id', $countId)->update(['status' => $d['decision'] === 'apply' ? 'applied' : 'rejected', 'reviewed_by' => $r->user()->id, 'review_evidence' => $d['evidence'], 'reviewed_at' => now()]);
         $signed = ($delta < 0 ? '-' : '').PharmacyStock::decimal(abs($delta));
-        app(PharmacyStock::class)->event($r->user(), $lot, $d['decision'] === 'apply' ? 'count_adjustment_applied' : 'count_adjustment_rejected', $signed,
+        app(PharmacyStock::class)->event($r->user(), $lot, $d['decision'] === 'apply' ? ($delta === 0 ? 'matching_count_verified' : 'count_adjustment_applied') : 'count_adjustment_rejected', $signed,
             ['count_id' => (int) $countId, 'before' => $lot->on_hand, 'after' => $d['decision'] === 'apply' ? $count->counted_quantity : $lot->on_hand, 'evidence' => $d['evidence'], 'status' => $lot->status]);
         return $this->show($r, $id);
     }

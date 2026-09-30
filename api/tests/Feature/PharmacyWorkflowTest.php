@@ -487,6 +487,24 @@ class PharmacyWorkflowTest extends TestCase
         }
     }
 
+    public function test_matching_destination_count_does_not_resolve_actual_transit_shortage(): void
+    {
+        $lot = $this->lot(); $receiver = $this->receivingPharmacist();
+        $transfer = $this->postJson('/api/pharmacy/stock-transfers', $this->transferBody($lot))->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/stock-transfers/$transfer/actions";
+        $this->postJson($url, $this->transferAction($transfer, 'dispatch'))->assertOk();
+        $this->actingAs($receiver, 'api');
+        $dest = $this->postJson($url, $this->transferAction($transfer, 'receive', ['received_quantity' => '9.125']))->assertOk()->json('data.destination_lot_id');
+        $count = $this->postJson("/api/pharmacy/stock/$dest/counts", $this->stockCountBody($dest, ['counted_quantity' => '9.125']))->assertCreated()->json('data.counts.data.0.id');
+        $this->actingAs($this->actor, 'api');
+        $this->postJson("/api/pharmacy/stock/$dest/counts/$count/review", ['decision' => 'apply', 'evidence' => 'SYNTHETIC verified physical shortage'])->assertOk();
+        $this->assertEquals(9.125, DB::table('pharmacy_stock_lots')->find($dest)->on_hand);
+        $this->assertSame('received_discrepancy', DB::table('pharmacy_stock_transfers')->find($transfer)->status);
+        $this->putJson("/api/pharmacy/stock/$dest/status", ['version' => 3, 'status' => 'available', 'note' => 'Synthetic'])->assertStatus(422);
+        $this->postJson('/api/pharmacy/stock-transfers', $this->transferBody($dest, ['destination_location_id' => $this->location]))->assertStatus(422);
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'count_adjustment_applied')->count());
+    }
+
     public function test_stock_transfer_source_recalls_block_descendant_release_and_use(): void
     {
         $lot = $this->lot(); $reviewer = $this->receivingPharmacist();
@@ -765,6 +783,27 @@ class PharmacyWorkflowTest extends TestCase
         return array_replace(['request_id' => (string) Str::uuid(), 'version' => (int) DB::table('pharmacy_stock_lots')->where('id', $lot)->value('version'), 'counted_quantity' => '49.875', 'reason' => 'physical_count', 'evidence' => 'SYNTHETIC count evidence'], $changes);
     }
 
+    public function test_matching_medication_count_retains_independent_verification_without_quantity_change(): void
+    {
+        $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/counts";
+        $body = $this->stockCountBody($lot, ['counted_quantity' => '50']);
+        $this->postJson($url, array_replace($body, ['reason' => 'observed_loss']))->assertStatus(422);
+        $id = $this->postJson($url, $body)->assertCreated()->assertJsonPath('data.status', 'quarantined')->json('data.counts.data.0.id');
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.counts.total', 1);
+        $review = ['decision' => 'apply', 'evidence' => 'SYNTHETIC independent matching count'];
+        $this->postJson("$url/$id/review", $review)->assertStatus(422);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("$url/$id/review", $review)->assertOk()->assertJsonPath('data.status', 'quarantined')->assertJsonPath('data.counts.data.0.status', 'applied');
+        $this->postJson("$url/$id/review", $review)->assertStatus(409);
+        $stock = DB::table('pharmacy_stock_lots')->find($lot);
+        $this->assertEquals(50, $stock->on_hand);
+        $this->assertEquals(0, $stock->reserved);
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'matching_count_recorded')->count());
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'matching_count_verified')->count());
+        $this->assertEquals(0, DB::table('pharmacy_stock_events')->where('action', 'matching_count_verified')->value('quantity'));
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'count_adjustment_applied')->count());
+    }
+
     public function test_medication_count_quarantines_and_requires_independent_review(): void
     {
         $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/counts"; $body = $this->stockCountBody($lot);
@@ -809,7 +848,7 @@ class PharmacyWorkflowTest extends TestCase
     public function test_medication_count_role_scope_and_validation(): void
     {
         $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/counts"; $body = $this->stockCountBody($lot);
-        foreach (['-1', '1000000', '1.1234', '50'] as $quantity) {
+        foreach (['-1', '1000000', '1.1234'] as $quantity) {
             $this->postJson($url, array_replace($body, ['counted_quantity' => $quantity]))->assertStatus(422);
         }
         $this->postJson($url, array_replace($body, ['counted_quantity' => '51', 'reason' => 'observed_loss']))->assertStatus(422);
@@ -854,6 +893,26 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('pending', DB::table('pharmacy_stock_counts')->where('id', $id)->value('status'));
         $this->assertEquals(50, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
         $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'count_adjustment_applied')->count());
+    }
+
+    public function test_matching_count_review_rolls_back_on_audit_failure_and_cannot_clear_later_recall(): void
+    {
+        $lot = $this->lot(); $url = "/api/pharmacy/stock/$lot/counts";
+        $id = $this->postJson($url, $this->stockCountBody($lot, ['counted_quantity' => '50']))->assertCreated()->json('data.counts.data.0.id');
+        $this->actingAs($this->independentReviewer(), 'api'); $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_stock_events')) { throw new \RuntimeException('Synthetic audit failure'); }
+        });
+        $review = ['decision' => 'apply', 'evidence' => 'SYNTHETIC verification'];
+        $this->postJson("$url/$id/review", $review)->assertStatus(500);
+        $this->assertSame('pending', DB::table('pharmacy_stock_counts')->find($id)->status);
+        $this->assertEquals(2, DB::table('pharmacy_stock_lots')->find($lot)->version);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->find($lot)->on_hand);
+        $fail = false;
+        $this->recallStock($lot)->assertOk();
+        $this->postJson("$url/$id/review", $review)->assertStatus(409);
+        $this->postJson("$url/$id/review", array_replace($review, ['decision' => 'reject']))->assertOk()->assertJsonPath('data.status', 'recalled');
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'matching_count_verified')->count());
     }
 
     private function recallStock(int $lot, array $changes = [])

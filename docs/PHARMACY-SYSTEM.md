@@ -441,3 +441,7 @@ The Chrome synthetic journey sent Rx5 from location A as pharmacist3 and accepte
 The previously published quantity-foundation candidate `8951c8a2e74d6106ff6053b3714d5415c8f1d3f4` passed 283 PHP tests / 5,405 assertions and MySQL8/MariaDB10.11 checks including 207 workflow tests per engine and 106-table synthetic restores. Its archives do not contain the subsequent request/review screens and lifecycle. Current lifecycle publication, corresponding database-engine CI and release packaging remain separate gates.
 
 Controlled, compounded, external and cross-organization transfer pathways remain outstanding. Actual prescriber authentication, lawful sharing, licensed pharmacist/site acceptance, transfer operating procedures, external transport and clinical integrations must be verified before real use. No production pharmacy feature or dispensing capability is enabled by this work.
+
+## Matching medication counts
+
+A physical medication count may match the recorded balance. It retains the same author, evidence, version and independent pharmacist review as a discrepancy, without inventing a stock loss or gain. Matching counts record zero-quantity `matching_count_recorded` and `matching_count_verified` audit events. Quarantine remains after review; no transfer, recall or disposition hold is cleared. The observed-loss reason still requires a reduced quantity. This addition is synthetic-only and does not establish physical or regulatory acceptance.
