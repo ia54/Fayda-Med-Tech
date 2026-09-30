@@ -4930,6 +4930,162 @@ class PharmacyWorkflowTest extends TestCase
         DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
         try { $call(array_replace($body, ['findings' => 'Changed'])); $this->fail('Changed retry accepted'); }
         catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $proposal = ['request_id' => (string) Str::uuid(), 'version' => 1, 'evidence' => 'SYNTHETIC proposed accounting only',
+            'ingredients' => $allocations->map(fn ($a) => ['allocation_id' => $a->id, 'additional_taken' => 0, 'consumed' => 0,
+                'unused_retained' => 1, 'disposed_unused' => 0, 'unaccounted' => 1, 'evidence' => 'SYNTHETIC unresolved custody'])->all()];
+        $propose = function ($data) use ($id) {
+            $r = \Illuminate\Http\Request::create('/internal-proposal-only', 'POST', $data);
+            app()->instance('request', $r); $r->setUserResolver(fn () => $this->actor);
+            return app(\App\Http\Controllers\API\PharmacyReconciliationController::class)->store($r, $id);
+        };
+        $stockBeforeProposal = DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson();
+        $this->assertSame(201, $propose($proposal)->getStatusCode());
+        $this->assertSame(200, $propose($proposal)->getStatusCode());
+        $this->assertSame(1, DB::table('pharmacy_compounding_reconciliations')->count());
+        $retained = DB::table('pharmacy_compounding_reconciliations')->first();
+        $this->assertSame('pending', $retained->status);
+        $this->assertNull($retained->reviewed_by);
+        $this->assertSame($stockBeforeProposal, DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson());
+        $this->assertTrue(app(\App\Services\PharmacyCompoundingIncident::class)->holdsBatch(1, $batch));
+        $this->assertSame($retained->source_hash, app(\App\Services\PharmacyCompoundingIncident::class)->digest(json_decode($retained->source_snapshot, true)));
+        $this->assertTrue(json_decode($retained->proposal, true)[0]['accounting']['unaccounted_remaining']);
+        try { $propose(array_replace($proposal, ['request_id' => (string) Str::uuid(), 'version' => 2])); $this->fail('Duplicate pending proposal accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $reviewer = $this->actor;
+        $reject = function ($evidence = 'SYNTHETIC accounting needs investigation') use ($id, $retained, &$reviewer) {
+            $r = \Illuminate\Http\Request::create('/internal-review-only', 'POST', ['evidence' => $evidence]);
+            app()->instance('request', $r); $r->setUserResolver(fn () => $reviewer);
+            return app(\App\Http\Controllers\API\PharmacyReconciliationController::class)->reject($r, $id, $retained->id);
+        };
+        try { $reject(); $this->fail('Self-review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $reviewer = $this->independentReviewer();
+        $fail = true; // Existing final-audit failure hook also covers independent review.
+        try { $reject(); $this->fail('Expected independent-review audit failure'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC incident audit failure', $e->getMessage()); }
+        $fail = false;
+        $this->assertSame('pending', DB::table('pharmacy_compounding_reconciliations')->find($retained->id)->status);
+        $this->assertNull(DB::table('pharmacy_compounding_reconciliations')->find($retained->id)->reviewed_by);
+        $this->assertEquals(2, DB::table('pharmacy_compounding_incidents')->find($id)->version);
+        $this->assertSame(200, $reject()->getStatusCode());
+        $this->assertSame(200, $reject()->getStatusCode());
+        $this->assertSame('rejected', DB::table('pharmacy_compounding_reconciliations')->find($retained->id)->status);
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'reconciliation_rejected')->count());
+        $this->assertSame($stockBeforeProposal, DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson());
+        $this->assertTrue(app(\App\Services\PharmacyCompoundingIncident::class)->holdsBatch(1, $batch));
+        try { $reject('Changed rejection'); $this->fail('Changed decision retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $completeProposal = $proposal;
+        $completeProposal['request_id'] = (string) Str::uuid(); $completeProposal['version'] = 3;
+        foreach ($completeProposal['ingredients'] as &$ingredient) { $ingredient['consumed'] = 1; $ingredient['unaccounted'] = 0; } unset($ingredient);
+        $acceptedId = $propose($completeProposal)->getData(true)['data']['id'];
+        $apply = function () use ($id, $acceptedId, $reviewer) {
+            $r = \Illuminate\Http\Request::create('/internal-apply-only', 'POST', ['evidence' => 'SYNTHETIC independent accounting review']);
+            app()->instance('request', $r); $r->setUserResolver(fn () => $reviewer);
+            return app(\App\Http\Controllers\API\PharmacyReconciliationController::class)->apply($r, $id, $acceptedId);
+        };
+        $refuseApply = function ($status) use ($apply) {
+            try { $apply(); $this->fail('Unsafe application accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame($status, $e->getStatusCode()); }
+        };
+        $originalProposal = DB::table('pharmacy_compounding_reconciliations')->find($acceptedId);
+        DB::table('pharmacy_compounding_reconciliations')->where('id', $acceptedId)->update(['proposal' => '[]']);
+        $refuseApply(409);
+        DB::table('pharmacy_compounding_reconciliations')->where('id', $acceptedId)->update(['proposal' => $originalProposal->proposal]);
+        $stockVersion = DB::table('pharmacy_ingredient_lots')->find($lot)->version;
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['version' => $stockVersion + 1]);
+        $refuseApply(409);
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['version' => $stockVersion]);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $refuseApply(404);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $refuseApply(404);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => true]);
+        $this->assertSame($stockBeforeProposal, DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson());
+        $fail = true;
+        try { $apply(); $this->fail('Expected application audit failure'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC incident audit failure', $e->getMessage()); }
+        $fail = false;
+        $this->assertSame($stockBeforeProposal, DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson());
+        $this->assertSame('pending', DB::table('pharmacy_compounding_reconciliations')->find($acceptedId)->status);
+        $this->assertSame(200, $apply()->getStatusCode());
+        $this->assertSame(200, $apply()->getStatusCode());
+        $reconciledStock = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $this->assertEquals(3, $reconciledStock->on_hand);
+        $this->assertEquals(2, $reconciledStock->reserved);
+        $this->assertSame('quarantined', $reconciledStock->status);
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'incident_consumption_reconciled')->count());
+        $this->assertSame('accounted_custody_held', DB::table('pharmacy_compounding_incidents')->find($id)->status);
+        $readProposals = function () use ($id) {
+            $r = \Illuminate\Http\Request::create('/internal-review-history', 'GET');
+            app()->instance('request', $r); $r->setUserResolver(fn () => $this->actor);
+            return app(\App\Http\Controllers\API\PharmacyReconciliationController::class)->index($r, $id)->getData(true);
+        };
+        $this->actor->role = 'pharmacy_technician';
+        $history = $readProposals();
+        $this->assertSame(2, $history['data']['total']);
+        $this->assertSame('applied', $history['data']['data'][0]['status']);
+        $this->assertSame('rejected', $history['data']['data'][1]['status']);
+        $this->assertSame('1.000', $history['data']['data'][0]['proposal'][0]['accounting']['quantities']['unused_retained']);
+        foreach (['source_snapshot', 'source_hash', 'request_hash', 'request_id', 'proposal_hash'] as $private) {
+            $this->assertArrayNotHasKey($private, $history['data']['data'][0]);
+        }
+        $this->actor->role = 'medical_biller';
+        try { $readProposals(); $this->fail('Biller read clinical accounting'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(403, $e->getStatusCode()); }
+        $this->actor->role = 'pharmacist'; $this->actor->organization_id = 2;
+        try { $readProposals(); $this->fail('Foreign organization read accounting'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        $this->actor->organization_id = 1;
+
+        $this->assertTrue(app(\App\Services\PharmacyCompoundingIncident::class)->holdsLot(1, $lot));
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+
+
+
+    }
+
+    public function test_reconciliation_cannot_apply_unaccounted_or_excess_material(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->first();
+        $incident = $this->postJson("/api/pharmacy/batch-worksheets/$batch/incidents", ['request_id' => (string) Str::uuid(), 'version' => 3,
+            'observed_at' => now()->format('Y-m-d H:i:s'), 'findings' => 'SYNTHETIC uncertain material', 'custody_evidence' => 'SYNTHETIC hold',
+            'follow_up_owner' => 'Synthetic pharmacist', 'ingredients' => [['allocation_id' => $allocation->id, 'observed_quantity' => null,
+                'measurement_evidence' => 'SYNTHETIC not yet measured']]])->assertCreated()->json('data.id');
+        $reviewer = $this->independentReviewer();
+        $call = function ($method, $actor, $data, $proposalId = null) use ($incident) {
+            $this->actingAs($actor, 'api');
+            $url = "/api/pharmacy/incidents/$incident/reconciliations".($proposalId === null ? '' : "/$proposalId/$method");
+            return $this->postJson($url, $data)->baseResponse;
+        };
+        $stockBefore = DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson();
+        foreach ([['additional_taken' => 0, 'consumed' => 0, 'unused_retained' => 1, 'unaccounted' => 1],
+            ['additional_taken' => 4, 'consumed' => 6, 'unused_retained' => 0, 'unaccounted' => 0]] as $quantities) {
+            $proposalId = $call('store', $this->actor, ['request_id' => (string) Str::uuid(),
+                'version' => (int) DB::table('pharmacy_compounding_incidents')->find($incident)->version, 'evidence' => 'SYNTHETIC proposal',
+                'ingredients' => [$quantities + ['allocation_id' => $allocation->id, 'disposed_unused' => 0, 'evidence' => 'SYNTHETIC accounting']]])->getData(true)['data']['id'];
+            $this->assertSame(422, $call('apply', $reviewer, ['evidence' => 'SYNTHETIC review'], $proposalId)->getStatusCode());
+            $this->assertSame('pending', DB::table('pharmacy_compounding_reconciliations')->find($proposalId)->status);
+            $this->assertSame($stockBefore, DB::table('pharmacy_ingredient_lots')->orderBy('id')->get()->toJson());
+            $call('reject', $reviewer, ['evidence' => 'SYNTHETIC retain and investigate'], $proposalId);
+        }
+        $this->assertSame(0, DB::table('pharmacy_ingredient_events')->where('action', 'incident_consumption_reconciled')->count());
+        $this->assertTrue(app(\App\Services\PharmacyCompoundingIncident::class)->holdsBatch(1, $batch));
+        $url = "/api/pharmacy/incidents/$incident/reconciliations";
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 2)->assertJsonPath('data.data.0.status', 'rejected');
+        $this->actor->role = 'pharmacy_technician'; $this->actingAs($this->actor, 'api');
+        $this->getJson($url)->assertOk();
+        $this->postJson($url, [])->assertForbidden();
+        $this->postJson("$url/$proposalId/apply", ['evidence' => 'SYNTHETIC'])->assertForbidden();
+        $this->postJson("$url/$proposalId/reject", ['evidence' => 'SYNTHETIC'])->assertForbidden();
+        $this->actor->role = 'pharmacist'; $this->app->instance('env', 'production');
+        $this->getJson($url)->assertStatus(503);
+        $this->postJson($url, [])->assertStatus(503);
+        $this->postJson("$url/$proposalId/apply", [])->assertStatus(503);
+        $this->postJson("$url/$proposalId/reject", [])->assertStatus(503);
+
     }
 
     public function test_compounding_incident_hold_foundation_preserves_unknown_and_zero_observations(): void

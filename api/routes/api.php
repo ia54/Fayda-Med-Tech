@@ -71,6 +71,11 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/prescription-transfers/{id}', [$rxTransfer, 'show']);
         Route::get('/prescription-transfers/{id}/sources/{sourceId}/file', [$rxTransfer, 'sourceFile']);
         Route::post('/prescription-transfers/{id}/review', [$rxTransfer, 'review']);
+        $reconciliation = \App\Http\Controllers\API\PharmacyReconciliationController::class;
+        Route::get('/incidents/{id}/reconciliations', [$reconciliation, 'index']);
+        Route::post('/incidents/{id}/reconciliations', [$reconciliation, 'store']);
+        Route::post('/incidents/{id}/reconciliations/{proposalId}/apply', [$reconciliation, 'apply']);
+        Route::post('/incidents/{id}/reconciliations/{proposalId}/reject', [$reconciliation, 'reject']);
         $incidents = \App\Http\Controllers\API\PharmacyCompoundingIncidentController::class;
         Route::get('/batch-worksheets/{id}/incidents', [$incidents, 'index']);
         Route::post('/batch-worksheets/{id}/incidents', [$incidents, 'store']);
