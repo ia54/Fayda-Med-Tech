@@ -5017,6 +5017,38 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('quarantined', $reconciledStock->status);
         $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'incident_consumption_reconciled')->count());
         $this->assertSame('accounted_custody_held', DB::table('pharmacy_compounding_incidents')->find($id)->status);
+        $custodyBody = ['request_id' => (string) \Illuminate\Support\Str::uuid(), 'version' => DB::table('pharmacy_compounding_incidents')->find($id)->version, 'evidence' => 'SYNTHETIC unused material remains quarantined', 'ingredients' => []];
+        foreach ($completeProposal['ingredients'] as $ingredient) {
+            $custodyBody['ingredients'][] = ['allocation_id' => $ingredient['allocation_id'], 'return_to_quarantine' => '0.750', 'disposed_unused' => '0.250', 'evidence' => 'SYNTHETIC custody split'];
+        }
+        $custodyCall = function ($method, $body, $actor, $proposalId = null) use ($id) {
+            $r = \Illuminate\Http\Request::create('/internal-custody-test', 'POST', $body);
+            app()->instance('request', $r); $r->setUserResolver(fn () => $actor);
+            $controller = app(\App\Http\Controllers\API\PharmacyCustodyController::class);
+            return $proposalId === null ? $controller->$method($r, $id) : $controller->$method($r, $id, $proposalId);
+        };
+        $custodyStock = DB::table('pharmacy_ingredient_lots')->get()->toJson();
+        $fail = true;
+        try { $custodyCall('store', $custodyBody, $this->actor); $this->fail('Missing custody audit rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC incident audit failure', $e->getMessage()); }
+        $fail = false;
+        $this->assertSame(0, DB::table('pharmacy_compounding_custody_decisions')->count());
+        $custodyId = $custodyCall('store', $custodyBody, $this->actor)->getData(true)['data']['id'];
+        $this->assertSame($custodyId, $custodyCall('store', $custodyBody, $this->actor)->getData(true)['data']['id']);
+        $this->assertSame(1, DB::table('pharmacy_compounding_custody_decisions')->count());
+        $decision = ['evidence' => 'SYNTHETIC evidence needs clarification'];
+        try { $custodyCall('reject', $decision, $this->actor, $custodyId); $this->fail('Self-review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $fail = true;
+        try { $custodyCall('reject', $decision, $reviewer, $custodyId); $this->fail('Missing custody rejection rollback'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC incident audit failure', $e->getMessage()); }
+        $fail = false;
+        $this->assertSame('pending', DB::table('pharmacy_compounding_custody_decisions')->find($custodyId)->status);
+        $this->assertSame(200, $custodyCall('reject', $decision, $reviewer, $custodyId)->getStatusCode());
+        $this->assertSame(200, $custodyCall('reject', $decision, $reviewer, $custodyId)->getStatusCode());
+        $this->assertSame($custodyStock, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        $this->assertSame('accounted_custody_held', DB::table('pharmacy_compounding_incidents')->find($id)->status);
+
         $readProposals = function () use ($id) {
             $r = \Illuminate\Http\Request::create('/internal-review-history', 'GET');
             app()->instance('request', $r); $r->setUserResolver(fn () => $this->actor);
@@ -5044,6 +5076,66 @@ class PharmacyWorkflowTest extends TestCase
 
 
 
+
+        $custodyBody['request_id'] = (string) \Illuminate\Support\Str::uuid();
+        $custodyBody['version'] = DB::table('pharmacy_compounding_incidents')->find($id)->version;
+        $finalCustody = $custodyCall('store', $custodyBody, $this->actor)->getData(true)['data']['id'];
+        $decision = ['evidence' => 'SYNTHETIC independent final custody review'];
+        $fail = true;
+        try { $custodyCall('apply', $decision, $reviewer, $finalCustody); $this->fail('Custody application must roll back without audit'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC incident audit failure', $e->getMessage()); }
+        $fail = false;
+        $this->assertSame($custodyStock, DB::table('pharmacy_ingredient_lots')->get()->toJson());
+        $this->assertSame('pending', DB::table('pharmacy_compounding_custody_decisions')->find($finalCustody)->status);
+        $this->assertSame(0, DB::table('pharmacy_ingredient_events')->where('action', 'incident_unused_custody_resolved')->count());
+        $this->assertSame(200, $custodyCall('apply', $decision, $reviewer, $finalCustody)->getStatusCode());
+        $this->assertSame(200, $custodyCall('apply', $decision, $reviewer, $finalCustody)->getStatusCode());
+        $finalStock = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $this->assertEquals(2.5, $finalStock->on_hand);
+        $this->assertEquals(0, $finalStock->reserved);
+        $this->assertSame('quarantined', $finalStock->status);
+        $this->assertSame('reconciled', DB::table('pharmacy_compounding_incidents')->find($id)->status);
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'incident_unused_custody_resolved')->count());
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+        $batchId = DB::table('pharmacy_compounding_incidents')->find($id)->batch_id;
+        $version = DB::table('pharmacy_batch_worksheets')->find($batchId)->version;
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/batch-worksheets/$batchId/execution", array_replace($this->executionBody(), ['version' => $version]))->assertUnprocessable();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batchId/allocation", ['version' => $version, 'action' => 'release', 'evidence' => 'SYNTHETIC cannot release accounted allocation'])->assertUnprocessable();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batchId/allocation", ['version' => $version, 'action' => 'reserve', 'evidence' => 'SYNTHETIC cannot reserve accounted worksheet', 'lots' => [['key' => 'A', 'lot_id' => $lot]]])->assertUnprocessable();
+        $this->assertEquals(2.5, DB::table('pharmacy_ingredient_lots')->find($lot)->on_hand);
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+
+    }
+
+    public function test_custody_routes_reject_unscoped_access_and_production_use(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->first();
+        $incident = $this->postJson("/api/pharmacy/batch-worksheets/$batch/incidents", [
+            'request_id' => (string) Str::uuid(), 'version' => 3, 'observed_at' => now()->format('Y-m-d H:i:s'),
+            'findings' => 'SYNTHETIC unknown consumption', 'custody_evidence' => 'SYNTHETIC held',
+            'follow_up_owner' => 'Synthetic lead', 'ingredients' => [['allocation_id' => $allocation->id,
+                'observed_quantity' => null, 'measurement_evidence' => 'SYNTHETIC unknown']],
+        ])->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/incidents/$incident/custody";
+        $this->getJson($url)->assertOk()->assertJsonPath('data.total', 0);
+        $this->actor->role = 'pharmacy_technician';
+        $this->getJson($url)->assertOk();
+        foreach ([$url, "$url/1/apply", "$url/1/reject"] as $path) $this->postJson($path, [])->assertForbidden();
+        $this->actor->role = 'medical_biller';
+        $this->getJson($url)->assertForbidden();
+        $this->actor->role = 'pharmacist';
+        $this->actor->organization_id = 2;
+        $this->getJson($url)->assertNotFound();
+        $this->actor->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        $this->app->instance('env', 'production');
+        $this->getJson($url)->assertStatus(503);
+        foreach ([$url, "$url/1/apply", "$url/1/reject"] as $path) $this->postJson($path, [])->assertStatus(503);
+        $this->assertSame(0, DB::table('pharmacy_compounding_custody_decisions')->count());
     }
 
     public function test_reconciliation_cannot_apply_unaccounted_or_excess_material(): void

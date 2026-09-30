@@ -4,6 +4,7 @@ import {useAuth} from '@/hooks/useAuth'
 import {Button} from '@/components/ui/button'
 import {Field,errorMessage} from './fields'
 import {CompoundingIncident,CompoundingReconciliation,useGetCompoundingReconciliationsQuery,usePharmacyStockActionMutation} from '@/store/api/pharmacyApiSlice'
+import {CompoundingCustodyReview} from './compounding-custody'
 const quantities=[['additional_taken','Additional material taken beyond the reservation'],['consumed','Consumed in preparation'],['unused_retained','Unused material still in custody'],['disposed_unused','Unused material with documented completed disposal'],['unaccounted','Material not yet accounted for']] as const
 export function CompoundingReconciliationReview({incident}:{incident:CompoundingIncident}) {
  const {user}=useAuth();const [page,setPage]=useState(1);const {currentData,isFetching,isError,refetch}=useGetCompoundingReconciliationsQuery({id:incident.id,page})
@@ -25,6 +26,7 @@ export function CompoundingReconciliationReview({incident}:{incident:Compounding
  {state?.status==='accounted_custody_held'&&<p role="status">Ledger accounting is recorded. Final custody resolution remains outstanding; ingredients and output are not released.</p>}
  {canPropose&&<form onSubmit={submit}><fieldset disabled={isLoading||isFetching} className="space-y-3">{incident.ingredients.map(line=><fieldset key={line.allocation_id} className="border rounded p-3 space-y-3"><legend>Ingredient {line.ingredient_key} · receipt {line.ingredient_lot_id}</legend><p>Original reservation: {line.reserved_quantity} {line.quantity_unit}. Original observed consumption: {line.observed_quantity===null?'Unknown':`${line.observed_quantity} ${line.quantity_unit}`}.</p>{quantities.map(([key,label])=><Field key={key} name={`${line.allocation_id}-${key}`} label={`${label} (${line.quantity_unit})`} type="number" min="0" max="999999.999" step="0.001"/>)}<Field name={`${line.allocation_id}-evidence`} label="Measurement, material custody and completed-event evidence" maxLength={5000}/></fieldset>)}<Field name="evidence" label="Investigation findings and reconciliation evidence" maxLength={5000}/>{error&&<p role="alert">{error}</p>}<Button disabled={isLoading||isFetching}>Retain reconciliation proposal</Button></fieldset></form>}
  </>}
+ <CompoundingCustodyReview incident={incident}/>
  </section>
 }
 function Decision({incident,proposal,refreshing}:{incident:CompoundingIncident;proposal:CompoundingReconciliation;refreshing:boolean}) {
