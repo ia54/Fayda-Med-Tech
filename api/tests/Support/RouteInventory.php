@@ -4,6 +4,13 @@ namespace Tests\Support;
 
 final class RouteDeclaration
 {
+    public array $allowedParameters = [];
+    public function whereIn(string $parameter, array $values): self
+    {
+        $this->allowedParameters[$parameter] = $values;
+        return $this;
+    }
+
     public function __construct(public string $method, public string $path, public array $middleware, public mixed $handler) {}
     public function middleware(string|array $middleware): self
     {

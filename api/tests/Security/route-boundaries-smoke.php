@@ -36,9 +36,13 @@ foreach (RouteInventory::$routes as $route) {
     if (str_starts_with($route->path, '/api-credentials') && !in_array('tenant', $route->middleware, true)) {
         throw new RuntimeException('Credential route missing tenant boundary');
     }
+    if (str_contains($route->path, '/incident-groups/{groupId}/{phase}')) {
+        if (($route->allowedParameters['phase'] ?? null) !== ['accounting', 'custody']) throw new RuntimeException('Joint phase constraint missing');
+        if (str_contains($route->path, '{decision}') && ($route->allowedParameters['decision'] ?? null) !== ['apply', 'reject']) throw new RuntimeException('Joint decision constraint missing');
+    }
     $inventory[] = ['method' => $route->method, 'path' => $route->path, 'middleware' => $route->middleware, 'effective_roles' => $roles];
 }
 if ($checked < 20) throw new RuntimeException('Expected platform routes missing from inventory');
-if ($pharmacyChecked !== 110) throw new RuntimeException('Expected pharmacy routes missing from inventory');
+if ($pharmacyChecked !== 117) throw new RuntimeException('Expected pharmacy routes missing from inventory');
 if (in_array('--json', $argv, true)) echo json_encode($inventory, JSON_PRETTY_PRINT), "\n";
 else echo 'PASS: ' . $checked . ' platform-only and ' . $pharmacyChecked . ' protected pharmacy route declarations; inventoried ' . count($inventory) . " routes. Laravel request-level tests remain required.\n";
