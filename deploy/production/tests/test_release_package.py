@@ -21,6 +21,9 @@ class ReleasePackageTest(unittest.TestCase):
         self.repo = self.root / 'repo'
         self.repo.mkdir()
         self.git('init', '-q')
+        # Disposable fixtures must not launch background maintenance during cleanup.
+        self.git('config', 'gc.auto', '0')
+        self.git('config', 'maintenance.auto', 'false')
         self.git('config', 'user.email', 'synthetic@example.invalid')
         self.git('config', 'user.name', 'Synthetic release test')
         for path in package.REQUIRED:
