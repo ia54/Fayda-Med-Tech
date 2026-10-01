@@ -4784,6 +4784,126 @@ class PharmacyWorkflowTest extends TestCase
         return [$b, $lot];
     }
 
+    public function test_execution_custody_proposals_retain_evidence_without_repeating_stock_movements(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $before = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $body = ['request_id' => (string) Str::uuid(), 'version' => 1, 'unit' => 'tablet',
+            'retained_quarantined' => '7', 'disposed_output' => '2', 'unaccounted_output' => '0', 'evidence' => 'SYNTHETIC output custody'];
+        $service = app(\App\Services\PharmacyExecutionCustodyLedger::class);
+        $id = $service->retain($this->actor, $execution->id, $body);
+        $this->assertSame($id, $service->retain($this->actor, $execution->id, $body));
+        $saved = DB::table('pharmacy_execution_custody_proposals')->find($id);
+        $this->assertSame('pending', $saved->status);
+        $this->assertSame('2.000', json_decode($saved->proposal, true)['disposed_output']);
+        $this->assertSame($execution->record, json_decode($saved->source_snapshot, true)['execution']['record']);
+        $this->assertSame($before, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'execution_custody_proposed')->count());
+        foreach (['changed_request', 'pending', 'location', 'role', 'production'] as $case) {
+            $data = $body;
+            if ($case === 'changed_request') { $data['evidence'] = 'changed'; }
+            if ($case === 'pending') { $data['request_id'] = (string) Str::uuid(); }
+            if ($case === 'location') { DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]); }
+            if ($case === 'role') { $this->actor->role = 'pharmacy_technician'; }
+            if ($case === 'production') { $this->app->instance('env', 'production'); }
+            try {
+                $service->retain($this->actor, $execution->id, $data);
+                $this->fail('Unsafe proposal accepted: '.$case);
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+                $this->assertSame(['changed_request' => 409, 'pending' => 409, 'location' => 404, 'role' => 403, 'production' => 503][$case], $e->getStatusCode());
+            } finally {
+                $this->actor->role = 'pharmacist';
+                $this->app->instance('env', 'testing');
+                DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+            }
+        }
+        $this->assertSame(1, DB::table('pharmacy_execution_custody_proposals')->count());
+        $this->assertSame(0, DB::table('pharmacy_stock_lots')->count());
+        try {
+            $service->decide($this->actor, $id, 'applied', 'SYNTHETIC self review');
+            $this->fail('Self review accepted');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            $this->assertSame(422, $e->getStatusCode());
+        }
+        $reviewer = $this->independentReviewer();
+        DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update(['version' => 2]);
+        try {
+            $service->decide($reviewer, $id, 'applied', 'SYNTHETIC stale review');
+            $this->fail('Stale evidence accepted');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+        }
+        $service->decide($reviewer, $id, 'rejected', 'SYNTHETIC changed evidence');
+        $this->assertSame('rejected', DB::table('pharmacy_execution_custody_proposals')->where('id', $id)->value('status'));
+        $body['version'] = 2;
+        $body['request_id'] = (string) Str::uuid();
+        $second = $service->retain($this->actor, $execution->id, $body);
+        $failCustodyAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failCustodyAudit) {
+            if ($failCustodyAudit && str_contains($query, 'insert into') && str_contains($query, 'pharmacy_compounding_events')) {
+                throw new \RuntimeException('SYNTHETIC output custody audit failure');
+            }
+        });
+        foreach (['applied', 'rejected'] as $failedDecision) {
+            try {
+                $service->decide($reviewer, $second, $failedDecision, 'SYNTHETIC failed audit');
+                $this->fail('Expected custody audit failure');
+            } catch (\RuntimeException $e) {
+                $this->assertSame('SYNTHETIC output custody audit failure', $e->getMessage());
+            }
+            $this->assertSame('pending', DB::table('pharmacy_execution_custody_proposals')->where('id', $second)->value('status'));
+            $this->assertEquals(2, DB::table('pharmacy_batch_executions')->where('id', $execution->id)->value('version'));
+            $this->assertSame($before, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        }
+        $failCustodyAudit = false;
+        $service->decide($reviewer, $second, 'applied', 'SYNTHETIC independent findings');
+        $service->decide($reviewer, $second, 'applied', 'SYNTHETIC independent findings');
+        $this->assertSame('applied', DB::table('pharmacy_execution_custody_proposals')->where('id', $second)->value('status'));
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'execution_custody_applied')->count());
+        $this->assertEquals(3, DB::table('pharmacy_batch_executions')->where('id', $execution->id)->value('version'));
+        $this->assertSame($before, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame($execution->record, DB::table('pharmacy_batch_executions')->where('id', $execution->id)->value('record'));
+        $this->assertSame(0, DB::table('pharmacy_stock_lots')->count());
+        $body['version'] = 3;
+        $body['request_id'] = (string) Str::uuid();
+        $body['retained_quarantined'] = '4';
+        $body['disposed_output'] = '3';
+        $third = $service->retain($this->actor, $execution->id, $body);
+        $service->decide($reviewer, $third, 'applied', 'SYNTHETIC subsequent disposition');
+        $projection = json_decode(DB::table('pharmacy_execution_custody_proposals')->where('id', $third)->value('proposal'), true);
+        $this->assertSame('2.000', $projection['previously_disposed']);
+        $this->assertSame('5.000', $projection['total_disposed']);
+        $this->assertSame('4.000', $projection['retained_quarantined']);
+        $this->assertSame($before, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->actingAs($this->actor, 'api');
+        $url = "/api/pharmacy/executions/$execution->id/custody";
+        $history = $this->getJson($url)->assertOk()->assertJsonPath('pending', false)->assertJsonPath('release_enabled', false)->assertJsonCount(3, 'data.data');
+        $this->assertArrayNotHasKey('source_snapshot', $history->json('data.data.0'));
+        $body['version'] = 4;
+        $body['request_id'] = (string) Str::uuid();
+        $body['retained_quarantined'] = '3';
+        $body['disposed_output'] = '1';
+        $fourth = $this->postJson($url, $body)->assertCreated()->json('data.id');
+        $decisionUrl = "/api/pharmacy/execution-custody/$fourth/decision";
+        $decision = ['decision' => 'applied', 'evidence' => 'SYNTHETIC HTTP review'];
+        $this->postJson($decisionUrl, $decision)->assertUnprocessable();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson($decisionUrl, $decision)->assertOk();
+        $this->postJson($decisionUrl, $decision)->assertOk();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->postJson($decisionUrl, $decision)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => true]);
+        $this->app->instance('env', 'production');
+        $this->getJson($url)->assertStatus(503);
+        $this->postJson($url, $body)->assertStatus(503);
+        $this->postJson($decisionUrl, $decision)->assertStatus(503);
+        $this->app->instance('env', 'testing');
+    }
+
     private function executionBody(bool $two = false): array
     {
         $ingredients = [['key' => 'A', 'quantity' => '2.000', 'unit' => 'g', 'measurement_reference' => 'SYNTHETIC ONLY']];
