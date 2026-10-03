@@ -325,7 +325,7 @@ export default function AdminIntegrationsPage() {
   };
 
   const handleDeleteDocument = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this document? This will also remove associated signatures and OCR results.")) {
+    if (!confirm("Archive this document? The original file will be retained. This will also remove associated signatures and OCR results.")) {
       return;
     }
 
@@ -333,7 +333,7 @@ export default function AdminIntegrationsPage() {
       await deleteDocument(id).unwrap();
       toast({
         title: "Deleted",
-        description: "Document deleted successfully.",
+        description: "Document archived. The original file is retained.",
       });
       if (selectedDocumentId === id) {
         setSelectedDocumentId(null);

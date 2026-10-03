@@ -40,15 +40,16 @@ use Illuminate\Support\Facades\Route;
 
 // Public authentication routes
 Route::post('register', [AuthController::class, 'register']);
-Route::post('login', [AuthController::class, 'login']);
-Route::post('refresh', [AuthController::class, 'refreshToken']);
+Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::post('auth/mfa/setup', [\App\Http\Controllers\API\Auth\MfaController::class, 'setup'])->middleware('throttle:mfa-setup');
+Route::post('auth/mfa/verify', [\App\Http\Controllers\API\Auth\MfaController::class, 'verify'])->middleware('throttle:mfa-verify');
+Route::post('refresh', [AuthController::class, 'refreshToken'])->middleware('throttle:token-refresh');
+Route::post('refresh-token', [AuthController::class, 'refreshToken'])->middleware('throttle:token-refresh');
 
 // Password reset routes
-Route::post('forgot-password', [PasswordResetController::class, 'forgotPassword']);
-Route::post('reset-password', [PasswordResetController::class, 'resetPassword']);
+Route::post('forgot-password', [PasswordResetController::class, 'forgotPassword'])->middleware('throttle:password-recovery');
+Route::post('reset-password', [PasswordResetController::class, 'resetPassword'])->middleware('throttle:password-reset');
 
-// Test route for password reset (remove in production)
-Route::get('test-password-reset/{email}', [PasswordResetController::class, 'testResetEmail']);
 Route::get('get-setting-values', [AppSettingController::class, 'getSettingValues']);
 Route::get('faqs', [FaqController::class, 'index']);
 Route::get('testimonials', [TestimonialController::class, 'index']);
@@ -56,7 +57,152 @@ Route::get('whywedifferent', [WhyWeDifferentController::class, 'index']);
 Route::post('signatures/docusign/webhook', [SignatureController::class, 'docusignWebhook']);
 
 // Protected routes
-Route::middleware(['auth:api', 'tenant'])->group(function () {
+Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
+    Route::middleware(['role:pharmacist,pharmacy_technician,medical_biller,admin', \App\Http\Middleware\PharmacyPreviewOnly::class, \App\Http\Middleware\PharmacyWriteTransaction::class])->prefix('pharmacy')->group(function () {
+        $extraction = \App\Http\Controllers\API\PharmacyExtractionController::class;
+        Route::get('/prescriptions/{id}/extractions', [$extraction, 'index']);
+        Route::get('/extractions/{id}', [$extraction, 'show']);
+        Route::post('/extractions/{id}/review', [$extraction, 'review']);
+        $rxTransfer = \App\Http\Controllers\API\PharmacyPrescriptionTransferController::class;
+        Route::get('/prescriptions/{id}/transfer-destinations', [$rxTransfer, 'destinations']);
+        Route::get('/prescriptions/{id}/transfer-preview', [$rxTransfer, 'preview']);
+        Route::post('/prescriptions/{id}/transfers', [$rxTransfer, 'store']);
+        Route::get('/prescription-transfers', [$rxTransfer, 'index']);
+        Route::get('/prescription-transfers/{id}', [$rxTransfer, 'show']);
+        Route::get('/prescription-transfers/{id}/sources/{sourceId}/file', [$rxTransfer, 'sourceFile']);
+        Route::post('/prescription-transfers/{id}/review', [$rxTransfer, 'review']);
+        $custody = \App\Http\Controllers\API\PharmacyCustodyController::class;
+        Route::get('/incidents/{id}/custody', [$custody, 'index']);
+        Route::post('/incidents/{id}/custody', [$custody, 'store']);
+        Route::post('/incidents/{id}/custody/{proposalId}/apply', [$custody, 'apply']);
+        Route::post('/incidents/{id}/custody/{proposalId}/reject', [$custody, 'reject']);
+        $reconciliation = \App\Http\Controllers\API\PharmacyReconciliationController::class;
+        Route::get('/incidents/{id}/reconciliations', [$reconciliation, 'index']);
+        Route::post('/incidents/{id}/reconciliations', [$reconciliation, 'store']);
+        Route::post('/incidents/{id}/reconciliations/{proposalId}/apply', [$reconciliation, 'apply']);
+        Route::post('/incidents/{id}/reconciliations/{proposalId}/reject', [$reconciliation, 'reject']);
+        $incidents = \App\Http\Controllers\API\PharmacyCompoundingIncidentController::class;
+        Route::get('/incidents', [$incidents, 'worklist']);
+        $joint = \App\Http\Controllers\API\PharmacyIncidentGroupController::class;
+        Route::get('/incidents/{incidentId}/joint-preview', [$joint, 'discover']);
+        Route::get('/incidents/{incidentId}/joint-groups', [$joint, 'history']);
+        Route::post('/incidents/{incidentId}/joint-groups', [$joint, 'store']);
+        Route::get('/incident-groups/{groupId}', [$joint, 'show']);
+        Route::post('/incident-groups/{groupId}/reject', [$joint, 'reject']);
+        Route::post('/incident-groups/{groupId}/{phase}', [$joint, 'propose'])->whereIn('phase', ['accounting', 'custody']);
+        Route::post('/incident-groups/{groupId}/{phase}/{proposalId}/{decision}', [$joint, 'review'])->whereIn('phase', ['accounting', 'custody'])->whereIn('decision', ['apply', 'reject']);
+
+        Route::get('/batch-worksheets/{id}/incidents', [$incidents, 'index']);
+        Route::post('/batch-worksheets/{id}/incidents', [$incidents, 'store']);
+        $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;
+        $executionCustody = \App\Http\Controllers\API\PharmacyExecutionCustodyController::class;
+        Route::get('/execution-custody', [$executionCustody, 'worklist']);
+        Route::get('/executions/{executionId}/custody', [$executionCustody, 'history']);
+        Route::post('/executions/{executionId}/custody', [$executionCustody, 'store']);
+        Route::post('/execution-custody/{proposalId}/decision', [$executionCustody, 'decide']);
+        $yieldCorrection = \App\Http\Controllers\API\PharmacyYieldCorrectionController::class;
+        Route::get('/yield-corrections', [$yieldCorrection, 'worklist']);
+        Route::get('/executions/{executionId}/yield-corrections', [$yieldCorrection, 'history']);
+        Route::post('/executions/{executionId}/yield-corrections', [$yieldCorrection, 'store']);
+        Route::post('/yield-corrections/{proposalId}/decision', [$yieldCorrection, 'decide']);
+        Route::post('/batch-worksheets/{id}/execution', [$execution, 'store']);
+        Route::post('/batch-worksheets/{id}/execution/addenda', [$execution, 'addendum']);
+        Route::post('/batch-worksheets/{id}/execution/review', [$execution, 'review']);
+        $ingredient = \App\Http\Controllers\API\PharmacyIngredientController::class;
+        Route::get('/ingredient-lots', [$ingredient, 'index']);
+        Route::post('/ingredient-lots', [$ingredient, 'store']);
+        Route::get('/ingredient-lots/{id}', [$ingredient, 'show']);
+        Route::post('/ingredient-lots/{id}/recall', [$ingredient, 'recall']);
+        Route::post('/ingredient-lots/{id}/counts', [$ingredient, 'count']);
+        Route::post('/ingredient-lots/{id}/counts/{countId}/review', [$ingredient, 'reviewCount']);
+        Route::post('/ingredient-lots/{id}/status', [$ingredient, 'status']);
+        Route::post('/batch-worksheets/{id}/allocation', [$ingredient, 'allocation']);
+        $compound = \App\Http\Controllers\API\PharmacyCompoundingController::class;
+        Route::get('/formulations', [$compound, 'formulas']);
+        Route::post('/formulations', [$compound, 'createFormula']);
+        Route::get('/formulations/{id}', [$compound, 'showFormula']);
+        Route::post('/formulations/{id}/review', [$compound, 'reviewFormula']);
+        Route::get('/batch-worksheets', [$compound, 'batches']);
+        Route::post('/batch-worksheets', [$compound, 'createBatch']);
+        Route::get('/batch-worksheets/{id}', [$compound, 'showBatch']);
+        Route::post('/batch-worksheets/{id}/review', [$compound, 'reviewBatch']);
+        Route::get('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'index']);
+        Route::post('/patients', [\App\Http\Controllers\API\PharmacyPatientController::class, 'store']);
+        Route::get('/patients/{id}', [\App\Http\Controllers\API\PharmacyPatientController::class, 'show']);
+        Route::get('/patients/{id}/history', [\App\Http\Controllers\API\PharmacyPatientController::class, 'history']);
+        Route::put('/patients/{id}/clinical', [\App\Http\Controllers\API\PharmacyPatientController::class, 'clinical']);
+        Route::put('/patients/{id}/demographics', [\App\Http\Controllers\API\PharmacyPatientController::class, 'demographics']);
+        Route::post('/patients/{id}/locations', [\App\Http\Controllers\API\PharmacyPatientController::class, 'enrollLocation']);
+        Route::post('/patients/{id}/locations/withdraw', [\App\Http\Controllers\API\PharmacyPatientController::class, 'withdrawLocation']);
+        Route::get('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'index']);
+        Route::put('/staff', [\App\Http\Controllers\API\PharmacyStaffController::class, 'save']);
+        $handoverAddenda = \App\Http\Controllers\API\PharmacyHandoverAddendumController::class;
+        Route::get('/prescriptions/{id}/fills/{fillId}/handover-addenda', [$handoverAddenda, 'index']);
+        Route::post('/prescriptions/{id}/fills/{fillId}/handover-addenda', [$handoverAddenda, 'store']);
+        Route::post('/prescriptions/{id}/fills/{fillId}/handover-addenda/{addendumId}/review', [$handoverAddenda, 'review']);
+        $labels = \App\Http\Controllers\API\PharmacyLabelController::class;
+        Route::get('/prescriptions/{id}/fills/{fillId}/labels', [$labels, 'index']);
+        Route::post('/prescriptions/{id}/fills/{fillId}/labels', [$labels, 'store']);
+        Route::get('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/file', [$labels, 'file']);
+        Route::get('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/prints', [$labels, 'prints']);
+        Route::post('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/prints', [$labels, 'recordPrint']);
+        Route::get('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'locations']);
+        Route::post('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'storeLocation']);
+        Route::get('/recall-notices', [\App\Http\Controllers\API\PharmacyRecallController::class, 'index']);
+        Route::post('/recall-notices', [\App\Http\Controllers\API\PharmacyRecallController::class, 'store']);
+        Route::get('/recall-notices/{id}/fills/{fillId}/follow-up', [\App\Http\Controllers\API\PharmacyRecallFollowUpController::class, 'show']);
+        Route::post('/recall-notices/{id}/fills/{fillId}/follow-up/events', [\App\Http\Controllers\API\PharmacyRecallFollowUpController::class, 'store']);
+        Route::get('/recall-notices/{id}', [\App\Http\Controllers\API\PharmacyRecallController::class, 'show']);
+        Route::post('/recall-notices/{id}/corrections', [\App\Http\Controllers\API\PharmacyRecallController::class, 'requestCorrection']);
+        Route::post('/recall-notices/{id}/corrections/{correctionId}/review', [\App\Http\Controllers\API\PharmacyRecallController::class, 'reviewCorrection']);
+        Route::get('/stock-transfer-destinations', [\App\Http\Controllers\API\PharmacyTransferController::class, 'destinations']);
+        Route::get('/stock-transfers', [\App\Http\Controllers\API\PharmacyTransferController::class, 'index']);
+        Route::post('/stock-transfers', [\App\Http\Controllers\API\PharmacyTransferController::class, 'store']);
+        Route::get('/stock-transfers/{id}', [\App\Http\Controllers\API\PharmacyTransferController::class, 'show']);
+        Route::post('/stock-transfers/{id}/corrections', [\App\Http\Controllers\API\PharmacyTransferController::class, 'proposeCorrection']);
+        Route::post('/stock-transfers/{id}/corrections/{correctionId}/review', [\App\Http\Controllers\API\PharmacyTransferController::class, 'reviewCorrection']);
+        Route::post('/stock-transfers/{id}/actions', [\App\Http\Controllers\API\PharmacyTransferController::class, 'action']);
+        Route::post('/stock-transfers/{id}/investigation-notes', [\App\Http\Controllers\API\PharmacyTransferController::class, 'investigationNote']);
+        Route::post('/stock-transfers/{id}/resolutions', [\App\Http\Controllers\API\PharmacyTransferController::class, 'proposeResolution']);
+        Route::post('/stock-transfers/{id}/resolutions/{resolutionId}/review', [\App\Http\Controllers\API\PharmacyTransferController::class, 'reviewResolution']);
+        Route::get('/stock', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'index']);
+        Route::post('/stock', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'store']);
+        Route::get('/stock/{id}', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'show']);
+        Route::get('/stock/{id}/dispositions', [\App\Http\Controllers\API\PharmacyDispositionController::class, 'index']);
+        Route::post('/stock/{id}/dispositions', [\App\Http\Controllers\API\PharmacyDispositionController::class, 'store']);
+        Route::post('/stock/{id}/dispositions/{dispositionId}/review', [\App\Http\Controllers\API\PharmacyDispositionController::class, 'review']);
+        Route::post('/stock/{id}/product', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'verifyProduct']);
+        Route::post('/stock/{id}/counts', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'count']);
+        Route::post('/stock/{id}/counts/{countId}/review', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'reviewCount']);
+        Route::post('/stock/{id}/recall', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'recall']);
+        Route::put('/stock/{id}/status', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'status']);
+
+        $controller = \App\Http\Controllers\API\PharmacyController::class;
+        Route::get('cases', [$controller, 'cases']);
+        Route::get('prescriptions', [$controller, 'index']);
+        Route::post('prescriptions', [$controller, 'store']);
+        Route::get('prescriptions/{id}', [$controller, 'show']);
+        Route::get('prescriptions/{id}/classification-corrections', [\App\Http\Controllers\API\PharmacyClassificationController::class, 'index']);
+        Route::post('prescriptions/{id}/classification-corrections', [\App\Http\Controllers\API\PharmacyClassificationController::class, 'store']);
+        Route::get('prescriptions/{id}/amendments', [\App\Http\Controllers\API\PharmacyAmendmentController::class, 'index']);
+        Route::post('prescriptions/{id}/amendments', [\App\Http\Controllers\API\PharmacyAmendmentController::class, 'store']);
+        Route::post('prescriptions/{id}/replacement', [$controller, 'linkReplacement']);
+        Route::post('prescriptions/{id}/discontinue', [$controller, 'discontinue']);
+        Route::get('prescriptions/{id}/sources/{sourceId}/transcriptions', [\App\Http\Controllers\API\PharmacyTranscriptionController::class, 'index']);
+        Route::post('prescriptions/{id}/sources/{sourceId}/transcriptions', [\App\Http\Controllers\API\PharmacyTranscriptionController::class, 'store']);
+        Route::get('prescriptions/{id}/sources', [$controller, 'sources']);
+        Route::post('prescriptions/{id}/sources', [$controller, 'addSource']);
+        Route::get('prescriptions/{id}/sources/{sourceId}/file', [$controller, 'sourceFile']);
+        Route::put('prescriptions/{id}/coverage', [$controller, 'coverage']);
+        Route::post('prescriptions/{id}/allowances/close', [$controller, 'closeAllowance']);
+        Route::post('prescriptions/{id}/allowances/{closureId}/corrections', [$controller, 'requestAllowanceCorrection']);
+        Route::post('prescriptions/{id}/allowance-corrections/{correctionId}/review', [$controller, 'reviewAllowanceCorrection']);
+        Route::post('prescriptions/{id}/fills', [$controller, 'createFill']);
+        Route::post('prescriptions/{id}/fills/{fillId}/actions', [$controller, 'fillAction']);
+        Route::get('prescriptions/{id}/assistant', [$controller, 'assistant']);
+    });
+    Route::get('/auth/mfa/status', [\App\Http\Controllers\API\Auth\MfaController::class, 'status']);
+    Route::post('/auth/mfa/manage', [\App\Http\Controllers\API\Auth\MfaController::class, 'manage'])->middleware('throttle:mfa-manage');
     Route::post('/logout', [AuthController::class, 'logout']);
 
     // Routes accessible to all authenticated users (admin, manager, and user)
@@ -136,10 +282,12 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::post('/documents', [DocumentController::class, 'store']);
         Route::get('/documents/{id}', [DocumentController::class, 'show']);
         Route::get('/documents/{id}/preview', [DocumentController::class, 'preview']);
-        Route::delete('/documents/{id}', [DocumentController::class, 'destroy']);
+        Route::get('/documents/{id}/completion-certificate', [DocumentController::class, 'completionCertificate']);
+        Route::delete('/documents/{id}', [DocumentController::class, 'destroy'])->middleware('role:admin,firm_admin,attorney');
         
-        Route::post('/documents/{id}/signers', [DocumentController::class, 'assignSigners']);
-        Route::post('/documents/{id}/send-for-signature', [DocumentController::class, 'sendForSignature']);
+        Route::get('/documents/{id}/eligible-signers', [DocumentController::class, 'eligibleSigners'])->middleware('role:admin,firm_admin,attorney');
+        Route::post('/documents/{id}/signers', [DocumentController::class, 'assignSigners'])->middleware('role:admin,firm_admin,attorney');
+        Route::post('/documents/{id}/send-for-signature', [DocumentController::class, 'sendForSignature'])->middleware('role:admin,firm_admin,attorney');
         Route::post('/documents/{id}/sign-in-app', [DocumentController::class, 'signInApp']);
         Route::get('/documents/{id}/signature-status', [DocumentController::class, 'signatureStatus']);
         Route::get('/signatures/document/{documentId}', [SignatureController::class, 'historyByDocument']);
@@ -153,6 +301,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         // Invoices - All can view, only biller/firm_admin can create/edit
         Route::get('/invoices', [InvoiceController::class, 'index']);
         Route::post('/invoices', [InvoiceController::class, 'store'])->middleware('role:admin,firm_admin,medical_biller,provider_staff');
+        Route::post('/invoices/{id}/review', [InvoiceController::class, 'review'])->middleware('role:admin,firm_admin,medical_biller');
         Route::get('/invoices/{id}', [InvoiceController::class, 'show']);
         Route::put('/invoices/{id}', [InvoiceController::class, 'update'])->middleware('role:admin,firm_admin,medical_biller');
         Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy'])->middleware('role:admin,firm_admin,medical_biller');
@@ -161,6 +310,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('/payments', [PaymentController::class, 'index']);
         Route::post('/payments', [PaymentController::class, 'store'])->middleware('role:admin,firm_admin,medical_biller');
         Route::get('/payments/{id}', [PaymentController::class, 'show']);
+        Route::post('/payments/{id}/reverse', [PaymentController::class, 'reverse'])->middleware('role:admin,firm_admin,medical_biller');
         Route::delete('/payments/{id}', [PaymentController::class, 'destroy'])->middleware('role:admin,firm_admin,medical_biller');
 
         // AI Appeals
@@ -181,6 +331,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
 
     // 4. Provider Staff (Provider Portal)
     Route::middleware(['role:admin,firm_admin,provider_staff'])->group(function () {
+        Route::put('/provider/invoices/{id}/draft', [InvoiceController::class, 'updateProviderDraft'])->middleware('role:provider_staff');
         Route::get('/provider/stats', [\App\Http\Controllers\API\ProviderDashboardController::class, 'index']);
         Route::get('/provider/claims', [\App\Http\Controllers\API\ProviderClaimController::class, 'index']);
         Route::post('/provider/claims', [\App\Http\Controllers\API\ProviderClaimController::class, 'store']);
@@ -202,12 +353,13 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::post('/client/documents', [DocumentController::class, 'store']);
         Route::get('/client/documents/{id}', [DocumentController::class, 'show']);
         Route::get('/client/documents/{id}/preview', [DocumentController::class, 'preview']);
+        Route::get('/client/documents/{id}/completion-certificate', [DocumentController::class, 'completionCertificate']);
 
         // Invoices — Read-only (PDF: Client can view invoices)
         Route::get('/client/invoices', [InvoiceController::class, 'index']);
         Route::get('/client/invoices/{id}', [InvoiceController::class, 'show']);
 
-        // Payments — View + Create (PDF: Client can make payments)
+        // Clients can view recorded receipts; only billing roles may create them.
         Route::get('/client/payments', [PaymentController::class, 'index']);
         Route::post('/client/payments', [PaymentController::class, 'store']);
 
@@ -236,8 +388,19 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('/settlements', [\App\Http\Controllers\API\CaseSettlementController::class, 'index']);
         Route::post('/settlements', [\App\Http\Controllers\API\CaseSettlementController::class, 'store']);
         Route::get('/settlements/{id}', [\App\Http\Controllers\API\CaseSettlementController::class, 'show']);
+        Route::post('/settlements/{id}/corrections', [\App\Http\Controllers\API\CaseSettlementController::class, 'correct']);
         Route::put('/settlements/{id}', [\App\Http\Controllers\API\CaseSettlementController::class, 'update']);
         Route::delete('/settlements/{id}', [\App\Http\Controllers\API\CaseSettlementController::class, 'destroy']);
+    });
+
+    Route::middleware(['role:admin,firm_admin,attorney'])->group(function () {
+            Route::get('/insurance/companies', [\App\Http\Controllers\API\InsuranceController::class, 'index']);
+            Route::get('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'index']);
+            Route::post('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'store']);
+            Route::get('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'show']);
+            Route::put('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'update']);
+            Route::get('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'index']);
+            Route::post('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'store']);
     });
 
     // EOB Processing (PDF Section 6)
@@ -256,17 +419,10 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         
         // 7. Insurance Management (PDF Section 7)
         Route::middleware(['role:admin,firm_admin,attorney'])->group(function () {
-            Route::get('/insurance/companies', [\App\Http\Controllers\API\InsuranceController::class, 'index']);
             Route::post('/insurance/companies', [\App\Http\Controllers\API\InsuranceController::class, 'store']);
             Route::get('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'show']);
             Route::put('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'update']);
             Route::delete('/insurance/companies/{id}', [\App\Http\Controllers\API\InsuranceController::class, 'destroy']);
-            Route::get('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'index']);
-            Route::post('/insurance/claims', [\App\Http\Controllers\API\InsuranceClaimController::class, 'store']);
-            Route::get('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'show']);
-            Route::put('/insurance/claims/{id}', [\App\Http\Controllers\API\InsuranceClaimController::class, 'update']);
-            Route::get('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'index']);
-            Route::post('/insurance/correspondence', [\App\Http\Controllers\API\InsuranceCorrespondenceController::class, 'store']);
         });
 
         // 10. Provider & Lien Management (PDF Section 10)
@@ -279,10 +435,6 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::middleware(['role:admin,firm_admin,attorney'])->group(function () {
             Route::get('/letters-of-protection', [\App\Http\Controllers\API\LetterOfProtectionController::class, 'index']);
             Route::post('/letters-of-protection', [\App\Http\Controllers\API\LetterOfProtectionController::class, 'store']);
-            Route::get('/liens', [\App\Http\Controllers\API\LienController::class, 'index']);
-            Route::post('/liens', [\App\Http\Controllers\API\LienController::class, 'store']);
-            Route::put('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'update']);
-            Route::delete('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'destroy']);
         });
 
         Route::get('/treatment-records', [\App\Http\Controllers\API\TreatmentRecordController::class, 'index']);
@@ -303,33 +455,33 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::delete('/api-credentials/{id}', [\App\Http\Controllers\API\ApiCredentialController::class, 'destroy']);
 
         // Role & Permission Management
-        Route::get('/admin/roles', [RoleController::class, 'index']);
-        Route::post('/admin/roles', [RoleController::class, 'store']);
-        Route::get('/admin/roles/{id}', [RoleController::class, 'show']);
-        Route::put('/admin/roles/{id}', [RoleController::class, 'update']);
-        Route::delete('/admin/roles/{id}', [RoleController::class, 'destroy']);
+        Route::get('/admin/roles', [RoleController::class, 'index'])->middleware('role:admin');
+        Route::post('/admin/roles', [RoleController::class, 'store'])->middleware('role:admin');
+        Route::get('/admin/roles/{id}', [RoleController::class, 'show'])->middleware('role:admin');
+        Route::put('/admin/roles/{id}', [RoleController::class, 'update'])->middleware('role:admin');
+        Route::delete('/admin/roles/{id}', [RoleController::class, 'destroy'])->middleware('role:admin');
 
-        Route::get('/admin/permissions', [PermissionController::class, 'index']);
-        Route::post('/admin/permissions', [PermissionController::class, 'store']);
-        Route::get('/admin/permissions/{id}', [PermissionController::class, 'show']);
-        Route::put('/admin/permissions/{id}', [PermissionController::class, 'update']);
-        Route::delete('/admin/permissions/{id}', [PermissionController::class, 'destroy']);
+        Route::get('/admin/permissions', [PermissionController::class, 'index'])->middleware('role:admin');
+        Route::post('/admin/permissions', [PermissionController::class, 'store'])->middleware('role:admin');
+        Route::get('/admin/permissions/{id}', [PermissionController::class, 'show'])->middleware('role:admin');
+        Route::put('/admin/permissions/{id}', [PermissionController::class, 'update'])->middleware('role:admin');
+        Route::delete('/admin/permissions/{id}', [PermissionController::class, 'destroy'])->middleware('role:admin');
 
         // Audit Logs
-        Route::get('/admin/audit-logs', [\App\Http\Controllers\Api\AuditLogController::class, 'index']);
-        Route::get('/admin/audit-logs/{id}', [\App\Http\Controllers\Api\AuditLogController::class, 'show']);
+        Route::get('/admin/audit-logs', [\App\Http\Controllers\API\AuditLogController::class, 'index']);
+        Route::get('/admin/audit-logs/{id}', [\App\Http\Controllers\API\AuditLogController::class, 'show']);
 
         // Security Management
-        Route::get('/admin/security/settings', [SecurityController::class, 'getSettings']);
-        Route::put('/admin/security/settings', [SecurityController::class, 'updateSettings']);
-        Route::get('/admin/security/stats', [SecurityController::class, 'getSecurityStats']);
-        Route::get('/admin/security/events', [SecurityController::class, 'getSecurityEvents']);
+        Route::get('/admin/security/settings', [SecurityController::class, 'getSettings'])->middleware('role:admin');
+        Route::put('/admin/security/settings', [SecurityController::class, 'updateSettings'])->middleware('role:admin');
+        Route::get('/admin/security/stats', [SecurityController::class, 'getSecurityStats'])->middleware('role:admin');
+        Route::get('/admin/security/events', [SecurityController::class, 'getSecurityEvents'])->middleware('role:admin');
 
         // IP Allowlist
-        Route::get('/admin/security/ip-allowlist', [IpAllowlistController::class, 'index']);
-        Route::post('/admin/security/ip-allowlist', [IpAllowlistController::class, 'store']);
-        Route::put('/admin/security/ip-allowlist/{id}', [IpAllowlistController::class, 'update']);
-        Route::delete('/admin/security/ip-allowlist/{id}', [IpAllowlistController::class, 'destroy']);
+        Route::get('/admin/security/ip-allowlist', [IpAllowlistController::class, 'index'])->middleware('role:admin');
+        Route::post('/admin/security/ip-allowlist', [IpAllowlistController::class, 'store'])->middleware('role:admin');
+        Route::put('/admin/security/ip-allowlist/{id}', [IpAllowlistController::class, 'update'])->middleware('role:admin');
+        Route::delete('/admin/security/ip-allowlist/{id}', [IpAllowlistController::class, 'destroy'])->middleware('role:admin');
 
         Route::get('/admin/users', [UserController::class, 'index']);
         Route::post('/admin/users', [UserController::class, 'store']);
@@ -337,18 +489,24 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::put('/admin/users/{id}', [UserController::class, 'update']);
         Route::delete('/admin/users/{id}', [UserController::class, 'destroy']);
         
-        Route::post('setting-update', [AppSettingController::class, 'settingUpdate']);
-        Route::get('get-env-values', [AppSettingController::class, 'getEnvValues']);
-        Route::post('setting-env-update', [AppSettingController::class, 'settingEnvUpdate']);
+        Route::post('setting-update', [AppSettingController::class, 'settingUpdate'])->middleware('role:admin');
+        Route::get('get-env-values', [AppSettingController::class, 'getEnvValues'])->middleware('role:admin');
+        Route::post('setting-env-update', [AppSettingController::class, 'settingEnvUpdate'])->middleware('role:admin');
         // GDPR Tools (PDF Section 16 - Security & Compliance)
         Route::get('/gdpr/export/{userId}', [GdprController::class, 'exportUserData'])->middleware('role:admin,firm_admin');
         Route::delete('/gdpr/delete/{userId}', [GdprController::class, 'deleteUserData'])->middleware('role:admin,firm_admin');
         Route::get('/gdpr/audit-trail/{userId}', [GdprController::class, 'userAuditTrail'])->middleware('role:admin,firm_admin');
 
-        // 15. Integrations & API - Stripe (PDF Section 15)
-        Route::post('/stripe/payment-intent', [StripeController::class, 'createPaymentIntent'])->middleware('role:admin,firm_admin,client');
-        Route::post('/stripe/webhook', [StripeController::class, 'webhook']); // No auth for webhook
 
+    });
+
+    Route::middleware(['role:admin,firm_admin,attorney'])->group(function () {
+        Route::get('/liens/provider-options', [\App\Http\Controllers\API\LienController::class, 'providerOptions']);
+            Route::get('/liens', [\App\Http\Controllers\API\LienController::class, 'index']);
+            Route::get('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'show']);
+            Route::post('/liens', [\App\Http\Controllers\API\LienController::class, 'store']);
+            Route::put('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'update']);
+            Route::delete('/liens/{id}', [\App\Http\Controllers\API\LienController::class, 'destroy']);
     });
 
         // Notifications — accessible by ALL authenticated roles (PDF Section 14)
@@ -433,7 +591,4 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
             Route::get('/reports/{id}', [\App\Http\Controllers\API\ReportsController::class, 'showReport']);
         });
 
-        // Public / Global shared routes
-        Route::get('/faqs', [FaqController::class, 'index']);
-        Route::get('/testimonials', [TestimonialController::class, 'index']);
     });

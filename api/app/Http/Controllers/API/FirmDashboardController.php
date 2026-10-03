@@ -30,7 +30,7 @@ class FirmDashboardController extends Controller
             }
 
             // Case Statistics Query Builder
-            $query = CaseModel::query();
+            $query = CaseModel::where('organization_id', $organizationId);
             
             // If user is an attorney, they only see their assigned cases
             if ($user->role === 'attorney') {
@@ -48,11 +48,11 @@ class FirmDashboardController extends Controller
             $settlementsReadyCount = (clone $query)->whereIn('status', ['Settlement', 'pending_settlement'])->count();
 
             // Recent Activity from Audit Logs
-            $auditQuery = AuditLog::with('user:id,first_name,last_name');
+            $auditQuery = AuditLog::where('organization_id', $organizationId)->with('user:id,first_name,last_name');
 
             // If user is an attorney, they only see activity related to their assigned cases
             if ($user->role === 'attorney') {
-                $assignedCaseIds = CaseModel::assignedToAttorney($user->id)->pluck('id');
+                $assignedCaseIds = (clone $query)->pluck('id');
                 $auditQuery->where('auditable_type', CaseModel::class)
                     ->whereIn('auditable_id', $assignedCaseIds);
             }
@@ -74,7 +74,7 @@ class FirmDashboardController extends Controller
             $revenueData = collect(range(5, 0))->map(function($i) use ($query) {
                 $date = now()->subMonths($i);
                 $month = $date->format('M');
-                $amount = (clone $query)->where('status', 'settled')
+                $amount = (clone $query)->whereIn('status', ['Settlement', 'settled', 'Closed', 'closed', 'pending_settlement'])
                     ->whereMonth('updated_at', $date->month)
                     ->whereYear('updated_at', $date->year)
                     ->sum('total_case_value');
@@ -90,8 +90,11 @@ class FirmDashboardController extends Controller
                 ->join('cases', 'case_parties.case_id', '=', 'cases.id')
                 ->join('users', 'case_parties.user_id', '=', 'users.id')
                 ->where('cases.organization_id', $organizationId)
+                ->whereNull('cases.deleted_at')
+                ->whereIn('cases.status', ['Active', 'active', 'Intake', 'New', 'Demand'])
+                ->when($user->role === 'attorney', fn ($q) => $q->where('users.id', $user->id))
                 ->where('case_parties.role_in_case', 'attorney')
-                ->select('users.first_name', 'users.last_name', DB::raw('count(*) as case_count'))
+                ->select('users.first_name', 'users.last_name', DB::raw('count(distinct cases.id) as case_count'))
                 ->groupBy('users.id', 'users.first_name', 'users.last_name')
                 ->get()
                 ->map(function($item) {
@@ -115,7 +118,8 @@ class FirmDashboardController extends Controller
                     'recent_activity' => $recentActivity,
                     'revenue_data' => $revenueData,
                     'team_workload' => $teamWorkload,
-                    'recovery_growth' => '+12%', // Calculated or fixed for now
+                    'recovery_growth' => null,
+                    'financial_basis' => 'Recorded case values, not collected payments or settlement disbursements',
                 ]
             ]);
         } catch (\Exception $e) {

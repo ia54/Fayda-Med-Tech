@@ -1,5 +1,7 @@
 "use client";
 
+import { SafeRichText } from "@/components/SafeRichText"
+
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { Button } from "@/components/ui/button";
 import MyForm from "@/components/ui/Form/MyForm";
@@ -240,12 +242,7 @@ export default function TestimonialSettingsPage() {
                     <p className="text-xs font-semibold text-muted-foreground">
                       Review
                     </p>
-                    <div
-                      className="text-sm"
-                      dangerouslySetInnerHTML={{
-                        __html: testimonial?.comment || "",
-                      }}
-                    />
+                    <SafeRichText className="text-sm" html={testimonial?.comment} />
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground">

@@ -173,7 +173,7 @@ class UserController extends Controller
                 'email' => 'required|string|email|max:255|unique:users,email',
                 'password' => 'required|string|min:8',
                 'organization_id' => $authUser->role === 'admin' ? 'nullable|exists:organizations,id' : 'nullable',
-                'role' => 'required|in:admin,firm_admin,attorney,medical_biller,provider_staff,client',
+                'role' => 'required|in:admin,firm_admin,attorney,medical_biller,provider_staff,pharmacist,pharmacy_technician,client',
                 'status' => 'nullable|in:active,pending,inactive',
                 'send_email' => 'nullable|boolean',
             ]);
@@ -186,11 +186,11 @@ class UserController extends Controller
                 ], 400);
             }
 
-            // Security check: Only Super Admin can create another Super Admin
-            if ($request->role === 'admin' && $authUser->role !== 'admin') {
+            // Security check: Only platform administrators may grant pharmacy or platform-admin roles
+            if (in_array($request->role, ['admin', 'pharmacist', 'pharmacy_technician'], true) && $authUser->role !== 'admin') {
                 return response()->json([
                     'status' => false,
-                    'message' => 'You do not have permission to create a Super Admin account.'
+                    'message' => 'Only a platform administrator can grant this role.'
                 ], 403);
             }
 
@@ -392,7 +392,7 @@ class UserController extends Controller
                 'email' => 'required|string|email|max:255|unique:users,email,' . $id,
                 'password' => 'nullable|string|min:8',
                 'organization_id' => $authUser->role === 'admin' ? 'nullable|exists:organizations,id' : 'nullable',
-                'role' => 'required|in:admin,firm_admin,attorney,medical_biller,provider_staff,client',
+                'role' => 'required|in:admin,firm_admin,attorney,medical_biller,provider_staff,pharmacist,pharmacy_technician,client',
                 'status' => 'nullable|in:active,pending,inactive',
             ]);
 
@@ -405,7 +405,7 @@ class UserController extends Controller
             }
 
             // Security check: Only Super Admin can assign/keep Super Admin role
-            if (($request->role === 'admin' || $user->role === 'admin') && $authUser->role !== 'admin') {
+            if ((in_array($request->role, ['admin', 'pharmacist', 'pharmacy_technician'], true) || in_array($user->role, ['admin', 'pharmacist', 'pharmacy_technician'], true)) && $authUser->role !== 'admin') {
                 return response()->json([
                     'status' => false,
                     'message' => 'You do not have permission to manage Super Admin accounts.'

@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "baseline": "2026-09-30-v1",
+  "as_of": "2026-09-30",
+  "evidence_through": "2026-09-29; repository status rechecked 2026-09-30",
+  "scope": "Full requested multi-location PI/pharmacy platform including controlled substances, sterile/nonsterile compounding and AI assistance",
+  "deployed": false,
+  "method": "Equal-weight gate completion: passed gates / all required gates. In-progress and blocked gates earn no partial credit. This is not code completion, effort elapsed, or a forecast. Every gate must pass; any blocker prevents launch.",
+  "update_policy": "Update after meaningful verified milestones. A pass requires dated evidence and satisfaction of acceptance criteria. Record scope/denominator changes explicitly. This is a maintained evidence snapshot, not an automatic production monitor.",
+  "published_commit": "914ae750db9f5c56e3fa3768d59fa1ebd697a601",
+  "local_unpublished_changes": true,
+  "groups": {
+    "foundation": "Tested foundation",
+    "deployment": "Production deployment",
+    "pharmacy": "Pharmacy operating readiness"
+  },
+  "gates": [
+    {
+      "id": "F1",
+      "group": "foundation",
+      "title": "Shared PI platform regression",
+      "status": "passed",
+      "owner": "Codex",
+      "evidence": "Tenant/role boundaries, financial history and record-only payment workflows have synthetic regression evidence.",
+      "next_action": "Retain this baseline when selecting the final release.",
+      "source": "audit-evidence/pharmacy-20260926/ai-ledger-full-20260929.log",
+      "acceptance": "Synthetic request regressions pass; no production acceptance implied."
+    },
+    {
+      "id": "F2",
+      "group": "foundation",
+      "title": "Pharmacy foundation regression",
+      "status": "passed",
+      "owner": "Codex",
+      "evidence": "Intake, assigned locations, retained records, ordinary quantity accounting and documentary workflows pass synthetic regression.",
+      "next_action": "Carry this evidence into operational acceptance; restricted dispensing stays disabled.",
+      "source": "development/docs/PHARMACY-SYSTEM.md",
+      "acceptance": "Defined foundation tests pass; full operational scope is assessed separately below."
+    },
+    {
+      "id": "F3",
+      "group": "foundation",
+      "title": "Admin build and demonstrated journeys",
+      "status": "passed",
+      "owner": "Codex",
+      "evidence": "Optimized 120-page admin build passed; documented synthetic journeys and extraction-review save/read-back passed.",
+      "next_action": "Verify the selected release on real HTTPS origins and physical devices.",
+      "source": "audit-evidence/pharmacy-20260926/ai-ledger-build-20260929.log",
+      "acceptance": "Build and documented local journeys pass; no claim that every clinical scenario is complete."
+    },
+    {
+      "id": "F4",
+      "group": "foundation",
+      "title": "Published baseline CI and release packages",
+      "status": "passed",
+      "owner": "Codex",
+      "evidence": "Published 914ae750 passed admin/backend/web CI, MySQL8/MariaDB10.11 synthetic upgrade/restore and source/Linux package verification.",
+      "next_action": "Keep archives pinned to their exact commit; they exclude uncommitted work.",
+      "source": "release-artifacts/candidate-914ae750db9f5c56e3fa3768d59fa1ebd697a601.json",
+      "acceptance": "A reproducible baseline exists; final-candidate readiness is a separate gate."
+    },
+    {
+      "id": "F5",
+      "group": "foundation",
+      "title": "Final candidate published and verified",
+      "status": "in_progress",
+      "owner": "Codex",
+      "evidence": "Extraction-attempt retention and pharmacist review remain uncommitted locally. Full local suite: 303 tests / 5811 assertions; final focused checks: 3 / 63.",
+      "next_action": "Finish review, publish the exact tree, pass current-head CI, refresh matching packages and dependency findings.",
+      "source": "development/deploy/production/RELEASE-STATUS.md",
+      "acceptance": "No pending release changes; exact final commit, checks and verified matching artifacts recorded."
+    },
+    {
+      "id": "D1",
+      "group": "deployment",
+      "title": "Authenticated host access and inventory",
+      "status": "blocked",
+      "owner": "Hosting administrator + Codex",
+      "evidence": "No verified authenticated access. Sept29 SSH reached key exchange but stopped before authentication at unverified host identity.",
+      "next_action": "Administrator verifies host fingerprint and restores access; Codex inventories only authorized applications and existing ports.",
+      "source": "audit-evidence/ssh-region-diagnostic-2026-09-29.md",
+      "acceptance": "Authenticated 144.126.132.98 identity, active roots, owners, runtimes and existing admin port verified."
+    },
+    {
+      "id": "D2",
+      "group": "deployment",
+      "title": "Production backup and demonstrated restore",
+      "status": "blocked",
+      "owner": "Codex + hosting administrator",
+      "evidence": "Panel backup existence and synthetic CI restores do not prove production recovery.",
+      "next_action": "Capture database, private files, keys and configuration; verify an authorized isolated restore without new ports.",
+      "source": "development/deploy/production/LAUNCH.md",
+      "acceptance": "Recoverable production snapshot and demonstrated coordinated restore with owner recorded."
+    },
+    {
+      "id": "D3",
+      "group": "deployment",
+      "title": "Production migration and runtime rehearsal",
+      "status": "blocked",
+      "owner": "Codex",
+      "evidence": "MySQL/MariaDB synthetic checks pass; actual host schema, data and runtime compatibility remain unverified.",
+      "next_action": "Rehearse exact migrations and Linux artifacts against approved host-compatible conditions.",
+      "source": "development/deploy/production/LAUNCH.md",
+      "acceptance": "Actual schema compatibility, runtime support, upgrade and rollback evidence accepted."
+    },
+    {
+      "id": "D4",
+      "group": "deployment",
+      "title": "Production security and private storage",
+      "status": "blocked",
+      "owner": "Codex",
+      "evidence": "Source protections exist; actual production configuration, grants and legacy document exposure remain unverified.",
+      "next_action": "Verify debug/cookies/CORS, least-privilege database access, private files and final dependency disposition.",
+      "source": "development/deploy/production/LAUNCH.md",
+      "acceptance": "Production configuration and private-file checks pass; material findings resolved or explicitly accepted."
+    },
+    {
+      "id": "D5",
+      "group": "deployment",
+      "title": "Production identity, MFA and recovery",
+      "status": "blocked",
+      "owner": "Codex + owner",
+      "evidence": "Synthetic authentication/recovery checks exist; owner-controlled production recovery and actual mail delivery remain unverified.",
+      "next_action": "Demonstrate administrator MFA and reset/invitation delivery or the accepted operator recovery path.",
+      "source": "development/deploy/production/LAUNCH.md",
+      "acceptance": "Owner can sign in and recover access; required account messages or agreed recovery procedures verified."
+    },
+    {
+      "id": "D6",
+      "group": "deployment",
+      "title": "Operational reliability and ownership",
+      "status": "in_progress",
+      "owner": "Codex + operator",
+      "evidence": "Runbooks exist; production workers, scheduler, monitoring, outage and retention procedures are not accepted.",
+      "next_action": "Verify recovery, scheduled jobs, alert handling and named operational ownership.",
+      "source": "development/deploy/production/RELEASE-STATUS.md",
+      "acceptance": "Production operating checks and incident/retention/recovery ownership recorded."
+    },
+    {
+      "id": "D7",
+      "group": "deployment",
+      "title": "Cutover and real-origin role acceptance",
+      "status": "blocked",
+      "owner": "Codex + owner",
+      "evidence": "Redevelopment is not deployed; draft PR is unmerged. Existing public pages are not evidence of the new release.",
+      "next_action": "After prerequisites, cut over only three authorized applications; verify HTTPS journeys, all intended roles and rollback readiness.",
+      "source": "development/deploy/production/LAUNCH.md",
+      "acceptance": "Deployed commit/hashes recorded, real-origin acceptance passes and reopening writes is accepted."
+    },
+    {
+      "id": "P1",
+      "group": "pharmacy",
+      "title": "Operating scope, credentials and ordinary workflows",
+      "status": "blocked",
+      "owner": "Responsible pharmacist + owner + Codex",
+      "evidence": "Multiple locations and controlled/sterile/nonsterile scope are requested; actual site/staff credentials and operational acceptance remain absent.",
+      "next_action": "Identify pharmacist, actual locations/catalogue/workflows; close remaining ordinary prescription/correction/transfer and privacy incident requirements.",
+      "source": "development/docs/PHARMACY-SYSTEM.md",
+      "acceptance": "Named responsible pharmacist accepts supported scope, credentials and ordinary workflows; remaining gaps are resolved, not silently excluded."
+    },
+    {
+      "id": "P2",
+      "group": "pharmacy",
+      "title": "Clinical references and prescription receipt",
+      "status": "blocked",
+      "owner": "Pharmacist + integration providers + Codex",
+      "evidence": "Manual review/source retention exists. Approved clinical reference data, prescriber authentication and prescribing connections remain unverified.",
+      "next_action": "Select supported providers/processes; implement and verify source/version, failure and override handling.",
+      "source": "development/docs/PHARMACY-SYSTEM.md",
+      "acceptance": "Supported receipt and clinical-check pathways pass pharmacist-reviewed end-to-end cases."
+    },
+    {
+      "id": "P3",
+      "group": "pharmacy",
+      "title": "Controlled dispensing and reporting",
+      "status": "in_progress",
+      "owner": "Codex + pharmacist + reporting provider",
+      "evidence": "Classification and correction records exist; final controlled dispensing is intentionally blocked.",
+      "next_action": "Finish schedule-specific quantity/refill/partial/expiry controls and required prescribing/reporting, acknowledgment, correction and outage handling.",
+      "source": "development/docs/PHARMACY-SYSTEM.md",
+      "acceptance": "Controlled workflow and reporting are verified end-to-end and professionally accepted before enablement."
+    },
+    {
+      "id": "P4",
+      "group": "pharmacy",
+      "title": "Compounding quality and finished-product release",
+      "status": "in_progress",
+      "owner": "Codex + compounding pharmacist",
+      "evidence": "Formula, ingredients, worksheet, execution and audit records exist; output stays quarantined.",
+      "next_action": "Complete deviations, validated calculations, quality/BUD, sterile/nonsterile/hazardous procedures and finished-product release/traceability.",
+      "source": "development/docs/PHARMACY-SYSTEM.md",
+      "acceptance": "Actual supported preparation types and release pathways are validated and accepted."
+    },
+    {
+      "id": "P5",
+      "group": "pharmacy",
+      "title": "Inventory exceptions, custody and recall closure",
+      "status": "in_progress",
+      "owner": "Codex + pharmacy operations",
+      "evidence": "Synthetic counts, transfers, holds, recall tracing and dispositions exist; operational exceptions and physical procedures remain.",
+      "next_action": "Complete catalogue/unit conventions, transport/loss/excess/returns/destruction and recall outreach/closure acceptance.",
+      "source": "development/docs/PHARMACY-SYSTEM.md",
+      "acceptance": "Physical custody and exception cases reconcile with retained ledger and professional acceptance."
+    },
+    {
+      "id": "P6",
+      "group": "pharmacy",
+      "title": "Physical labels, scanning and handover",
+      "status": "in_progress",
+      "owner": "Pharmacy operations + Codex",
+      "evidence": "Synthetic label/barcode/print records and handover evidence exist; physical device/output acceptance is outstanding.",
+      "next_action": "Verify actual printers/scanners, container labels, medication guides, reprints and delivery/recipient procedures.",
+      "source": "development/docs/PHARMACY-SYSTEM.md",
+      "acceptance": "Supported device and handover scenarios demonstrated and signed off by pharmacy operations."
+    },
+    {
+      "id": "P7",
+      "group": "pharmacy",
+      "title": "PIP payer transport and reconciliation",
+      "status": "blocked",
+      "owner": "Billing operations + payer/provider + Codex",
+      "evidence": "Internal billing/coverage records exist; actual payer enrollment, transport/acknowledgments and reconciliation are unverified.",
+      "next_action": "Confirm target payers/transport, build missing submission/correction workflows, reconcile accepted test transactions.",
+      "source": "development/docs/PHARMACY-SYSTEM.md",
+      "acceptance": "Supported payer paths and corrected/reversed/reconciled outcomes verified; payments remain record-only."
+    },
+    {
+      "id": "P8",
+      "group": "pharmacy",
+      "title": "Approved AI/OCR integration and quality",
+      "status": "blocked",
+      "owner": "Owner + provider + pharmacist + Codex",
+      "evidence": "Manual transcription and source-linked draft/review infrastructure exists. GLM account, hosting and data terms are not confirmed; no provider is connected.",
+      "next_action": "Confirm approved processing; implement adapter and reviewed application of suggestions; validate extraction/OCR quality and failure cases.",
+      "source": "development/docs/PHARMACY-AI-DRAFTS.md",
+      "acceptance": "Approved provider path and source-linked human-reviewed workflow tested; no autonomous clinical or dispensing authority."
+    }
+  ]
+}

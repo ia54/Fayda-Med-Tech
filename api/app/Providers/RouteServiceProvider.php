@@ -28,6 +28,10 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
 
+        foreach (['login' => 6, 'mfa-setup' => 10, 'mfa-verify' => 10, 'mfa-manage' => 5, 'token-refresh' => 10, 'password-recovery' => 5, 'password-reset' => 10] as $name => $limit) {
+            RateLimiter::for($name, fn (Request $request) => Limit::perMinute($limit)->by($name . '|' . $request->ip()));
+        }
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')

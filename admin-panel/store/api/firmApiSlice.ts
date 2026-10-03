@@ -24,7 +24,8 @@ export interface FirmDashboardResponse {
     recent_activity: RecentActivity[];
     revenue_data: { month: string; amount: number }[];
     team_workload: { name: string; cases: number }[];
-    recovery_growth: string;
+    recovery_growth: string | null;
+    financial_basis: string;
   };
 }
 

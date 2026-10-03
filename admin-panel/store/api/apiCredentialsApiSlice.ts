@@ -4,13 +4,13 @@ export interface ApiCredential {
   id: number;
   provider: string;
   name: string;
-  key: string;
-  value?: string;
   is_active: boolean;
   metadata?: any;
   created_at: string;
   updated_at: string;
 }
+
+export type ApiCredentialInput = Partial<Pick<ApiCredential, 'provider' | 'name' | 'is_active' | 'metadata'>> & { key?: string; value?: string };
 
 export interface ApiCredentialsResponse {
   status: boolean;
@@ -40,7 +40,7 @@ export const apiCredentialsApiSlice = apiSlice.injectEndpoints({
       query: (id) => `/api-credentials/${id}`,
       providesTags: (result, error, id) => [{ type: TAG_TYPES.API_CREDENTIALS, id }],
     }),
-    createApiCredential: builder.mutation<ApiCredentialResponse, Partial<ApiCredential>>({
+    createApiCredential: builder.mutation<ApiCredentialResponse, ApiCredentialInput>({
       query: (credential) => ({
         url: '/api-credentials',
         method: 'POST',
@@ -48,7 +48,7 @@ export const apiCredentialsApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: [{ type: TAG_TYPES.API_CREDENTIALS, id: 'LIST' }],
     }),
-    updateApiCredential: builder.mutation<ApiCredentialResponse, { id: number; data: Partial<ApiCredential> }>({
+    updateApiCredential: builder.mutation<ApiCredentialResponse, { id: number; data: ApiCredentialInput }>({
       query: ({ id, data }) => ({
         url: `/api-credentials/${id}`,
         method: 'PUT',

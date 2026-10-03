@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useUsersTable } from "@/components/admin/users/useUsersTable";
 import {
   getStatsCards,
@@ -32,7 +32,7 @@ function FirmUserManagementContent() {
   const { stats, users } = useUsersTable();
 
   // Export handler
-  const handleExport = async (format: "csv" | "excel" | "json" | "pdf") => {
+  const handleExport = useCallback(async (format: "csv" | "excel" | "json" | "pdf") => {
     try {
       // Transform data for export
       const exportData = users.map((user) => ({
@@ -70,8 +70,8 @@ function FirmUserManagementContent() {
           exportToJSON(exportData, `${filename}.json`);
           break;
         case "pdf":
-          console.warn("PDF export not yet implemented");
-          break;
+          toast({ title: "PDF export unavailable", description: "Choose CSV, Excel or JSON.", variant: "destructive" });
+          return;
       }
 
       toast({
@@ -85,7 +85,7 @@ function FirmUserManagementContent() {
         variant: "destructive",
       });
     }
-  };
+  }, [users, toast]);
 
   // Page configurations
   const statsCards = useMemo(() => getStatsCards(stats), [stats]);

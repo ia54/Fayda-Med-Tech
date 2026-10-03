@@ -1,0 +1,31 @@
+[Unit]
+Description=Private synthetic FaydaMedTech website staging
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/faydamed.tech/staging/frontend/dist
+ExecStart=/usr/bin/php -S 127.0.0.1:18081 -t /home/faydamed.tech/staging/frontend/dist /home/api.faydamed.tech/staging/activation/website-router.php
+User=fmd-stage
+Group=fmd-stage
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+InaccessiblePaths=/home/api.faydamed.tech/public_html /home/admin.faydamed.tech/public_html /home/faydamed.tech/public_html /var/www/admin-faydamed-tech
+UMask=0077
+MemoryMax=1G
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

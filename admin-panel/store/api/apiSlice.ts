@@ -1,14 +1,40 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { logout, setCredentials } from '../slices/authSlice';
+import { sessionIdentity } from '../session-boundary.mjs';
 import type { RootState } from '../store';
 
+export interface Notification {
+  id: string;
+  read_at: string | null;
+  created_at: string;
+  data: {
+    title: string;
+    message: string;
+    type: string;
+    action_url?: string | null;
+  };
+}
+
+interface NotificationsResponse {
+  status: boolean;
+  message: string;
+  data: {
+    notifications: Notification[];
+    unread_count: number;
+    pagination: { current_page: number; last_page: number; total: number };
+  };
+}
+
+type NotificationUpdateResponse = { status: boolean; message: string };
+
 // API Base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.faydamed.tech/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api';
 
 // Tag Types for RTK Query Cache Invalidation
 export const TAG_TYPES = {
   AUTH: 'Auth',
+  PHARMACY: 'Pharmacy',
   ORGANIZATION: 'Organization',
   ORGANIZATION_TYPE: 'OrganizationType',
   SUBSCRIPTION_PLAN: 'SubscriptionPlan',
@@ -57,6 +83,9 @@ const rawBaseQuery = fetchBaseQuery({
   credentials: 'include',
 });
 
+type RefreshPayload = { access_token: string; refresh_token: string; token_type: string; expires_in: number };
+const refreshesInFlight = new Map<string, Promise<RefreshPayload | null>>();
+
 // Custom baseQuery that adds auth headers selectively and handles 401 errors
 const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
   args,
@@ -64,6 +93,9 @@ const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, Fetch
   extraOptions
 ) => {
   // Determine if this is an auth endpoint
+  const requestIdentity = sessionIdentity((api.getState() as RootState).auth);
+  const staleSession = () => !isAuthEndpoint && requestIdentity !== sessionIdentity((api.getState() as RootState).auth);
+  const sessionChanged = () => ({ error: { status: 'CUSTOM_ERROR' as const, error: 'Session changed. Discarded prior account response.' } });
   const url = typeof args === "string" ? args : args.url;
   // Detect method
   const method =
@@ -103,49 +135,46 @@ const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, Fetch
 
   let result = await rawBaseQuery(modifiedArgs, api, extraOptions);
 
-  // 401 Handling with Refresh (only for non-auth endpoints)
-  if (result.error && result.error.status === 401 && !isAuthEndpoint) {
-    const refreshToken = (api.getState() as RootState).auth.token?.refresh_token;
+  if (staleSession()) return sessionChanged();
 
-    if (refreshToken) {
-      const refreshResult: any = await rawBaseQuery(
-        {
-          url: '/refresh-token',
-          method: 'POST',
-          body: { refresh_token: refreshToken },
-          headers: new Headers({ 'Accept': 'application/json' })
-        },
-        api,
-        extraOptions
-      );
-
-      if (refreshResult.data && refreshResult.data.status) {
-        api.dispatch(
-          setCredentials({
-            token: {
-              access_token: (refreshResult.data as any).access_token,
-              refresh_token: (refreshResult.data as any).refresh_token,
-              token_type: (refreshResult.data as any).token_type,
-              expires_in: (refreshResult.data as any).expires_in,
-            },
-            user: (api.getState() as RootState).auth.user!,
-          })
-        );
-        result = await rawBaseQuery(modifiedArgs, api, extraOptions);
+  // Serialize refreshes: single-use refresh tokens must not race across parallel requests.
+  if (result.error?.status === 401 && !isAuthEndpoint) {
+    const state = (api.getState() as RootState).auth;
+    if (state.token?.access_token && headers.get('Authorization') !== `Bearer ${state.token.access_token}`) {
+      headers.set('Authorization', `Bearer ${state.token.access_token}`);
+      result = await rawBaseQuery({ ...modifiedArgs, headers }, api, extraOptions);
+    } else if (state.token?.refresh_token) {
+      const refreshToken = state.token.refresh_token;
+      let refreshInFlight = refreshesInFlight.get(refreshToken);
+      if (!refreshInFlight) {
+        refreshInFlight = (async () => {
+          const refreshed = await rawBaseQuery({ url: '/refresh-token', method: 'POST', body: { refresh_token: refreshToken } }, api, extraOptions);
+          const data = refreshed.data as RefreshPayload | undefined;
+          if (!data?.access_token || !data.refresh_token) return null;
+          const current = (api.getState() as RootState).auth;
+          // Never resurrect a signed-out or switched account.
+          if (!current.user || sessionIdentity(current) !== requestIdentity || current.token?.refresh_token !== refreshToken) return null;
+          api.dispatch(setCredentials({ token: data, user: current.user }));
+          return data;
+        })().finally(() => { refreshesInFlight.delete(refreshToken); });
+        refreshesInFlight.set(refreshToken, refreshInFlight);
+      }
+      const refreshed = await refreshInFlight;
+      if (staleSession()) return sessionChanged();
+      if (refreshed) {
+        headers.set('Authorization', `Bearer ${refreshed.access_token}`);
+        result = await rawBaseQuery({ ...modifiedArgs, headers }, api, extraOptions);
       } else {
         api.dispatch(logout());
-        if (typeof window !== "undefined") {
-          window.location.href = "/auth/login";
-        }
+        if (typeof window !== 'undefined') window.location.href = '/auth/login';
       }
     } else {
       api.dispatch(logout());
-      if (typeof window !== "undefined") {
-        window.location.href = "/auth/login";
-      }
+      if (typeof window !== 'undefined') window.location.href = '/auth/login';
     }
   }
 
+  if (staleSession()) return sessionChanged();
   return result;
 };
 
@@ -155,7 +184,7 @@ export const apiSlice = createApi({
   tagTypes: Object.values(TAG_TYPES),
   endpoints: (builder) => ({
     // ========= Notifications (PDF Section 14) =========
-    getNotifications: builder.query<any, { page?: number }>({
+    getNotifications: builder.query<NotificationsResponse, { page?: number }>({
       query: ({ page = 1 }) => ({
         url: '/notifications',
         params: { page },
@@ -163,27 +192,27 @@ export const apiSlice = createApi({
       providesTags: (result) =>
         result
           ? [
-              ...(result as any).data.notifications.map(({ id }: { id: number | string }) => ({ type: 'Notification' as const, id })),
+              ...result.data.notifications.map(({ id }) => ({ type: 'Notification' as const, id })),
               { type: 'Notification' as const, id: 'LIST' },
             ]
           : [{ type: 'Notification' as const, id: 'LIST' }],
     }),
-    markAsRead: builder.mutation({
+    markAsRead: builder.mutation<NotificationUpdateResponse, string>({
       query: (id) => ({
         url: `/notifications/${id}/read`,
         method: 'POST',
       }),
-      invalidatesTags: (result, error, id) => [
+      invalidatesTags: (result, error, id) => error ? [] : [
         { type: 'Notification' as const, id },
         { type: 'Notification' as const, id: 'LIST' },
       ],
     }),
-    markAllAsRead: builder.mutation({
+    markAllAsRead: builder.mutation<NotificationUpdateResponse, void>({
       query: () => ({
         url: '/notifications/read-all',
         method: 'POST',
       }),
-      invalidatesTags: [{ type: 'Notification' as const, id: 'LIST' }],
+      invalidatesTags: (result, error) => error ? [] : [{ type: 'Notification' as const, id: 'LIST' }],
     }),
 
     // ========= Insurance Management (PDF Section 7) =========
@@ -216,6 +245,14 @@ export const apiSlice = createApi({
         method: "DELETE",
       }),
       invalidatesTags: ["InsuranceCompany"],
+    }),
+    getInsuranceCorrespondence: builder.query({
+      query: (params) => ({ url: "/insurance/correspondence", params }),
+      providesTags: ["InsuranceClaim"],
+    }),
+    createInsuranceCorrespondence: builder.mutation({
+      query: (body) => ({ url: "/insurance/correspondence", method: "POST", body }),
+      invalidatesTags: ["InsuranceClaim"],
     }),
     getInsuranceClaims: builder.query({
       query: (params = {}) => ({
@@ -309,7 +346,11 @@ export const apiSlice = createApi({
         method: "POST",
         body: data,
       }),
-      invalidatesTags: ["Settlement" as any, "Case"],
+      invalidatesTags: ["Settlement" as any, "Case", "Report"],
+    }),
+    correctSettlement: builder.mutation({
+      query: ({ id, ...data }) => ({ url: `/settlements/${id}/corrections`, method: "POST", body: data }),
+      invalidatesTags: ["Settlement" as any, "Case", "Report"],
     }),
     updateSettlement: builder.mutation({
       query: ({ id, ...data }) => ({
@@ -317,14 +358,14 @@ export const apiSlice = createApi({
         method: "PUT",
         body: data,
       }),
-      invalidatesTags: ["Settlement" as any, "Case"],
+      invalidatesTags: ["Settlement" as any, "Case", "Report"],
     }),
     deleteSettlement: builder.mutation({
       query: (id) => ({
         url: `/settlements/${id}`,
         method: "DELETE",
       }),
-      invalidatesTags: ["Settlement" as any, "Case"],
+      invalidatesTags: ["Settlement" as any, "Case", "Report"],
     }),
 
     // ===== NEW: Medical History (PDF Section 5) =====
@@ -496,6 +537,8 @@ export const {
   useCreateInsuranceCompanyMutation,
   useUpdateInsuranceCompanyMutation,
   useDeleteInsuranceCompanyMutation,
+  useGetInsuranceCorrespondenceQuery,
+  useCreateInsuranceCorrespondenceMutation,
   useGetInsuranceClaimsQuery,
   useCreateInsuranceClaimMutation,
   // Providers
@@ -512,6 +555,7 @@ export const {
   useGetSettlementsQuery,
   useCreateSettlementMutation,
   useUpdateSettlementMutation,
+  useCorrectSettlementMutation,
   useDeleteSettlementMutation,
   // Medical History
   useGetMedicalHistoriesQuery,

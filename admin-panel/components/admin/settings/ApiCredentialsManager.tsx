@@ -37,7 +37,7 @@ import {
   useDeleteApiCredentialMutation,
   ApiCredential
 } from '@/store/api/apiCredentialsApiSlice';
-import { Key, Plus, Trash2, Edit2, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Key, Plus, Trash2, Edit2, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export function ApiCredentialsManager() {
@@ -49,7 +49,6 @@ export function ApiCredentialsManager() {
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [showKey, setShowKey] = useState<Record<number, boolean>>({});
 
   const [formData, setFormData] = useState({
     provider: '',
@@ -65,8 +64,8 @@ export function ApiCredentialsManager() {
       setFormData({
         provider: credential.provider,
         name: credential.name,
-        key: credential.key,
-        value: credential.value || '',
+        key: '',
+        value: '',
         is_active: credential.is_active
       });
     } else {
@@ -86,7 +85,7 @@ export function ApiCredentialsManager() {
     e.preventDefault();
     try {
       if (editingId) {
-        await updateCredential({ id: editingId, data: formData }).unwrap();
+        await updateCredential({ id: editingId, data: { provider: formData.provider, name: formData.name, is_active: formData.is_active, ...(formData.key ? { key: formData.key } : {}), ...(formData.value ? { value: formData.value } : {}) } }).unwrap();
         toast({ title: 'Success', description: 'API Credential updated successfully' });
       } else {
         await createCredential(formData).unwrap();
@@ -117,10 +116,6 @@ export function ApiCredentialsManager() {
     }
   };
 
-  const toggleKeyVisibility = (id: number) => {
-    setShowKey(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
   if (isLoading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin h-8 w-8" /></div>;
 
   return (
@@ -143,7 +138,7 @@ export function ApiCredentialsManager() {
               <DialogHeader>
                 <DialogTitle>{editingId ? 'Edit Credential' : 'Add New API Credential'}</DialogTitle>
                 <DialogDescription>
-                  Enter the provider and key details. Keys are stored encrypted in the database.
+                  Enter the provider and key details. Stored secrets are never displayed. Leave secret fields blank when editing to keep their current values.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -173,9 +168,9 @@ export function ApiCredentialsManager() {
                     id="key" 
                     value={formData.key} 
                     onChange={e => setFormData({...formData, key: e.target.value})}
-                    placeholder="Enter API key or Private Key content..."
+                    placeholder={editingId ? "Leave blank to keep the stored key" : "Enter API key or Private Key content..."}
                     className="font-mono text-xs min-h-[120px]"
-                    required
+                    required={!editingId}
                   />
                 </div>
                 <div className="space-y-2">
@@ -220,19 +215,7 @@ export function ApiCredentialsManager() {
                 <TableCell className="font-medium capitalize">{item.provider}</TableCell>
                 <TableCell>{item.name}</TableCell>
                 <TableCell>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-mono text-xs">
-                      {showKey[item.id] ? item.key : '••••••••••••••••'}
-                    </span>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-6 w-6" 
-                      onClick={() => toggleKeyVisibility(item.id)}
-                    >
-                      {showKey[item.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                    </Button>
-                  </div>
+                  <span className="text-xs text-muted-foreground">Stored; never displayed</span>
                 </TableCell>
                 <TableCell>
                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${item.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
