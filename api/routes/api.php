@@ -96,6 +96,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/batch-worksheets/{id}/incidents', [$incidents, 'store']);
         $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;
         $executionCustody = \App\Http\Controllers\API\PharmacyExecutionCustodyController::class;
+        Route::get('/execution-custody', [$executionCustody, 'worklist']);
         Route::get('/executions/{executionId}/custody', [$executionCustody, 'history']);
         Route::post('/executions/{executionId}/custody', [$executionCustody, 'store']);
         Route::post('/execution-custody/{proposalId}/decision', [$executionCustody, 'decide']);

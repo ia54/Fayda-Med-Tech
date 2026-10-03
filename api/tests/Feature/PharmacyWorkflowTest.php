@@ -4841,6 +4841,9 @@ class PharmacyWorkflowTest extends TestCase
         $body['version'] = 2;
         $body['request_id'] = (string) Str::uuid();
         $second = $service->retain($this->actor, $execution->id, $body);
+        // MySQL JSON storage can reorder object keys without changing evidence.
+        $retainedProjection = json_decode(DB::table('pharmacy_execution_custody_proposals')->where('id', $second)->value('proposal'), true);
+        DB::table('pharmacy_execution_custody_proposals')->where('id', $second)->update(['proposal' => json_encode(array_reverse($retainedProjection, true), JSON_THROW_ON_ERROR)]);
         $failCustodyAudit = true;
         DB::connection()->beforeExecuting(function ($query) use (&$failCustodyAudit) {
             if ($failCustodyAudit && str_contains($query, 'insert into') && str_contains($query, 'pharmacy_compounding_events')) {
@@ -4887,11 +4890,26 @@ class PharmacyWorkflowTest extends TestCase
         $body['retained_quarantined'] = '3';
         $body['disposed_output'] = '1';
         $fourth = $this->postJson($url, $body)->assertCreated()->json('data.id');
+        $this->getJson('/api/pharmacy/execution-custody')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.batch_id', $batch);
+        $this->getJson('/api/pharmacy/execution-custody?reviewable=1')->assertOk()->assertJsonPath('data.total', 0);
         $decisionUrl = "/api/pharmacy/execution-custody/$fourth/decision";
         $decision = ['decision' => 'applied', 'evidence' => 'SYNTHETIC HTTP review'];
         $this->postJson($decisionUrl, $decision)->assertUnprocessable();
         $this->actingAs($reviewer, 'api');
+        $this->getJson('/api/pharmacy/execution-custody?reviewable=1')->assertOk()->assertJsonPath('data.total', 1);
+        $reviewer->role = 'pharmacy_technician';
+        $this->getJson('/api/pharmacy/execution-custody')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/pharmacy/execution-custody?reviewable=1')->assertForbidden();
+        $reviewer->role = 'pharmacist';
+        $reviewer->organization_id = 2;
+        $this->getJson('/api/pharmacy/execution-custody')->assertOk()->assertJsonPath('data.total', 0);
+        $reviewer->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson('/api/pharmacy/execution-custody')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/execution-custody?location_id='.$this->location)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => true]);
         $this->postJson($decisionUrl, $decision)->assertOk();
+        $this->getJson('/api/pharmacy/execution-custody?reviewable=1')->assertOk()->assertJsonPath('data.total', 0);
         $this->postJson($decisionUrl, $decision)->assertOk();
         DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
         $this->getJson($url)->assertNotFound();
@@ -4899,6 +4917,7 @@ class PharmacyWorkflowTest extends TestCase
         DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => true]);
         $this->app->instance('env', 'production');
         $this->getJson($url)->assertStatus(503);
+        $this->getJson('/api/pharmacy/execution-custody')->assertStatus(503);
         $this->postJson($url, $body)->assertStatus(503);
         $this->postJson($decisionUrl, $decision)->assertStatus(503);
         $this->app->instance('env', 'testing');

@@ -57,7 +57,7 @@ class PharmacyExecutionCustodyLedger
                     'addenda' => DB::table('pharmacy_execution_addenda')->where('execution_id', $execution->id)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all()];
                 abort_unless((int) $execution->version === (int) $proposal->execution_version && hash_equals($proposal->source_hash, $digest->digest($current)), 409, 'Execution evidence changed; reject and replace this proposal.');
                 $checked = app(PharmacyExecutionCustody::class)->project($snapshot['custody'], $projection + ['evidence' => $proposal->evidence]);
-                abort_unless($checked === $projection && $checked['accounting_complete'], 422, 'All output must be accounted for before application.');
+                abort_unless(hash_equals($digest->digest($checked), $digest->digest($projection)) && $checked['accounting_complete'], 422, 'All output must be accounted for before application.');
                 DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update(['version' => $execution->version + 1,
                     'status' => $execution->status === 'rejected' ? 'rejected' : 'quarantined', 'updated_at' => now()]);
             }
@@ -85,7 +85,7 @@ class PharmacyExecutionCustodyLedger
                 && (int) ($snapshot['execution']['id'] ?? 0) === (int) $execution->id
                 && $digest->digest($snapshot['custody'] ?? []) === $digest->digest($source), 409, 'Prior output custody evidence is inconsistent.');
             $checked = app(PharmacyExecutionCustody::class)->project($source, $projection + ['evidence' => $prior->evidence]);
-            abort_unless($checked === $projection && $checked['accounting_complete'], 409, 'Prior output accounting is incomplete.');
+            abort_unless(hash_equals($digest->digest($checked), $digest->digest($projection)) && $checked['accounting_complete'], 409, 'Prior output accounting is incomplete.');
             $source['previously_disposed'] = $checked['total_disposed'];
             $source['held_output'] = $checked['retained_quarantined'];
         }
