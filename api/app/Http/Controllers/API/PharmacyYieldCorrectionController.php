@@ -5,17 +5,18 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Services\PharmacyAccess;
 use App\Services\PharmacyExecutionCustodyLedger;
+use App\Services\PharmacyYieldCorrectionLedger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-class PharmacyExecutionCustodyController extends Controller
+class PharmacyYieldCorrectionController extends Controller
 {
     public function worklist(Request $r)
     {
         $actor = $r->user();
         abort_unless(in_array($actor?->role, ['pharmacist', 'pharmacy_technician'], true) && $actor->status === 'active' && $actor->organization_id, 403);
         $data = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer|min:1', 'reviewable' => 'nullable|boolean']);
-        $query = DB::table('pharmacy_execution_custody_proposals as p')
+        $query = DB::table('pharmacy_yield_correction_proposals as p')
             ->join('pharmacy_batch_executions as e', 'e.id', '=', 'p.execution_id')
             ->join('pharmacy_batch_worksheets as b', 'b.id', '=', 'e.batch_id')
             ->where('b.organization_id', $actor->organization_id)->where('p.status', 'pending');
@@ -45,9 +46,10 @@ class PharmacyExecutionCustodyController extends Controller
         $batch = DB::table('pharmacy_batch_worksheets')->where('id', $execution->batch_id)->where('organization_id', $r->user()->organization_id)->first();
         abort_unless($batch, 404);
         app(PharmacyAccess::class)->requireLocation($r->user(), $batch->location_id);
-        $rows = DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->orderByDesc('id')->paginate(20,
-            ['id', 'created_by', 'execution_version', 'proposal', 'evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at']);
+        $rows = DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->orderByDesc('id')->paginate(20,
+            ['id', 'created_by', 'execution_version', 'proposal', 'correction_evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at']);
         $rows->getCollection()->transform(function ($row) {
+            $row->correction_evidence = json_decode($row->correction_evidence, true, 512, JSON_THROW_ON_ERROR);
             $row->proposal = json_decode($row->proposal, true, 512, JSON_THROW_ON_ERROR);
 
             return $row;
@@ -55,20 +57,20 @@ class PharmacyExecutionCustodyController extends Controller
 
         return response()->json(['data' => $rows, 'execution_version' => $execution->version,
             'balance' => app(PharmacyExecutionCustodyLedger::class)->summary($r->user(), $executionId),
-            'pending' => DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
-            'yield_pending' => DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
+            'pending' => DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
+            'custody_pending' => DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
             'release_enabled' => false]);
     }
 
     public function store(Request $r, int $executionId)
     {
-        return response()->json(['data' => ['id' => app(PharmacyExecutionCustodyLedger::class)->retain($r->user(), $executionId, $r->all())]], 201);
+        return response()->json(['data' => ['id' => app(PharmacyYieldCorrectionLedger::class)->retain($r->user(), $executionId, $r->all())]], 201);
     }
 
     public function decide(Request $r, int $proposalId)
     {
         $data = $r->validate(['decision' => 'required|in:applied,rejected', 'evidence' => 'required|string|max:5000']);
-        app(PharmacyExecutionCustodyLedger::class)->decide($r->user(), $proposalId, $data['decision'], $data['evidence']);
+        app(PharmacyYieldCorrectionLedger::class)->decide($r->user(), $proposalId, $data['decision'], $data['evidence']);
 
         return response()->json(['data' => ['id' => $proposalId, 'release_enabled' => false]]);
     }

@@ -32,7 +32,7 @@ export function ExecutionCustody({batch}:{batch:CompoundBatch}) {
   <h4 className="font-semibold">Output custody and disposition</h4>
   <p className="text-sm">Account for the output still held from this preparation. Previous disposal is retained separately. These decisions keep output quarantined and do not return ingredients to stock or authorize dispensing.</p>
   {isError?<div role="alert">Custody history could not be loaded. <Button variant="outline" onClick={()=>refetch()}>Retry custody history</Button></div>:!currentData?<p>Loading custody history…</p>:<>
-   <p className="font-medium">Recorded output: {currentData.balance.recorded_yield} {currentData.balance.unit} · Previously disposed: {currentData.balance.previously_disposed} · Still held: {currentData.balance.held_output}</p>
+   <p className="font-medium">Original recorded output: {execution.record.yield_quantity} {execution.record.yield_unit} · Accounted output: {currentData.balance.recorded_yield} {currentData.balance.unit} · Previously disposed: {currentData.balance.previously_disposed} · Still held: {currentData.balance.held_output}</p>
    {currentData.data.data.length===0&&<p>No output custody proposals recorded.</p>}
    {currentData.data.data.map(p=><article key={p.id} className="border rounded p-3 space-y-2">
     <h5 className="font-medium">Proposal {p.id} · {p.status.replaceAll('_',' ')}</h5>
@@ -42,7 +42,8 @@ export function ExecutionCustody({batch}:{batch:CompoundBatch}) {
     {p.status==='pending'&&(independent&&Number(user?.id)!==p.created_by?<CustodyDecision proposal={p} disabled={isFetching}/>:<p>A pharmacist who authored neither this proposal, the execution nor its addenda must review.</p>)}
    </article>)}
    <div className="flex gap-3 items-center"><Button variant="outline" disabled={page===1||isFetching} onClick={()=>setPage(page-1)}>Previous custody page</Button><span>Page {page} of {currentData.data.last_page}</span><Button variant="outline" disabled={page>=currentData.data.last_page||isFetching} onClick={()=>setPage(page+1)}>Next custody page</Button></div>
-   {pharmacist&&!currentData.pending&&<form onSubmit={submit} className="space-y-3">
+   {currentData.yield_pending&&<p>Resolve the pending yield correction before proposing further output custody.</p>}
+   {pharmacist&&!currentData.pending&&!currentData.yield_pending&&<form onSubmit={submit} className="space-y-3">
     <h5 className="font-medium">Propose output custody</h5>
     <p>Enter each measured quantity explicitly in {execution.record.yield_unit}; do not include previously disposed output again.</p>
     <Field name="retained_quarantined" label="Output retained in quarantine" type="number" min="0" max="999999.999" step="0.001"/>

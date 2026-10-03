@@ -4784,6 +4784,140 @@ class PharmacyWorkflowTest extends TestCase
         return [$b, $lot];
     }
 
+    public function test_yield_correction_retention_preserves_execution_and_stock(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $before = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $body = ['request_id' => (string) Str::uuid(), 'version' => 1, 'unit' => 'tablet',
+            'corrected_yield' => '8', 'observed_held' => '8', 'reason' => 'SYNTHETIC correction', 'measurement_evidence' => 'SYNTHETIC recount', 'source_evidence' => 'SYNTHETIC worksheet'];
+        $service = app(\App\Services\PharmacyYieldCorrectionLedger::class);
+        $url = '/api/pharmacy/executions/'.$execution->id.'/yield-corrections';
+        $id = $this->postJson($url, $body)->assertCreated()->json('data.id');
+        $this->assertSame($id, $service->retain($this->actor, $execution->id, $body));
+        $saved = DB::table('pharmacy_yield_correction_proposals')->find($id);
+        $this->assertSame('pending', $saved->status);
+        $this->assertSame('8.000', json_decode($saved->proposal, true)['corrected_yield']);
+        $this->assertSame($execution->record, json_decode($saved->source_snapshot, true)['execution']['record']);
+        $this->assertSame($before, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'yield_correction_proposed')->count());
+        foreach (['changed_request', 'pending', 'location', 'role', 'production'] as $case) {
+            $data = $body;
+            if ($case === 'changed_request') { $data['reason'] = 'changed'; }
+            if ($case === 'pending') { $data['request_id'] = (string) Str::uuid(); }
+            if ($case === 'location') { DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]); }
+            if ($case === 'role') { $this->actor->role = 'pharmacy_technician'; }
+            if ($case === 'production') { $this->app->instance('env', 'production'); }
+            try {
+                $service->retain($this->actor, $execution->id, $data);
+                $this->fail('Unsafe proposal accepted: '.$case);
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+                $this->assertSame(['changed_request' => 409, 'pending' => 409, 'location' => 404, 'role' => 403, 'production' => 503][$case], $e->getStatusCode());
+            } finally {
+                $this->actor->role = 'pharmacist';
+                $this->app->instance('env', 'testing');
+                DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+            }
+        }
+        $this->assertSame(1, DB::table('pharmacy_yield_correction_proposals')->count());
+        $this->assertSame(0, DB::table('pharmacy_stock_lots')->count());
+        $this->getJson($url)->assertOk()->assertJsonPath('pending', true)->assertJsonMissingPath('data.data.0.source_snapshot');
+        $this->getJson('/api/pharmacy/yield-corrections?reviewable=1')->assertOk()->assertJsonPath('data.total', 0);
+        $reviewer = $this->independentReviewer();
+        $this->actingAs($reviewer);
+        $this->getJson('/api/pharmacy/yield-corrections?reviewable=1')->assertOk()->assertJsonPath('data.total', 1);
+        $decisionUrl = '/api/pharmacy/yield-corrections/'.$id.'/decision';
+        $this->postJson($decisionUrl, ['decision' => 'rejected', 'evidence' => 'SYNTHETIC HTTP review'])->assertOk();
+        $this->getJson($url)->assertOk()->assertJsonPath('pending', false)->assertJsonPath('data.data.0.status', 'rejected');
+        $this->getJson('/api/pharmacy/yield-corrections')->assertOk()->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->getJson('/api/pharmacy/yield-corrections?location_id='.$this->location)->assertNotFound();
+        $this->app->instance('env', 'production');
+        $this->getJson($url)->assertStatus(503);
+        $this->getJson('/api/pharmacy/yield-corrections')->assertStatus(503);
+        $this->postJson($url, $body)->assertStatus(503);
+        $this->postJson($decisionUrl, ['decision' => 'rejected', 'evidence' => 'SYNTHETIC HTTP review'])->assertStatus(503);
+        $this->app->instance('env', 'testing');
+    }
+
+    public function test_reviewed_yield_corrections_interleave_with_disposal_without_overwriting_execution(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $reviewer = $this->independentReviewer();
+        $custody = app(\App\Services\PharmacyExecutionCustodyLedger::class);
+        $yield = app(\App\Services\PharmacyYieldCorrectionLedger::class);
+        $id = $custody->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'version' => 1, 'unit' => 'tablet',
+            'retained_quarantined' => '7', 'disposed_output' => '2', 'unaccounted_output' => '0', 'evidence' => 'SYNTHETIC disposal']);
+        $custody->decide($reviewer, $id, 'applied', 'SYNTHETIC review');
+        $id = $yield->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'version' => 2, 'unit' => 'tablet',
+            'corrected_yield' => '8', 'observed_held' => '6', 'reason' => 'SYNTHETIC correction', 'measurement_evidence' => 'SYNTHETIC recount', 'source_evidence' => 'SYNTHETIC worksheet']);
+        try { $yield->decide($this->actor, $id, 'applied', 'self'); $this->fail('Self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        try {
+            $custody->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'version' => 2, 'unit' => 'tablet',
+                'retained_quarantined' => '7', 'disposed_output' => '0', 'unaccounted_output' => '0', 'evidence' => 'SYNTHETIC competing custody']);
+            $this->fail('Competing custody retained during pending yield review');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $originalProposal = (array) DB::table('pharmacy_yield_correction_proposals')->find($id);
+        $originalExecution = (array) DB::table('pharmacy_batch_executions')->find($execution->id);
+        foreach (['correction_evidence', 'proposal', 'source_snapshot', 'stale_version'] as $case) {
+            if ($case === 'stale_version') {
+                DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update(['version' => 3]);
+            } else {
+                $changed = json_decode($originalProposal[$case], true);
+                $changed['tampered'] = 'SYNTHETIC changed evidence';
+                DB::table('pharmacy_yield_correction_proposals')->where('id', $id)->update([$case => json_encode($changed)]);
+            }
+            try { $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC independent review'); $this->fail('Changed correction accepted: '.$case); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+            finally {
+                DB::table('pharmacy_yield_correction_proposals')->where('id', $id)->update($originalProposal);
+                DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update($originalExecution);
+            }
+        }
+        $failYieldAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failYieldAudit) {
+            if ($failYieldAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) {
+                throw new \RuntimeException('SYNTHETIC yield audit failure');
+            }
+        });
+        foreach (['applied', 'rejected'] as $decision) {
+            try { $yield->decide($reviewer, $id, $decision, 'SYNTHETIC independent review'); $this->fail('Audit failure accepted'); }
+            catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC yield audit failure', $e->getMessage()); }
+            $this->assertSame($originalExecution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+            $this->assertSame($originalProposal, (array) DB::table('pharmacy_yield_correction_proposals')->find($id));
+            $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        }
+        $failYieldAudit = false;
+        // MySQL may reorder JSON object keys; canonical integrity must still succeed.
+        DB::table('pharmacy_yield_correction_proposals')->where('id', $id)->update([
+            'proposal' => json_encode(array_reverse(json_decode($originalProposal['proposal'], true), true)),
+            'correction_evidence' => json_encode(array_reverse(json_decode($originalProposal['correction_evidence'], true), true)),
+        ]);
+        $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC independent review');
+        $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC independent review');
+        $balance = $custody->summary($this->actor, $execution->id);
+        $this->assertSame('8.000', $balance['recorded_yield']);
+        $this->assertSame('2.000', $balance['previously_disposed']);
+        $this->assertSame('6.000', $balance['held_output']);
+        $id = $custody->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'version' => 3, 'unit' => 'tablet',
+            'retained_quarantined' => '3', 'disposed_output' => '3', 'unaccounted_output' => '0', 'evidence' => 'SYNTHETIC later disposal']);
+        $custody->decide($reviewer, $id, 'applied', 'SYNTHETIC review');
+        $balance = $custody->summary($this->actor, $execution->id);
+        $this->assertSame('5.000', $balance['previously_disposed']);
+        $this->assertSame('3.000', $balance['held_output']);
+        $this->assertSame($execution->record, DB::table('pharmacy_batch_executions')->find($execution->id)->record);
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'yield_correction_applied')->count());
+        $this->assertSame(0, DB::table('pharmacy_stock_lots')->count());
+    }
+
     public function test_execution_custody_proposals_retain_evidence_without_repeating_stock_movements(): void
     {
         [$batch, $lot] = $this->reservedWorksheet();

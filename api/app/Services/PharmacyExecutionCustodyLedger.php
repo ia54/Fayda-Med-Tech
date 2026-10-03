@@ -76,9 +76,31 @@ class PharmacyExecutionCustodyLedger
         $source = ['recorded_yield' => $record['yield_quantity'] ?? null, 'previously_disposed' => '0.000',
             'held_output' => $record['yield_quantity'] ?? null, 'unit' => $record['yield_unit'] ?? null];
         $digest = app(PharmacyCompoundingIncident::class);
-        foreach (DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $execution->id)->where('status', 'applied')->orderBy('id')->get() as $prior) {
+        $custody = DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $execution->id)->where('status', 'applied')->get()->map(function ($row) { $row->kind = 'custody'; return $row; });
+        $corrections = DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $execution->id)->where('status', 'applied')->get()->map(function ($row) { $row->kind = 'yield'; return $row; });
+        $lastVersion = 0;
+        foreach ($custody->concat($corrections)->sortBy('execution_version') as $prior) {
+            abort_unless((int) $prior->execution_version > $lastVersion && (int) $prior->execution_version < (int) $execution->version, 409, 'Output history has conflicting execution versions.');
+            $lastVersion = (int) $prior->execution_version;
             $snapshot = json_decode($prior->source_snapshot, true, 512, JSON_THROW_ON_ERROR);
             $projection = json_decode($prior->proposal, true, 512, JSON_THROW_ON_ERROR);
+            if ($prior->kind === 'yield') {
+                $expected = ['original_yield' => $record['yield_quantity'], 'accounted_yield' => $source['recorded_yield'],
+                    'previously_disposed' => $source['previously_disposed'], 'held_output' => $source['held_output'], 'unit' => $source['unit']];
+                abort_unless(hash_equals($prior->source_hash, $digest->digest($snapshot)) && hash_equals($prior->proposal_hash, $digest->digest($projection))
+                    && $prior->reviewed_by && (int) $prior->reviewed_by !== (int) $prior->created_by
+                    && (int) $prior->reviewed_by !== (int) $execution->created_by
+                    && (int) ($snapshot['execution']['id'] ?? 0) === (int) $execution->id
+                    && $digest->digest($snapshot['yield'] ?? []) === $digest->digest($expected), 409, 'Prior yield correction evidence is inconsistent.');
+                $evidence = json_decode($prior->correction_evidence, true, 512, JSON_THROW_ON_ERROR);
+                abort_unless(hash_equals($prior->correction_evidence_hash, $digest->digest($evidence)), 409, 'Prior correction supporting evidence changed.');
+                $checked = app(PharmacyYieldCorrection::class)->project($expected, ['corrected_yield' => $projection['corrected_yield'],
+                    'observed_held' => $projection['corrected_held_output'], 'unit' => $projection['unit']] + $evidence);
+                abort_unless(hash_equals($digest->digest($checked), $digest->digest($projection)), 409, 'Prior yield correction is inconsistent.');
+                $source['recorded_yield'] = $checked['corrected_yield'];
+                $source['held_output'] = $checked['corrected_held_output'];
+                continue;
+            }
             abort_unless(hash_equals($prior->source_hash, $digest->digest($snapshot)) && hash_equals($prior->proposal_hash, $digest->digest($projection))
                 && $prior->reviewed_by && (int) $prior->reviewed_by !== (int) $prior->created_by
                 && (int) $prior->reviewed_by !== (int) $execution->created_by
@@ -121,6 +143,7 @@ class PharmacyExecutionCustodyLedger
             }
             abort_unless((int) $execution->version === $data['version'], 409, 'The execution evidence changed. Refresh before proposing custody.');
             abort_if(DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'An output custody proposal is already awaiting review.');
+            abort_if(DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'Resolve the pending yield correction before proposing output custody.');
             $source = $this->balance($execution);
             $proposal = app(PharmacyExecutionCustody::class)->project($source, $data);
             $snapshot = ['execution' => (array) $execution, 'batch' => (array) $batch, 'custody' => $source,

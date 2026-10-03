@@ -100,6 +100,11 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/executions/{executionId}/custody', [$executionCustody, 'history']);
         Route::post('/executions/{executionId}/custody', [$executionCustody, 'store']);
         Route::post('/execution-custody/{proposalId}/decision', [$executionCustody, 'decide']);
+        $yieldCorrection = \App\Http\Controllers\API\PharmacyYieldCorrectionController::class;
+        Route::get('/yield-corrections', [$yieldCorrection, 'worklist']);
+        Route::get('/executions/{executionId}/yield-corrections', [$yieldCorrection, 'history']);
+        Route::post('/executions/{executionId}/yield-corrections', [$yieldCorrection, 'store']);
+        Route::post('/yield-corrections/{proposalId}/decision', [$yieldCorrection, 'decide']);
         Route::post('/batch-worksheets/{id}/execution', [$execution, 'store']);
         Route::post('/batch-worksheets/{id}/execution/addenda', [$execution, 'addendum']);
         Route::post('/batch-worksheets/{id}/execution/review', [$execution, 'review']);
