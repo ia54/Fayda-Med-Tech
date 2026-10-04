@@ -4656,6 +4656,115 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertNotSame($digest->digest($before), $digest->digest($after));
     }
 
+    public function test_reviewed_quality_context_requires_latest_passed_current_evidence(): void
+    {
+        [$execution, $lot, $protocol, $reviewer, $body, $ledger] = $this->batchQualityFixture();
+        $context = app(\App\Services\PharmacyReviewedQualityContext::class);
+        $id = $ledger->retain($this->actor, $execution->id, $protocol, $body);
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC failed observation confirmed');
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Reviewed failure accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $body['request_id'] = (string) Str::uuid(); $body['previous_id'] = $id; $body['results'][0]['outcome'] = 'pass';
+        $next = $ledger->retain($this->actor, $execution->id, $protocol, $body);
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Pending replacement accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $next, 'reviewed', 'SYNTHETIC documentary review');
+        $result = $context->inspect($this->actor, $execution->id);
+        $this->assertSame($next, (int) $result['quality_record']['id']);
+        $this->assertFalse($result['release_enabled']); $this->assertFalse($result['clinical_quality_verified']);
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['status' => 'recalled']);
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Stale quality accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame(2, DB::table('pharmacy_batch_quality_records')->count());
+    }
+
+    private function beyondUseFixture(): array
+    {
+        $this->travelTo(now()->startOfDay()->addHours(12));
+        [$execution, $lot, $protocol, $reviewer, $body, $quality] = $this->batchQualityFixture();
+        $body['results'][0]['outcome'] = 'pass';
+        $id = $quality->retain($this->actor, $execution->id, $protocol, $body);
+        $quality->decide($reviewer, $id, 'reviewed', 'SYNTHETIC documentary review');
+        $source = app(\App\Services\PharmacyReviewedQualityContext::class)->inspect($this->actor, $execution->id);
+        $proposal = ['prepared_at' => now()->subHour()->format('Y-m-d\TH:i:sP'), 'proposed_bud_at' => now()->addDay()->format('Y-m-d\TH:i:sP'),
+            'timezone' => now()->timezoneName, 'preparation_time_reference' => 'SYNTHETIC exact timestamp',
+            'container_reference' => 'SYNTHETIC container', 'storage_conditions' => 'SYNTHETIC storage',
+            'basis_reference' => 'SYNTHETIC supplied limit', 'rationale' => 'SYNTHETIC no clinical date selected',
+            'limits' => [['key' => 'fixture', 'not_after' => now()->addDay()->format('Y-m-d\TH:i:sP'), 'reference' => 'SYNTHETIC']]];
+        return [$execution, $lot, $reviewer, ['request_id' => (string) Str::uuid(), 'previous_id' => null,
+            'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($source), 'proposal' => $proposal],
+            app(\App\Services\PharmacyBeyondUseLedger::class)];
+    }
+
+    public function test_beyond_use_proposals_retain_dates_and_independent_review_without_stock_movement(): void
+    {
+        [$execution, $lot, $reviewer, $body, $ledger] = $this->beyondUseFixture();
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $this->assertSame($id, $ledger->retain($this->actor, $execution->id, $body));
+        try { $ledger->decide($this->actor, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC independent date evidence');
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC independent date evidence');
+        $p = DB::table('pharmacy_beyond_use_proposals')->find($id);
+        $this->assertSame('reviewed', $p->status);
+        $digest = app(\App\Services\PharmacyCompoundingIncident::class);
+        $this->assertSame($digest->digest($body['proposal']), $digest->digest(json_decode($p->proposal, true)['evidence']));
+        $this->assertFalse(json_decode($p->proposal, true)['release_enabled']);
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'beyond_use_reviewed')->count());
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $replacement = $body; $replacement['request_id'] = (string) Str::uuid(); $replacement['previous_id'] = $id;
+        $replacement['proposal']['rationale'] = 'SYNTHETIC replacement rationale';
+        $next = $ledger->retain($this->actor, $execution->id, $replacement);
+        $this->assertSame($id, (int) DB::table('pharmacy_beyond_use_proposals')->find($next)->previous_id);
+        $this->assertSame((array) $p, (array) DB::table('pharmacy_beyond_use_proposals')->find($id));
+    }
+
+    public function test_beyond_use_review_rolls_back_audit_failure_and_rejects_expired_proposals(): void
+    {
+        [$execution, $lot, $reviewer, $body, $ledger] = $this->beyondUseFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $before = (array) DB::table('pharmacy_beyond_use_proposals')->find($id);
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC dating audit failure'); }
+        });
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Unaudited review accepted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC dating audit failure', $e->getMessage()); }
+        $this->assertSame($before, (array) DB::table('pharmacy_beyond_use_proposals')->find($id));
+        $failAudit = false;
+        $this->travel(2)->days();
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Elapsed dating proposal accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $id, 'rejected', 'SYNTHETIC elapsed proposal retained');
+        $this->assertSame('rejected', DB::table('pharmacy_beyond_use_proposals')->find($id)->status);
+    }
+
+    public function test_beyond_use_http_routes_require_assigned_pharmacists_for_writes(): void
+    {
+        [$execution, $lot, $reviewer, $body] = $this->beyondUseFixture();
+        $base = "/api/pharmacy/executions/{$execution->id}";
+        $this->getJson("$base/beyond-use-context")->assertOk()->assertJsonPath('data.source_hash', $body['source_hash'])->assertJsonMissingPath('data.source_snapshot');
+        $id = $this->postJson("$base/beyond-use-proposals", $body)->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonPath('release_enabled', false)->json('data.id');
+        $this->getJson("$base/beyond-use-proposals")->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson("/api/pharmacy/beyond-use-proposals/$id")->assertOk()->assertJsonPath('data.elapsed', false)->assertJsonMissingPath('data.request_hash');
+        $this->postJson("/api/pharmacy/beyond-use-proposals/$id/decision", ['decision' => 'reviewed', 'evidence' => 'SYNTHETIC'])->assertStatus(422);
+        $reviewer->role = 'pharmacy_technician'; $reviewer->save();
+        $this->actingAs($reviewer, 'api');
+        $this->getJson("/api/pharmacy/beyond-use-proposals/$id")->assertOk();
+        $this->postJson("/api/pharmacy/beyond-use-proposals/$id/decision", ['decision' => 'reviewed', 'evidence' => 'SYNTHETIC'])->assertForbidden();
+        $this->getJson("$base/beyond-use-context")->assertForbidden();
+        $reviewer->role = 'pharmacist'; $reviewer->save();
+        $this->postJson("/api/pharmacy/beyond-use-proposals/$id/decision", ['decision' => 'reviewed', 'evidence' => 'SYNTHETIC independent dating review'])->assertOk()->assertJsonPath('release_enabled', false);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson("$base/beyond-use-proposals")->assertNotFound();
+        $this->getJson("/api/pharmacy/beyond-use-proposals/$id")->assertNotFound();
+        $this->app->instance('env', 'production');
+        $this->getJson("$base/beyond-use-context")->assertStatus(503);
+        $this->postJson("$base/beyond-use-proposals", $body)->assertStatus(503);
+    }
+
     private function qualityProtocolFixture(): array
     {
         $formula = $this->postJson('/api/pharmacy/formulations', $this->formulationBody())->assertCreated()->json('data.id');
