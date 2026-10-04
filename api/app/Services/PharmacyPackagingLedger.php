@@ -40,6 +40,7 @@ class PharmacyPackagingLedger
                 abort_unless((int) $retry->created_by === (int) $actor->id && hash_equals($retry->request_hash, $requestHash), 409, 'Request belongs to different packaging evidence.');
                 return (int) $retry->id;
             }
+            abort_if(app(PharmacyContainerCustodyLedger::class)->established($executionId), 409, 'Repackaging requires explicit reconciliation of established containers.');
             $last = DB::table('pharmacy_packaging_proposals')->where('execution_id', $executionId)->orderByDesc('id')->first();
             abort_unless(($last ? (int) $last->id : null) === ($d['previous_id'] === null ? null : (int) $d['previous_id']), 409, 'Packaging proposal history changed.');
             abort_if($last && $last->status === 'pending', 409, 'Review or reject the pending packaging proposal first.');

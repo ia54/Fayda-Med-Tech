@@ -4511,10 +4511,10 @@ class PharmacyWorkflowTest extends TestCase
         catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
     }
 
-    private function batchQualityFixture(): array
+    private function batchQualityFixture(?string $yieldQuantity = null): array
     {
         [$batch, $lot] = $this->reservedWorksheet();
-        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", array_replace($this->executionBody(), $yieldQuantity === null ? [] : ['yield_quantity' => $yieldQuantity]))->assertCreated();
         $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
         $worksheet = DB::table('pharmacy_batch_worksheets')->find($batch);
         $reviewer = $this->independentReviewer();
@@ -4678,10 +4678,10 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('pharmacy_batch_quality_records')->count());
     }
 
-    private function beyondUseFixture(): array
+    private function beyondUseFixture(?string $yieldQuantity = null): array
     {
         $this->travelTo(now()->startOfDay()->addHours(12));
-        [$execution, $lot, $protocol, $reviewer, $body, $quality] = $this->batchQualityFixture();
+        [$execution, $lot, $protocol, $reviewer, $body, $quality] = $this->batchQualityFixture($yieldQuantity);
         $body['results'][0]['outcome'] = 'pass';
         $id = $quality->retain($this->actor, $execution->id, $protocol, $body);
         $quality->decide($reviewer, $id, 'reviewed', 'SYNTHETIC documentary review');
@@ -4787,9 +4787,9 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('reviewed', DB::table('pharmacy_beyond_use_proposals')->find($id)->status);
     }
 
-    private function packagingFixture(): array
+    private function packagingFixture(?string $yieldQuantity = null): array
     {
-        [$execution, $lot, $reviewer, $datingBody, $dating] = $this->beyondUseFixture();
+        [$execution, $lot, $reviewer, $datingBody, $dating] = $this->beyondUseFixture($yieldQuantity);
         $dateId = $dating->retain($this->actor, $execution->id, $datingBody);
         $dating->decide($reviewer, $dateId, 'reviewed', 'SYNTHETIC dating review');
         $source = app(\App\Services\PharmacyReviewedBeyondUseContext::class)->inspect($this->actor, $execution->id);
@@ -4799,6 +4799,249 @@ class PharmacyWorkflowTest extends TestCase
                 'quantity' => $source['output_balance']['held_output'], 'container_reference' => 'SYNTHETIC container', 'storage_reference' => 'SYNTHETIC storage']],
                 'unpackaged_quantity' => '0.000', 'evidence' => 'SYNTHETIC existing output only']];
         return [$execution, $lot, $reviewer, $body, app(\App\Services\PharmacyPackagingLedger::class)];
+    }
+
+    private function containerCustodyFixture(?string $yieldQuantity = null): array
+    {
+        [$execution, $lot, $reviewer, $body, $packaging] = $this->packagingFixture($yieldQuantity);
+        $id = $packaging->retain($this->actor, $execution->id, $body);
+        $packaging->decide($reviewer, $id, 'reviewed', 'SYNTHETIC packaging review');
+        $ledger = app(\App\Services\PharmacyContainerCustodyLedger::class);
+        $context = $ledger->context($this->actor, $execution->id);
+        $held = \App\Services\PharmacyStock::milli($context['container_balance']['held_output']);
+        $input = ['request_id' => (string) Str::uuid(), 'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($context),
+            'decision' => ['unit' => $context['container_balance']['unit'], 'evidence' => 'SYNTHETIC custody observations',
+                'containers' => [['identifier' => 'SYN-CONTAINER-1', 'retained_quarantined' => \App\Services\PharmacyStock::decimal($held - 1000),
+                    'disposed_output' => '1.000', 'unaccounted_output' => '0.000', 'evidence' => 'SYNTHETIC disposition evidence']],
+                'unpackaged' => ['retained_quarantined' => '0.000', 'disposed_output' => '0.000', 'unaccounted_output' => '0.000', 'evidence' => 'SYNTHETIC no unpackaged output']]];
+        return [$execution, $lot, $reviewer, $ledger, $context, $input];
+    }
+
+    public function test_container_custody_http_routes_scope_history_and_independent_decisions(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $base = "/api/pharmacy/executions/{$execution->id}/container-custody";
+        $this->getJson("$base-context")->assertOk()->assertJsonPath('data.source_hash', $input['source_hash'])->assertJsonPath('data.historical_evidence_only', true)->assertJsonMissingPath('data.packaging_context');
+        $id = $this->postJson($base, $input)->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonPath('release_enabled', false)->json('data.id');
+        $this->getJson($base)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('pending', true);
+        $detail = "/api/pharmacy/container-custody/$id";
+        $this->getJson($detail)->assertOk()->assertJsonPath('data.proposal.containers.0.identifier', 'SYN-CONTAINER-1')->assertJsonMissingPath('data.source_snapshot')->assertJsonMissingPath('data.request_hash');
+        $this->getJson("/api/pharmacy/executions/{$execution->id}/custody")->assertOk()->assertJsonPath('container_established', true)->assertJsonPath('data.data.0.container_record_id', 1);
+        $this->postJson("/api/pharmacy/execution-custody/$id/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertStatus(409);
+
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertStatus(422);
+        $this->actor->update(['role' => 'pharmacy_technician']);
+        $this->getJson($detail)->assertOk();
+        $this->postJson($base, $input)->assertForbidden();
+        $this->getJson("$base-context")->assertForbidden();
+        $this->actor->update(['role' => 'pharmacist']);
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC independent container review'])->assertOk()->assertJsonPath('data.status', 'applied');
+        $this->getJson($base)->assertOk()->assertJsonPath('pending', false);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($base)->assertNotFound(); $this->getJson($detail)->assertNotFound();
+        $this->postJson("/api/pharmacy/execution-custody/$id/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertNotFound();
+        $this->app->instance('env', 'production');
+        $this->getJson($detail)->assertStatus(503); $this->postJson($base, $input)->assertStatus(503);
+    }
+
+    public function test_initial_container_custody_records_expired_recalled_output_without_release(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $this->travel(2)->days();
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['status' => 'recalled']);
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        try { app(\App\Services\PharmacyReviewedPackagingContext::class)->inspect($this->actor, $execution->id); $this->fail('Expired recalled clinical eligibility accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $context = $ledger->context($this->actor, $execution->id);
+        $this->assertTrue($context['packaging_context']['historical_evidence_only']);
+        $this->assertFalse($context['packaging_context']['release_enabled']);
+        $input['source_hash'] = app(\App\Services\PharmacyCompoundingIncident::class)->digest($context);
+        $id = $ledger->retain($this->actor, $execution->id, $input);
+        app(\App\Services\PharmacyExecutionCustodyLedger::class)->decide($reviewer, $id, 'applied', 'SYNTHETIC expired recalled output custody only');
+        $this->assertSame($input['decision']['containers'][0]['retained_quarantined'], $ledger->context($this->actor, $execution->id)['container_balance']['held_output']);
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame('quarantined', DB::table('pharmacy_batch_executions')->find($execution->id)->status);
+    }
+
+    public function test_container_custody_accepts_equivalent_decimal_format_without_rewriting_original(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture('8');
+        $this->assertSame('8', json_decode($execution->record, true)['yield_quantity']);
+        $this->assertSame('8.000', $source['container_balance']['held_output']);
+        $id = $ledger->retain($this->actor, $execution->id, $input);
+        app(\App\Services\PharmacyExecutionCustodyLedger::class)->decide($reviewer, $id, 'applied', 'SYNTHETIC decimal representation review');
+        $this->assertSame('7.000', $ledger->context($this->actor, $execution->id)['container_balance']['held_output']);
+        $this->assertSame($execution->record, DB::table('pharmacy_batch_executions')->find($execution->id)->record);
+    }
+
+    public function test_container_custody_scope_retry_and_projection_integrity_are_enforced(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $originalOrg = $this->actor->organization_id;
+        $this->actor->organization_id = 999999;
+        try { $ledger->retain($this->actor, $execution->id, $input); $this->fail('Cross-organization custody accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        $this->actor->organization_id = $originalOrg; $this->actor->role = 'pharmacy_technician';
+        try { $ledger->retain($this->actor, $execution->id, $input); $this->fail('Technician custody write accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(403, $e->getStatusCode()); }
+        $this->actor->role = 'pharmacist';
+        $id = $ledger->retain($this->actor, $execution->id, $input);
+        $changed = $input; $changed['decision']['evidence'] = 'SYNTHETIC changed retry';
+        try { $ledger->retain($this->actor, $execution->id, $changed); $this->fail('Changed retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $r = DB::table('pharmacy_container_custody_records')->where('output_proposal_id', $id)->first();
+        DB::table('pharmacy_container_custody_records')->where('id', $r->id)->update(['proposal_hash' => str_repeat('0', 64)]);
+        try { app(\App\Services\PharmacyExecutionCustodyLedger::class)->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Corrupt container projection applied'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); $this->assertSame('Container custody evidence integrity failed.', $e->getMessage()); }
+        app(\App\Services\PharmacyExecutionCustodyLedger::class)->decide($reviewer, $id, 'rejected', 'SYNTHETIC damaged evidence retained');
+        $this->assertSame('rejected', DB::table('pharmacy_execution_custody_proposals')->find($id)->status);
+        $this->assertSame($r->proposal, DB::table('pharmacy_container_custody_records')->find($r->id)->proposal);
+    }
+
+    public function test_container_review_preserves_clinical_holds_and_rechecks_current_source(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $input);
+        try { app(\App\Services\PharmacyReviewedQualityContext::class)->inspect($this->actor, $execution->id); $this->fail('Normal quality eligibility ignored pending custody'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $record = DB::table('pharmacy_batch_executions')->find($execution->id);
+        DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update(['version' => $record->version + 1]);
+        try { app(\App\Services\PharmacyExecutionCustodyLedger::class)->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Changed execution source accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame('pending', DB::table('pharmacy_execution_custody_proposals')->find($id)->status);
+        app(\App\Services\PharmacyExecutionCustodyLedger::class)->decide($reviewer, $id, 'rejected', 'SYNTHETIC stale proposal retained');
+        $this->assertSame('rejected', DB::table('pharmacy_execution_custody_proposals')->find($id)->status);
+    }
+
+    public function test_container_custody_disposal_applies_once_and_continues_after_expiry(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $original = $execution->record;
+        $output = app(\App\Services\PharmacyExecutionCustodyLedger::class);
+        $id = $ledger->retain($this->actor, $execution->id, $input);
+        $this->assertSame($id, $ledger->retain($this->actor, $execution->id, $input));
+        $this->assertSame(1, DB::table('pharmacy_container_custody_records')->count());
+        try { $output->decide($this->actor, $id, 'applied', 'SYNTHETIC'); $this->fail('Self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $output->decide($reviewer, $id, 'applied', 'SYNTHETIC independent review');
+        $after = $output->summary($this->actor, $execution->id);
+        $this->assertSame($input['decision']['containers'][0]['retained_quarantined'], $after['held_output']);
+        $this->assertSame(\App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($source['container_balance']['previously_disposed']) + 1000), $after['previously_disposed']);
+        $output->decide($reviewer, $id, 'applied', 'SYNTHETIC independent review');
+        $this->assertSame($after, $output->summary($this->actor, $execution->id));
+        $this->assertSame($id, $ledger->retain($this->actor, $execution->id, $input));
+        $this->travel(2)->days();
+        $next = $ledger->context($this->actor, $execution->id);
+        $this->assertSame($after['held_output'], $next['container_balance']['containers'][0]['quantity']);
+        $input['request_id'] = (string) Str::uuid(); $input['source_hash'] = app(\App\Services\PharmacyCompoundingIncident::class)->digest($next);
+        $input['decision']['containers'][0]['disposed_output'] = '0.000';
+        $input['decision']['containers'][0]['retained_quarantined'] = $after['held_output'];
+        $second = $ledger->retain($this->actor, $execution->id, $input);
+        $output->decide($reviewer, $second, 'applied', 'SYNTHETIC expired output remains quarantined');
+        $this->assertSame($after, $output->summary($this->actor, $execution->id));
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame($original, DB::table('pharmacy_batch_executions')->find($execution->id)->record);
+    }
+
+    public function test_container_custody_audit_failures_roll_back_both_records_and_disposition(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $output = app(\App\Services\PharmacyExecutionCustodyLedger::class);
+        $before = $output->summary($this->actor, $execution->id);
+        $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC container audit failure'); }
+        });
+        try { $ledger->retain($this->actor, $execution->id, $input); $this->fail('Unaudited container retention accepted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC container audit failure', $e->getMessage()); }
+        $this->assertSame(0, DB::table('pharmacy_container_custody_records')->count());
+        $this->assertFalse(DB::table('pharmacy_execution_custody_proposals')->where('request_id', $input['request_id'])->exists());
+        $fail = false; $id = $ledger->retain($this->actor, $execution->id, $input); $fail = true;
+        try { $output->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Unaudited container application accepted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC container audit failure', $e->getMessage()); }
+        $this->assertSame('pending', DB::table('pharmacy_execution_custody_proposals')->find($id)->status);
+        $this->assertSame($before, $output->summary($this->actor, $execution->id));
+        $this->assertSame((int) $execution->version, (int) DB::table('pharmacy_batch_executions')->find($execution->id)->version);
+    }
+
+    public function test_container_custody_unaccounted_output_blocks_application_and_preserves_rejection(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $input['decision']['containers'][0]['disposed_output'] = '0'; $input['decision']['containers'][0]['unaccounted_output'] = '1';
+        $id = $ledger->retain($this->actor, $execution->id, $input);
+        $output = app(\App\Services\PharmacyExecutionCustodyLedger::class);
+        try { $output->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Unaccounted container applied'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $this->travel(2)->days();
+        $output->decide($reviewer, $id, 'rejected', 'SYNTHETIC loss remains documented for investigation');
+        $this->assertSame('rejected', DB::table('pharmacy_execution_custody_proposals')->find($id)->status);
+        $this->assertSame(1, DB::table('pharmacy_container_custody_records')->count());
+        $this->assertSame((int) $execution->version, (int) DB::table('pharmacy_batch_executions')->find($execution->id)->version);
+    }
+
+    public function test_established_containers_block_aggregate_only_changes_and_repackaging(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $input);
+        $output = app(\App\Services\PharmacyExecutionCustodyLedger::class);
+        $output->decide($reviewer, $id, 'applied', 'SYNTHETIC');
+        $e = DB::table('pharmacy_batch_executions')->find($execution->id);
+        try { $output->retain($this->actor, $e->id, ['request_id' => (string) Str::uuid(), 'version' => (int) $e->version,
+            'unit' => $source['container_balance']['unit'], 'evidence' => 'SYNTHETIC', 'retained_quarantined' => '0', 'disposed_output' => '0', 'unaccounted_output' => '0']); $this->fail('Aggregate-only change accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $error) { $this->assertSame(409, $error->getStatusCode()); $this->assertStringContainsString('container custody', $error->getMessage()); }
+        try { app(\App\Services\PharmacyYieldCorrectionLedger::class)->retain($this->actor, $e->id, ['request_id' => (string) Str::uuid(), 'version' => (int) $e->version,
+            'unit' => $source['container_balance']['unit'], 'corrected_yield' => '1', 'observed_held' => '1', 'reason' => 'SYNTHETIC', 'measurement_evidence' => 'SYNTHETIC', 'source_evidence' => 'SYNTHETIC']); $this->fail('Aggregate yield change accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $error) { $this->assertSame(409, $error->getStatusCode()); $this->assertStringContainsString('container-level', $error->getMessage()); }
+        try { app(\App\Services\PharmacyPackagingLedger::class)->retain($this->actor, $e->id, ['request_id' => (string) Str::uuid(), 'previous_id' => $source['packaging_context']['packaging_proposal']['id'],
+            'source_hash' => str_repeat('a', 64), 'proposal' => ['unit' => $source['container_balance']['unit']]]); $this->fail('Repackaging replaced established containers'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $error) { $this->assertSame(409, $error->getStatusCode()); $this->assertStringContainsString('Repackaging', $error->getMessage()); }
+    }
+
+    public function test_reviewed_packaging_context_requires_current_review_and_traceable_origins(): void
+    {
+        [$execution, $lot, $reviewer, $body, $ledger] = $this->packagingFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $context = app(\App\Services\PharmacyReviewedPackagingContext::class);
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Pending packaging accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC independent packaging review');
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $result = $context->inspect($this->actor, $execution->id);
+        $this->assertSame($id, (int) $result['packaging_proposal']['id']);
+        $this->assertSame('SYN-CONTAINER-1', $result['container_identities'][0]['identifier']);
+        $this->assertFalse($result['release_enabled']);
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $body['request_id'] = (string) Str::uuid(); $body['previous_id'] = $id;
+        $next = $ledger->retain($this->actor, $execution->id, $body);
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Earlier packaging reused while replacement pending'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $next, 'reviewed', 'SYNTHETIC replacement review');
+        $this->assertSame($id, (int) $context->inspect($this->actor, $execution->id)['container_identities'][0]['first_proposal_id']);
+        DB::table('pharmacy_packaging_proposals')->where('id', $id)->update(['proposal_hash' => str_repeat('0', 64)]);
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Damaged first container provenance accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); $this->assertSame('Container origin evidence is inconsistent.', $e->getMessage()); }
+    }
+
+    public function test_reviewed_packaging_context_rechecks_audit_authorization_and_expiry(): void
+    {
+        [$execution, $lot, $reviewer, $body, $ledger] = $this->packagingFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC independent packaging review');
+        $context = app(\App\Services\PharmacyReviewedPackagingContext::class);
+        $event = DB::table('pharmacy_compounding_events')->where('action', 'packaging_reviewed')->first();
+        DB::table('pharmacy_compounding_events')->where('id', $event->id)->update(['action' => 'SYNTHETIC_INVALID']);
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Missing review audit accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); $this->assertSame('Packaging review audit is missing.', $e->getMessage()); }
+        DB::table('pharmacy_compounding_events')->where('id', $event->id)->update(['action' => 'packaging_reviewed']);
+        $reviewer->update(['status' => 'inactive']);
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Revoked reviewer accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $reviewer->update(['status' => 'active']);
+        $this->travel(2)->days();
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Elapsed dating accepted for custody establishment'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
     }
 
     public function test_packaging_retains_container_identity_and_reviews_without_new_stock(): void

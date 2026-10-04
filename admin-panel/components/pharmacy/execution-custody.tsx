@@ -39,11 +39,13 @@ export function ExecutionCustody({batch}:{batch:CompoundBatch}) {
     <p>Previously disposed: {p.proposal.previously_disposed} {p.proposal.unit}. This proposal: retain {p.proposal.retained_quarantined}, dispose {p.proposal.disposed_output}, unaccounted {p.proposal.unaccounted_output} {p.proposal.unit}.</p>
     <p className="whitespace-pre-wrap break-words">Evidence: {p.evidence}</p>
     {p.review_evidence&&<p className="whitespace-pre-wrap break-words">Review: {p.review_evidence}</p>}
-    {p.status==='pending'&&(independent&&Number(user?.id)!==p.created_by?<CustodyDecision proposal={p} disabled={isFetching}/>:<p>A pharmacist who authored neither this proposal, the execution nor its addenda must review.</p>)}
+    {p.container_record_id&&<p>Review the individual findings in container custody. This is the linked aggregate accounting record.</p>}
+    {p.status==='pending'&&!p.container_record_id&&(independent&&Number(user?.id)!==p.created_by?<CustodyDecision proposal={p} disabled={isFetching}/>:<p>A pharmacist who authored neither this proposal, the execution nor its addenda must review.</p>)}
    </article>)}
    <div className="flex gap-3 items-center"><Button variant="outline" disabled={page===1||isFetching} onClick={()=>setPage(page-1)}>Previous custody page</Button><span>Page {page} of {currentData.data.last_page}</span><Button variant="outline" disabled={page>=currentData.data.last_page||isFetching} onClick={()=>setPage(page+1)}>Next custody page</Button></div>
    {currentData.yield_pending&&<p>Resolve the pending yield correction before proposing further output custody.</p>}
-   {pharmacist&&!currentData.pending&&!currentData.yield_pending&&<form onSubmit={submit} className="space-y-3">
+   {currentData.container_established&&<p>Container custody is established. Record further findings through the individual containers.</p>}
+   {pharmacist&&!currentData.container_established&&!currentData.pending&&!currentData.yield_pending&&<form onSubmit={submit} className="space-y-3">
     <h5 className="font-medium">Propose output custody</h5>
     <p>Enter each measured quantity explicitly in {execution.record.yield_unit}; do not include previously disposed output again.</p>
     <Field name="retained_quarantined" label="Output retained in quarantine" type="number" min="0" max="999999.999" step="0.001"/>

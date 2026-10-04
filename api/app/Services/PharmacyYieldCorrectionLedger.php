@@ -30,6 +30,7 @@ class PharmacyYieldCorrectionLedger
                 return;
             }
             if ($decision === 'applied') {
+                abort_if(app(PharmacyContainerCustodyLedger::class)->established($execution->id), 409, 'Yield corrections require container-level reconciliation after custody is established.');
                 $author = User::find($proposal->created_by);
                 abort_unless($author && $author->role === 'pharmacist' && $author->status === 'active' && (int) $author->organization_id === (int) $actor->organization_id, 409, 'The proposal author is no longer authorized.');
                 app(PharmacyAccess::class)->requireLocation($author, $batch->location_id);
@@ -88,6 +89,7 @@ class PharmacyYieldCorrectionLedger
 
                 return (int) $old->id;
             }
+            abort_if(app(PharmacyContainerCustodyLedger::class)->established($executionId), 409, 'Yield corrections require container-level reconciliation after custody is established.');
             abort_unless((int) $execution->version === $data['version'], 409, 'The execution evidence changed. Refresh before proposing a yield correction.');
             abort_if(DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'An output yield correction is already awaiting review.');
             abort_if(DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'Resolve pending output custody before proposing a yield correction.');

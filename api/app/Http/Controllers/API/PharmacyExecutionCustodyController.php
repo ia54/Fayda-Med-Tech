@@ -49,12 +49,14 @@ class PharmacyExecutionCustodyController extends Controller
             ['id', 'created_by', 'execution_version', 'proposal', 'evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at']);
         $rows->getCollection()->transform(function ($row) {
             $row->proposal = json_decode($row->proposal, true, 512, JSON_THROW_ON_ERROR);
+            $row->container_record_id = DB::table('pharmacy_container_custody_records')->where('output_proposal_id', $row->id)->value('id');
 
             return $row;
         });
 
         return response()->json(['data' => $rows, 'execution_version' => $execution->version,
             'balance' => app(PharmacyExecutionCustodyLedger::class)->summary($r->user(), $executionId),
+            'container_established' => app(\App\Services\PharmacyContainerCustodyLedger::class)->established($executionId),
             'pending' => DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
             'yield_pending' => DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
             'release_enabled' => false]);
@@ -68,6 +70,15 @@ class PharmacyExecutionCustodyController extends Controller
     public function decide(Request $r, int $proposalId)
     {
         $data = $r->validate(['decision' => 'required|in:applied,rejected', 'evidence' => 'required|string|max:5000']);
+        $container = DB::table('pharmacy_container_custody_records')->where('output_proposal_id', $proposalId)->first();
+        if ($container) {
+            abort_unless($r->user()?->role === 'pharmacist' && $r->user()->status === 'active' && $r->user()->organization_id, 403);
+            $execution = DB::table('pharmacy_batch_executions')->find($container->execution_id);
+            $batch = $execution ? DB::table('pharmacy_batch_worksheets')->where('id', $execution->batch_id)->where('organization_id', $r->user()->organization_id)->first() : null;
+            abort_unless($batch, 404);
+            app(PharmacyAccess::class)->requireLocation($r->user(), $batch->location_id);
+            abort(409, 'Review the individual container findings through container custody.');
+        }
         app(PharmacyExecutionCustodyLedger::class)->decide($r->user(), $proposalId, $data['decision'], $data['evidence']);
 
         return response()->json(['data' => ['id' => $proposalId, 'release_enabled' => false]]);

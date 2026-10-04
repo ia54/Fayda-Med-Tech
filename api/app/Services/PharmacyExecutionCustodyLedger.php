@@ -29,6 +29,7 @@ class PharmacyExecutionCustodyLedger
         abort_unless(app()->environment(['local', 'testing']), 503);
         abort_unless($actor->role === 'pharmacist' && $actor->status === 'active' && $actor->organization_id, 403);
         validator(compact('decision', 'evidence'), ['decision' => 'required|in:applied,rejected', 'evidence' => 'required|string|max:5000'])->validate();
+        abort_unless(trim($evidence) !== '', 422, 'Review evidence is required.');
         DB::transaction(function () use ($actor, $proposalId, $decision, $evidence) {
             DB::table('organizations')->where('id', $actor->organization_id)->lockForUpdate()->first();
             $proposal = DB::table('pharmacy_execution_custody_proposals')->where('id', $proposalId)->lockForUpdate()->first();
@@ -46,6 +47,7 @@ class PharmacyExecutionCustodyLedger
                 return;
             }
             if ($decision === 'applied') {
+                app(PharmacyContainerCustodyLedger::class)->validateApplication($actor, $proposal);
                 $author = User::find($proposal->created_by);
                 abort_unless($author && $author->role === 'pharmacist' && $author->status === 'active' && (int) $author->organization_id === (int) $actor->organization_id, 409, 'The proposal author is no longer authorized.');
                 app(PharmacyAccess::class)->requireLocation($author, $batch->location_id);
@@ -117,6 +119,16 @@ class PharmacyExecutionCustodyLedger
 
     public function retain(User $actor, int $executionId, array $data): int
     {
+        return $this->retainRecord($actor, $executionId, $data, false);
+    }
+
+    public function retainContainers(User $actor, int $executionId, array $data): int
+    {
+        return $this->retainRecord($actor, $executionId, $data, true);
+    }
+
+    private function retainRecord(User $actor, int $executionId, array $data, bool $containers): int
+    {
         abort_unless(app()->environment(['local', 'testing']), 503);
         abort_unless($actor->role === 'pharmacist' && $actor->status === 'active' && $actor->organization_id, 403);
         $rules = ['request_id' => 'required|uuid', 'version' => 'required|integer|min:1',
@@ -124,9 +136,10 @@ class PharmacyExecutionCustodyLedger
         foreach (['retained_quarantined', 'disposed_output', 'unaccounted_output'] as $field) {
             $rules[$field] = 'required|numeric|min:0|max:999999.999|decimal:0,3';
         }
+        if ($containers) { $rules = ['request_id' => 'required|uuid', 'source_hash' => 'required|string|regex:/^[a-f0-9]{64}$/', 'decision' => 'required|array']; }
         $data = validator($data, $rules)->validate();
 
-        return DB::transaction(function () use ($actor, $executionId, $data) {
+        return DB::transaction(function () use ($actor, $executionId, $data, $containers) {
             DB::table('organizations')->where('id', $actor->organization_id)->lockForUpdate()->first();
             $execution = DB::table('pharmacy_batch_executions')->where('id', $executionId)->lockForUpdate()->first();
             abort_unless($execution, 404);
@@ -141,6 +154,15 @@ class PharmacyExecutionCustodyLedger
 
                 return (int) $old->id;
             }
+            if ($containers) {
+                [$containerSource, $containerProjection] = app(PharmacyContainerCustodyLedger::class)->prepare($actor, $executionId, $data);
+                $data = ['request_id' => $data['request_id'], 'version' => (int) $execution->version,
+                    'unit' => $containerProjection['unit'], 'evidence' => $containerProjection['evidence'],
+                    'retained_quarantined' => $containerProjection['retained_quarantined'], 'disposed_output' => $containerProjection['disposed_output'],
+                    'unaccounted_output' => $containerProjection['unaccounted_output']];
+            } else {
+                abort_if(app(PharmacyContainerCustodyLedger::class)->established($executionId), 409, 'Use container custody to reconcile established container balances.');
+            }
             abort_unless((int) $execution->version === $data['version'], 409, 'The execution evidence changed. Refresh before proposing custody.');
             abort_if(DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'An output custody proposal is already awaiting review.');
             abort_if(DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'Resolve the pending yield correction before proposing output custody.');
@@ -154,6 +176,7 @@ class PharmacyExecutionCustodyLedger
                 'source_hash' => $digest->digest($snapshot), 'proposal' => json_encode($proposal, JSON_THROW_ON_ERROR),
                 'proposal_hash' => $digest->digest($proposal), 'evidence' => $data['evidence'], 'created_at' => now(),
             ]);
+            if ($containers) { app(PharmacyContainerCustodyLedger::class)->record($executionId, $id, $containerSource, $containerProjection); }
             DB::table('pharmacy_compounding_events')->insert(['formulation_id' => $batch->formulation_id, 'batch_id' => $batch->id,
                 'actor_id' => $actor->id, 'action' => 'execution_custody_proposed',
                 'details' => json_encode(['proposal_id' => $id, 'execution_id' => $executionId, 'stock_adjusted' => false, 'release_enabled' => false], JSON_THROW_ON_ERROR), 'created_at' => now()]);
