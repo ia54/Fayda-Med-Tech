@@ -21,6 +21,7 @@ class ClientDashboardController extends Controller
      */
     public function index(Request $request)
     {
+        abort_unless($request->user()->organization_id, 403);
         try {
             $user = $request->user();
 
@@ -30,7 +31,7 @@ class ClientDashboardController extends Controller
             })->get();
 
             // 2. Stats
-            $activeCase = $cases->whereIn('status', ['active', 'open', 'Active', 'pending_settlement'])->first();
+            $activeCase = $cases->whereIn('status', ['New', 'Intake', 'Active', 'Demand', 'Settlement', 'active', 'open', 'pending_settlement'])->first();
             $pendingTasksCount = DB::table('case_tasks')
                 ->whereIn('case_id', $cases->pluck('id'))
                 ->where('assigned_to', $user->id)
@@ -38,20 +39,20 @@ class ClientDashboardController extends Controller
                 ->count();
 
             // 3. Pending Signatures count
-            $pendingSignaturesCount = Document::whereHas('signers', function($q) use ($user) {
+            $pendingSignaturesCount = Document::visibleTo($user)->whereHas('signers', function($q) use ($user) {
                 $q->where(function($sq) use ($user) {
                     $sq->where('user_id', $user->id)
-                       ->orWhere('email', $user->email);
+                       ;
                 })->where('status', 'pending');
             })->count();
 
             // 4. Recent Documents (Related to their cases)
             $caseIds = $cases->pluck('id')->toArray();
-            $documents = Document::where(function($q) use ($user, $caseIds) {
+            $documents = Document::visibleTo($user)->where(function($q) use ($user, $caseIds) {
                 $q->whereHas('signers', function($sq) use ($user) {
                     $sq->where('user_id', $user->id)
-                       ->orWhere('email', $user->email);
-                })->orWhereIn('metadata->case_id', $caseIds);
+                       ;
+                })->orWhereIn('case_id', $caseIds);
             })
                 ->latest()
                 ->limit(5)
@@ -69,9 +70,9 @@ class ClientDashboardController extends Controller
 
             // 5. Billing Summary (Related to their cases)
             $totalBilled = Invoice::whereIn('case_id', $caseIds)->sum('amount');
-            $paidAmount = Invoice::whereIn('case_id', $caseIds)
-                ->where('status', 'paid')
-                ->sum('amount');
+            $paidAmount = Payment::whereHas('invoice', function ($query) use ($caseIds) {
+                $query->whereIn('case_id', $caseIds);
+            })->sum('amount');
             
             $recentInvoices = Invoice::whereIn('case_id', $caseIds)
                 ->with('case')
@@ -144,11 +145,11 @@ class ClientDashboardController extends Controller
         try {
             $user = $request->user();
 
-            $documents = Document::with(['signers'])
+            $documents = Document::visibleTo($user)->with(['signers'])
                 ->whereHas('signers', function($q) use ($user) {
                     $q->where(function($sq) use ($user) {
                         $sq->where('user_id', $user->id)
-                           ->orWhere('email', $user->email);
+                           ;
                     })->whereIn('status', ['pending', 'sent']);
                 })
                 ->latest()

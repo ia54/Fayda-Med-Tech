@@ -22,7 +22,7 @@ import { useGetProviderStatsQuery } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ProviderDashboard() {
-  const { data: providerData, isLoading } = useGetProviderStatsQuery()
+  const { data: providerData, isLoading, isError, refetch } = useGetProviderStatsQuery()
 
   const statsData = providerData?.data?.stats || {
     total_claims: 0,
@@ -85,6 +85,8 @@ export default function ProviderDashboard() {
     )
   }
 
+  if (isError) return <div role="alert" className="space-y-3"><p>Could not load the provider dashboard.</p><Button onClick={() => refetch()}>Try again</Button></div>
+
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "paid": return "bg-emerald-100 text-emerald-700 border-emerald-200"
@@ -123,7 +125,7 @@ export default function ProviderDashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat, index) => (
           <Card key={index} className="hover:shadow-lg transition-all duration-300 bg-card/50 backdrop-blur-sm border-border/50">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -132,24 +134,11 @@ export default function ProviderDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stat.value}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                <span className="text-emerald-500">{stat.change}</span> since last month
-              </p>
+
             </CardContent>
           </Card>
         ))}
-        <Card className="hover:shadow-lg transition-all duration-300 bg-card/50 backdrop-blur-sm border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">AI OCR Queue</CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">12</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Documents processing
-            </p>
-          </CardContent>
-        </Card>
+
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

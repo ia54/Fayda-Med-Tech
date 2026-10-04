@@ -21,7 +21,7 @@ class SettlementObserver
                 $settlement->case_id,
                 'legal',
                 'Settlement Recorded',
-                "A settlement of ${$settlement->settlement_amount} has been recorded with status '{$settlement->status}'.",
+                "A settlement of \${$settlement->settlement_amount} has been recorded with status '{$settlement->status}'.",
                 ['settlement_id' => $settlement->id, 'amount' => $settlement->settlement_amount]
             );
         }
@@ -32,7 +32,7 @@ class SettlementObserver
      */
     public function updated(CaseSettlement $settlement): void
     {
-        if ($settlement->isDirty('status') || $settlement->isDirty('settlement_amount')) {
+        if ($settlement->isDirty(['status', 'settlement_amount', 'attorney_fees', 'costs', 'other_deductions', 'notes', 'settlement_date'])) {
             $this->notifyParties($settlement, "Settlement Updated");
             
             if ($settlement->case_id) {
@@ -40,8 +40,8 @@ class SettlementObserver
                     $settlement->case_id,
                     'legal',
                     'Settlement Updated',
-                    "Settlement status changed to '{$settlement->status}' with amount ${$settlement->settlement_amount}.",
-                    ['settlement_id' => $settlement->id, 'status' => $settlement->status]
+                    "Settlement details updated with status '{$settlement->status}' with amount \${$settlement->settlement_amount}.",
+                    ['settlement_id' => $settlement->id, 'status' => $settlement->status, 'allocations' => $settlement->only(['settlement_amount', 'attorney_fees', 'costs', 'other_deductions']), 'details' => $settlement->only(['notes', 'settlement_date']), 'previous_details' => array_intersect_key($settlement->getOriginal(), array_flip(['notes', 'settlement_date'])), 'previous_allocations' => array_intersect_key($settlement->getOriginal(), array_flip(['settlement_amount', 'attorney_fees', 'costs', 'other_deductions']))]
                 );
             }
         }
@@ -51,7 +51,7 @@ class SettlementObserver
     {
         $case = $settlement->case;
         if ($case) {
-            $message = "Settlement for Case #{$case->case_number} has been updated to ${$settlement->settlement_amount} with status '{$settlement->status}'.";
+            $message = "Settlement for Case #{$case->case_number} has been updated to \${$settlement->settlement_amount} with status '{$settlement->status}'.";
             $url = "/dashboard/legal/settlements";
 
             // Notify Assigned Attorneys

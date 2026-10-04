@@ -7,6 +7,7 @@ use App\Models\Eob;
 use App\Models\Invoice;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class EobController extends Controller
 {
@@ -86,9 +87,9 @@ class EobController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'case_id' => 'nullable|exists:cases,id',
-            'document_id' => 'nullable|exists:documents,id',
-            'invoice_id' => 'nullable|exists:invoices,id',
+            'case_id' => ['nullable', Rule::exists('cases', 'id')->where('organization_id', $request->user()->organization_id)->whereNull('deleted_at')],
+            'document_id' => ['nullable', Rule::exists('documents', 'id')->where('organization_id', $request->user()->organization_id)->whereNull('deleted_at')],
+            'invoice_id' => ['nullable', Rule::exists('invoices', 'id')->where('organization_id', $request->user()->organization_id)->whereNull('deleted_at')],
             'provider_name' => 'required|string|max:255',
             'patient_name' => 'required|string|max:255',
             'payer_name' => 'required|string|max:255',
@@ -115,11 +116,13 @@ class EobController extends Controller
         $eob = Eob::create([
             'organization_id' => $request->user()->organization_id,
             'uploaded_by' => $request->user()->id,
+            // Manual entry has no model-derived confidence.
+            'ai_confidence' => null,
             ...$request->only([
                 'case_id', 'document_id', 'invoice_id', 'provider_name',
                 'patient_name', 'payer_name', 'billed_amount', 'allowed_amount',
                 'paid_amount', 'patient_responsibility', 'service_date', 'eob_date',
-                'ai_confidence', 'status', 'extracted_data', 'notes'
+                'status', 'extracted_data', 'notes'
             ])
         ]);
 
@@ -157,8 +160,8 @@ class EobController extends Controller
             ->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
-            'case_id' => 'nullable|exists:cases,id',
-            'invoice_id' => 'nullable|exists:invoices,id',
+            'case_id' => ['nullable', Rule::exists('cases', 'id')->where('organization_id', $request->user()->organization_id)->whereNull('deleted_at')],
+            'invoice_id' => ['nullable', Rule::exists('invoices', 'id')->where('organization_id', $request->user()->organization_id)->whereNull('deleted_at')],
             'provider_name' => 'sometimes|required|string|max:255',
             'patient_name' => 'sometimes|required|string|max:255',
             'payer_name' => 'sometimes|required|string|max:255',
@@ -182,11 +185,11 @@ class EobController extends Controller
             ], 422);
         }
 
-        $eob->update($request->only([
+        $eob->update(['ai_confidence' => null] + $request->only([
             'case_id', 'invoice_id', 'provider_name', 'patient_name',
             'payer_name', 'billed_amount', 'allowed_amount', 'paid_amount',
             'patient_responsibility', 'service_date', 'eob_date',
-            'ai_confidence', 'status', 'extracted_data', 'notes'
+            'status', 'extracted_data', 'notes'
         ]));
 
         return response()->json([

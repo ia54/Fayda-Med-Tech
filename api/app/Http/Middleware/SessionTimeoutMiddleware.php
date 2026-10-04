@@ -43,7 +43,7 @@ class SessionTimeoutMiddleware
                 // Check if session has expired
                 if ($lastActivity) {
                     $lastActivityTime = \Carbon\Carbon::parse($lastActivity);
-                    if (now()->diffInMinutes($lastActivityTime) > $this->timeout) {
+                    if ($lastActivityTime->lt(now()->subMinutes($this->timeout))) {
                         $token = Token::find($tokenId);
                         if ($token) {
                             $token->revoke(); // Passport use revoke() instead of delete() for tokens usually

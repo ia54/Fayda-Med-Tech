@@ -38,7 +38,14 @@ export function ClientLayoutProvider({
         {children}
         <Toaster />
         <SonnerToaster />
-        <Analytics />
+        <Analytics beforeSend={(event) => {
+          // Never transmit recovery links, credentials or authentication URLs.
+          try {
+            const url = new URL(event.url);
+            if (url.pathname.startsWith("/auth/") || url.searchParams.has("token")) return null;
+          } catch { return null; }
+          return event;
+        }} />
         <ModalHost />
       </ThemeProvider>
     </ReduxProvider>

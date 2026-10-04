@@ -69,15 +69,11 @@ export const UsersTableTab = forwardRef<UsersTableTabRef>((props, ref) => {
   };
 
   // Table columns
-  const columns = useMemo(
-    () =>
-      getUserColumns({
-        onView: (user) => modal.openModal("view", user),
-        onEdit: (user) => modal.openModal("edit", user),
-        onDelete: handleDelete,
-      }),
-    [modal.openModal, handleDelete]
-  );
+  const columns = getUserColumns({
+    onView: (user) => modal.openModal("view", user),
+    onEdit: (user) => modal.openModal("edit", user),
+    onDelete: handleDelete,
+  });
 
   // Custom filters component
   const customFilters = useMemo(
@@ -201,7 +197,7 @@ export const UsersTableTab = forwardRef<UsersTableTabRef>((props, ref) => {
         user={modal.selectedUser}
         onSubmit={modal.handleSubmit}
         isLoading={tableData.isCreating || tableData.isUpdating}
-        apiErrors={modal.apiErrors}
+        apiErrors={modal.apiErrors ?? undefined}
       />
     </>
   );

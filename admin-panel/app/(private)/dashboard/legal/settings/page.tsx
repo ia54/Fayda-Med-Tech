@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,7 +32,8 @@ export default function FirmSettingsPage() {
 
 function FirmSettingsContent() {
   const { toast } = useToast();
-  const { data: orgData, isLoading: isOrgLoading } = useGetFirmOrganizationQuery();
+  const { data: orgData, isLoading: isOrgLoading, isError, refetch } = useGetFirmOrganizationQuery();
+  const [saveError, setSaveError] = useState("");
   const [updateOrg, { isLoading: isUpdating }] = useUpdateFirmOrganizationMutation();
 
   const [formData, setFormData] = useState({
@@ -75,6 +77,7 @@ function FirmSettingsContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError("");
     try {
       const submitData = new FormData();
       Object.entries(formData).forEach(([key, value]) => {
@@ -90,7 +93,8 @@ function FirmSettingsContent() {
         title: "Success",
         description: "Organization settings updated successfully",
       });
-    } catch (error) {
+    } catch (error: any) {
+      setSaveError(Object.values(error.data?.errors || {}).flat().join(" ") || error.data?.message || "Could not save organization settings.");
       toast({
         title: "Error",
         description: "Failed to update settings",
@@ -98,6 +102,8 @@ function FirmSettingsContent() {
       });
     }
   };
+
+  if (isError) return <div role="alert">Could not load organization settings. <Button onClick={() => refetch()}>Try again</Button></div>;
 
   if (isOrgLoading) {
     return (
@@ -112,8 +118,9 @@ function FirmSettingsContent() {
     <div className="min-h-screen bg-transparent p-4 md:p-8 space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-emerald-900 dark:text-white">Firm Settings</h1>
+        {saveError && <p role="alert" className="text-destructive">{saveError}</p>}
         <p className="text-emerald-700 dark:text-slate-300">
-          Manage your organization's profile and preferences
+          Manage your organization&apos;s profile and preferences
         </p>
       </div>
 
@@ -130,7 +137,7 @@ function FirmSettingsContent() {
               <div className="flex flex-col items-center gap-4">
                 <div className="relative w-32 h-32 rounded-xl border-2 border-dashed border-emerald-200 dark:border-emerald-800 flex items-center justify-center overflow-hidden bg-emerald-50/50 dark:bg-emerald-900/20">
                   {logoPreview ? (
-                    <img src={logoPreview} alt="Logo" className="w-full h-full object-contain" />
+                    <Image unoptimized width={128} height={128} src={logoPreview} alt="Logo" className="w-full h-full object-contain" />
                   ) : (
                     <Building2 className="w-12 h-12 text-emerald-300" />
                   )}
@@ -140,7 +147,7 @@ function FirmSettingsContent() {
                     <Upload className="w-4 h-4" />
                     Change Logo
                   </div>
-                  <Input id="logo-upload" type="file" className="hidden" onChange={handleLogoChange} accept="image/*" />
+                  <Input id="logo-upload" type="file" className="hidden" onChange={handleLogoChange} accept=".jpg,.jpeg,.png,.gif" />
                 </Label>
               </div>
               <Separator className="bg-emerald-100 dark:bg-emerald-900/50" />
@@ -160,7 +167,7 @@ function FirmSettingsContent() {
             <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm border-emerald-100 dark:border-emerald-900/50">
               <CardHeader>
                 <CardTitle className="text-emerald-900 dark:text-white">Organization Details</CardTitle>
-                <CardDescription className="dark:text-slate-300">Update your firm's public information</CardDescription>
+                <CardDescription className="dark:text-slate-300">Update your firm&apos;s public information</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

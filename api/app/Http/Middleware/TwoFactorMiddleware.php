@@ -2,50 +2,21 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\MfaService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class TwoFactorMiddleware
 {
-    /**
-     * Handle an incoming request.
-     * Enforces 2FA for roles that require it (PDF Section 16).
-     */
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-
-        if (!$user) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Unauthorized'
-            ], 401);
+        abort_unless($user && $user->status === 'active', 401, 'Please sign in with an active account.');
+        if (($user->two_factor_enabled || app(MfaService::class)->required($user)) &&
+            (!$user->two_factor_enabled || !$user->token()?->mfa_verified_at)) {
+            return response()->json(['status' => false, 'message' => 'Sign in again to verify two-factor authentication.', 'mfa_required' => true], 401);
         }
-
-        // Check if 2FA is required for this user's role
-        $rolesRequiring2FA = ['admin', 'firm_admin'];
-
-        if (in_array($user->role, $rolesRequiring2FA)) {
-            // Check if 2FA is enabled for the user
-            if (!$user->two_factor_enabled) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Two-factor authentication is required for your role',
-                    'require_2fa' => true
-                ], 403);
-            }
-
-            // Check if 2FA was verified in this session
-            if (!$request->session() || !$request->session()->get('2fa_verified')) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Two-factor authentication verification required',
-                    'require_2fa_verification' => true
-                ], 403);
-            }
-        }
-
         return $next($request);
     }
 }

@@ -14,7 +14,7 @@ export interface Eob {
   patient_responsibility: number;
   service_date?: string;
   eob_date?: string;
-  ai_confidence?: number;
+  ai_confidence?: number | null;
   status: 'pending' | 'processed' | 'matched' | 'rejected';
   extracted_data?: any;
   notes?: string;

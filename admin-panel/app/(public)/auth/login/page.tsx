@@ -3,7 +3,7 @@
 import type React from "react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useLoginMutation } from "@/store/api/authApiSlice";
+import { AuthResponse, MfaRequiredResponse, useLoginMutation } from "@/store/api/authApiSlice";
 import { setCredentials } from "@/store/slices/authSlice";
 import { useDispatch } from "react-redux";
 import { Button } from "@/components/ui/button";
@@ -20,9 +20,6 @@ import { Separator } from "@/components/ui/separator";
 import {
   Eye,
   EyeOff,
-  Users,
-  Copy,
-  Check,
   Info,
   AlertCircle,
 } from "lucide-react";
@@ -32,124 +29,50 @@ import { useModal } from "@/hooks/useModal";
 import { redirectToDashboard } from "@/lib/roleUtils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+import { MfaChallenge } from "@/components/auth/MfaChallenge";
+
 export default function LoginPage() {
+  const [challenge, setChallenge] = useState<MfaRequiredResponse | null>(null);
+  const [enrollMfa, setEnrollMfa] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [login, { isLoading }] = useLoginMutation();
+  const [login, { isLoading, reset }] = useLoginMutation();
   const dispatch = useDispatch();
   const router = useRouter();
   const { openConfirmModal } = useModal();
 
-  const demoAccounts = [
-    {
-      role: "Super Admin",
-      email: "admin@faydatech.com",
-      password: "password123",
-      color: "bg-red-500/10 text-red-700",
-    },
-    {
-      role: "Firm Admin",
-      email: "firmadmin@smithlegal.com",
-      password: "password123",
-      color: "bg-blue-500/10 text-blue-700",
-    },
-    {
-      role: "Attorney",
-      email: "attorney@smithlegal.com",
-      password: "password123",
-      color: "bg-orange-500/10 text-orange-700",
-    },
-    {
-      role: "Medical Biller",
-      email: "biller@wellnessmedical.com",
-      password: "password123",
-      color: "bg-purple-500/10 text-purple-700",
-    },
-    {
-      role: "Provider Staff",
-      email: "staff@wellnessmedical.com",
-      password: "password123",
-      color: "bg-green-500/10 text-green-700",
-    },
-    {
-      role: "Client (Patient)",
-      email: "client@example.com",
-      password: "password123",
-      color: "bg-cyan-500/10 text-cyan-700",
-    },
-  ];
-
-  const copyToClipboard = async (text: string, field: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedField(field);
-      setTimeout(() => setCopiedField(null), 2000);
-    } catch (err) {
-      console.error("Failed to copy: ", err);
-    }
-  };
-
-  const copyCredentials = (email: string, password: string) => {
-    setEmail(email);
-    setPassword(password);
-    setCopiedField("credentials");
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
   const showInfo = () => {
     openConfirmModal(
       "Login Information",
-      "Use one of the demo accounts to log in. Each account has a specific role with different permissions in the system.",
+      "Use the account assigned by your organization administrator. Contact them if you need access.",
       () => {
         console.log("Info modal closed");
       }
     );
   };
 
+  const completeLogin = (result: AuthResponse) => {
+    dispatch(setCredentials({ token: {
+      access_token: result.access_token, refresh_token: result.refresh_token,
+      token_type: result.token_type, expires_in: result.expires_in,
+    }, user: result.user }));
+    redirectToDashboard(result.user, router);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null); // Clear any previous errors
-
+    e.preventDefault(); setError(null);
     try {
-      const result = await login({ email, password }).unwrap();
-
-      if (result.status) {
-        dispatch(
-          setCredentials({
-            token: {
-              access_token: result.access_token,
-              refresh_token: result.refresh_token,
-              token_type: result.token_type,
-              expires_in: result.expires_in,
-            },
-            user: result.user,
-          })
-        );
-
-        // Redirect based on user role using the utility function
-        console.log("Login result:", result);
-        console.log("User object:", result.user);
-        console.log("User role:", result.user.role);
-        console.log("Router object:", router);
-
-        redirectToDashboard(result.user, router);
-      } else {
-        // Handle API response with status false
-        setError(result.message || "Invalid login credentials");
-      }
-    } catch (err: any) {
-      console.error("Login failed:", err);
-      // Handle different types of errors
-      if (err.data && err.data.message) {
-        setError(err.data.message);
-      } else if (err.status === 401) {
-        setError("Invalid email or password");
-      } else {
-        setError("An error occurred during login. Please try again.");
-      }
+      const result = await login({ email, password, enroll_mfa: enrollMfa }).unwrap();
+      reset(); setPassword("");
+      if ("mfa_required" in result) setChallenge(result);
+      else if (result.status) completeLogin(result);
+      else setError(result.message || "Unable to sign in.");
+    } catch (err: unknown) {
+      reset();
+      const response = err as { data?: { message?: string } };
+      setError(response.data?.message || "Unable to sign in. Please try again.");
     }
   };
 
@@ -179,7 +102,7 @@ export default function LoginPage() {
                 Sign in to your FaydaTech account
               </CardDescription>
             </div>
-            <Button variant="ghost" size="sm" onClick={showInfo}>
+            <Button variant="ghost" size="sm" aria-label="Login help" onClick={showInfo}>
               <Info className="h-4 w-4" />
             </Button>
           </div>
@@ -192,7 +115,7 @@ export default function LoginPage() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <form onSubmit={handleLogin} className="space-y-4">
+          <>{challenge ? <MfaChallenge challenge={challenge} onComplete={completeLogin} onCancel={() => { setChallenge(null); setError(null); }} /> : <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <Input
@@ -223,6 +146,7 @@ export default function LoginPage() {
                   variant="ghost"
                   size="sm"
                   className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? (
@@ -243,6 +167,8 @@ export default function LoginPage() {
               </Link>
             </div>
 
+            <label className="flex gap-2 text-sm"><input type="checkbox" checked={enrollMfa} onChange={e => setEnrollMfa(e.target.checked)} />Set up an authenticator for my account</label>
+
             <Button
               type="submit"
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
@@ -250,92 +176,13 @@ export default function LoginPage() {
             >
               {isLoading ? "Signing In..." : "Sign In"}
             </Button>
-          </form>
+          </form>}</>
 
           <Separator />
 
-          <div className="text-center text-sm text-muted-foreground">
-            Don't have an account?{" "}
-            <Link
-              href="/auth/signup"
-              className="text-primary hover:underline font-medium"
-            >
-              Sign up
-            </Link>
-          </div>
-
-          <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-            <h4 className="font-medium text-sm flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Demo Accounts - Click to Use
-            </h4>
-            <div className="space-y-2">
-              {demoAccounts.map((account, index) => (
-                <div
-                  key={index}
-                  className={`rounded-md p-3 border transition-all hover:shadow-md ${account.color}`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-xs">{account.role}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={() =>
-                        copyCredentials(account.email, account.password)
-                      }
-                    >
-                      {copiedField === "credentials" ? (
-                        <Check className="h-3 w-3 text-green-600" />
-                      ) : (
-                        <Copy className="h-3 w-3" />
-                      )}
-                      Use
-                    </Button>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono">{account.email}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-4 px-1"
-                        onClick={() =>
-                          copyToClipboard(account.email, `email-${index}`)
-                        }
-                      >
-                        {copiedField === `email-${index}` ? (
-                          <Check className="h-2 w-2 text-green-600" />
-                        ) : (
-                          <Copy className="h-2 w-2" />
-                        )}
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono">{account.password}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-4 px-1"
-                        onClick={() =>
-                          copyToClipboard(account.password, `password-${index}`)
-                        }
-                      >
-                        {copiedField === `password-${index}` ? (
-                          <Check className="h-2 w-2 text-green-600" />
-                        ) : (
-                          <Copy className="h-2 w-2" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground text-center">
-              Click "Use" to auto-fill credentials or copy individual fields
-            </p>
-          </div>
+          <p className="text-center text-sm text-muted-foreground">
+            Need an account? Contact your organization administrator for access.
+          </p>
         </CardContent>
       </Card>
     </div>

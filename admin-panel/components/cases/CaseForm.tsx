@@ -58,7 +58,10 @@ export function CaseForm({ initialData, onSuccess, onCancel }: CaseFormProps) {
     },
   })
 
+  const [saveError, setSaveError] = useState("")
+
   async function onSubmit(values: z.infer<typeof caseSchema>) {
+    setSaveError("")
     try {
       if (initialData?.id) {
         await updateCase({ id: initialData.id, data: values as any }).unwrap()
@@ -68,15 +71,17 @@ export function CaseForm({ initialData, onSuccess, onCancel }: CaseFormProps) {
         toast.success("Case created successfully")
       }
       onSuccess()
-    } catch (error) {
-      toast.error("An error occurred. Please try again.")
+    } catch (error: any) {
+      const message = Object.values(error.data?.errors || {}).flat().join(" ") || error.data?.message || "Could not save the case. Please try again."
+      setSaveError(message)
+      toast.error(message)
     }
   }
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField
             control={form.control}
             name="title"
@@ -120,7 +125,7 @@ export function CaseForm({ initialData, onSuccess, onCancel }: CaseFormProps) {
           )}
         />
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField
             control={form.control}
             name="status"
@@ -162,7 +167,7 @@ export function CaseForm({ initialData, onSuccess, onCancel }: CaseFormProps) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormField
             control={form.control}
             name="sol_date"
@@ -192,6 +197,7 @@ export function CaseForm({ initialData, onSuccess, onCancel }: CaseFormProps) {
           />
         </div>
 
+        {saveError && <p role="alert" className="text-destructive">{saveError}</p>}
         <div className="flex justify-end gap-3 pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel

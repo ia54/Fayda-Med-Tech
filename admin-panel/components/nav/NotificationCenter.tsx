@@ -18,9 +18,21 @@ import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 
 export function NotificationCenter() {
-  const { data, isLoading } = useGetNotificationsQuery({ page: 1 });
-  const [markAsRead] = useMarkAsReadMutation();
-  const [markAllAsRead] = useMarkAllAsReadMutation();
+  const { data, isLoading, isError, refetch } = useGetNotificationsQuery({ page: 1 });
+  const [markAsRead, { isLoading: isMarkingRead }] = useMarkAsReadMutation();
+  const [markAllAsRead, { isLoading: isMarkingAll }] = useMarkAllAsReadMutation();
+
+  const [actionError, setActionError] = React.useState<string | null>(null);
+
+  const markRead = async (id?: string) => {
+    setActionError(null);
+    try {
+      if (id) await markAsRead(id).unwrap();
+      else await markAllAsRead().unwrap();
+    } catch {
+      setActionError("Could not mark notifications as read. Please try again.");
+    }
+  };
 
   const notifications = data?.data?.notifications || [];
   const unreadCount = data?.data?.unread_count || 0;
@@ -37,13 +49,13 @@ export function NotificationCenter() {
   const handleMarkAsRead = async (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    await markAsRead(id);
+    await markRead(id);
   };
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative hover:bg-primary/10 transition-colors">
+        <Button aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"} variant="ghost" size="icon" className="relative hover:bg-primary/10 transition-colors">
           <Bell className="h-5 w-5 text-muted-foreground" />
           {unreadCount > 0 && (
             <Badge 
@@ -54,23 +66,30 @@ export function NotificationCenter() {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 p-0 bg-card/95 backdrop-blur-md border-border/50 shadow-2xl">
+      <DropdownMenuContent align="end" className="w-80 max-w-[calc(100vw-2rem)] p-0 bg-card/95 backdrop-blur-md border-border/50 shadow-2xl">
         <div className="flex items-center justify-between p-4 border-b border-border/50">
           <DropdownMenuLabel className="p-0 font-bold text-lg">Notifications</DropdownMenuLabel>
           {unreadCount > 0 && (
             <Button 
               variant="ghost" 
               size="sm" 
-              onClick={() => markAllAsRead()}
+              disabled={isMarkingAll || isMarkingRead}
+              onClick={() => markRead()}
               className="h-8 px-2 text-xs text-primary hover:text-primary/80 hover:bg-primary/5"
             >
               Mark all as read
             </Button>
           )}
         </div>
+        {actionError && <p role="alert" className="px-4 py-3 text-sm text-destructive">{actionError}</p>}
         <div className="max-h-[400px] overflow-y-auto scrollbar-hide">
           {isLoading ? (
             <div className="p-8 text-center text-muted-foreground animate-pulse">Loading notifications...</div>
+          ) : isError ? (
+            <div role="alert" className="p-6 text-center text-sm">
+              <p>Could not load notifications.</p>
+              <Button variant="outline" className="mt-3" onClick={() => refetch()}>Try again</Button>
+            </div>
           ) : notifications.length === 0 ? (
             <div className="p-12 text-center text-muted-foreground">
               <div className="bg-muted/30 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-4">
@@ -109,6 +128,7 @@ export function NotificationCenter() {
                       variant="ghost" 
                       size="sm" 
                       className="h-6 px-2 text-[10px] hover:bg-primary/10"
+                      disabled={isMarkingRead || isMarkingAll}
                       onClick={(e) => handleMarkAsRead(notification.id, e)}
                     >
                       Dismiss
@@ -120,7 +140,7 @@ export function NotificationCenter() {
           )}
         </div>
         <DropdownMenuSeparator className="m-0 bg-border/50" />
-        <Link href="/notifications" className="block p-3 text-center text-xs font-bold text-primary hover:bg-primary/5 transition-colors">
+        <Link href="/dashboard/notifications" className="block p-3 text-center text-xs font-bold text-primary hover:bg-primary/5 transition-colors">
           View all notifications
         </Link>
       </DropdownMenuContent>
