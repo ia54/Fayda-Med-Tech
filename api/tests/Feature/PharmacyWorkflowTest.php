@@ -5094,6 +5094,24 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson($detail)->assertStatus(503); $this->postJson($base, $body)->assertStatus(503);
     }
 
+    public function test_unverifiable_repackaging_can_only_be_rejected_by_independent_reviewer(): void
+    {
+        [$execution, $lot, $reviewer] = $this->containerCustodyFixture();
+        $id = app(\App\Services\PharmacyContainerRepackagingLedger::class)->retain($this->actor, $execution->id, $this->repackagingInput($execution->id));
+        $before = (array) DB::table('pharmacy_batch_executions')->find($execution->id);
+        DB::table('pharmacy_container_repackaging')->where('id', $id)->update(['proposal_hash' => str_repeat('0', 64)]);
+        $url = "/api/pharmacy/repackaging/$id";
+        $this->getJson($url)->assertStatus(409);
+        $this->postJson("$url/decision", ['decision' => 'rejected', 'evidence' => 'SYNTHETIC damaged evidence'])->assertUnprocessable();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("$url/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertStatus(409);
+        $this->postJson("$url/decision", ['decision' => 'rejected', 'evidence' => 'SYNTHETIC independent rejection of damaged evidence'])->assertOk()->assertJsonPath('data.status', 'rejected');
+        $this->assertSame($before, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $this->assertDatabaseHas('pharmacy_container_identifier_reservations', ['repackaging_id' => $id, 'identifier' => 'SYN-REPACK-A']);
+        $this->assertDatabaseHas('pharmacy_container_repackaging', ['id' => $id, 'proposal_hash' => str_repeat('0', 64), 'status' => 'rejected']);
+        $this->getJson('/api/pharmacy/repackaging')->assertOk()->assertJsonPath('data.total', 0);
+    }
+
     private function containerCustodyFixture(?string $yieldQuantity = null): array
     {
         [$execution, $lot, $reviewer, $body, $packaging] = $this->packagingFixture($yieldQuantity);

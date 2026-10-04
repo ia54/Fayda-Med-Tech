@@ -20,7 +20,7 @@ The [USP stability reference](https://doi.usp.org/USPNF/USPNF_S203286_10101_01.h
 6. Separately authorize product release only after accepted clinical/site controls, current quality/BUD review, reconciled custody and prescription/label checks. Revalidate at reservation and handover; recalls, expiry, changed evidence and incomplete provider/operational requirements block dispensing.
 7. Verify persistence, independent review, tenant/site isolation, stale-version rejection, atomic audit rollback, recalls, failed tests, date/time boundaries, label lineage and no duplicate stock movements across supported databases. Complete synthetic browser journeys and pharmacist/device acceptance before production activation.
 
-## Current implementation and evidence
+## Implementation overview and historical packaging evidence
 
 Published packaging head: `39ff082de4af7b75dbb58467021a8c93337c5bd4`. All three hosted workflows passed: admin `37207799599`, backend `37207799604`, Linux `37207799694`. The exact source archive is verified (1,127 files / 125 migrations). Matching Linux artifact 11305935970 is verified (3,039 files). All pharmacy routes remain local/testing only; production is unchanged.
 
@@ -34,7 +34,7 @@ Prior Chrome acceptance covered independent protocol, quality and dating review,
 
 ## Remaining implementation and acceptance
 
-- Finished-container custody persistence, reconciliation with the existing aggregate output ledger, labels and final release authorization, with revalidation through reservation and handover.
+- Container custody, recount and repackaging persistence/reconciliation are implemented in the later sections below. Finished-product labels and final release authorization, with revalidation through reservation and handover, remain unfinished.
 - Applicable official standards, site capability, sterile/nonsterile scope, provider connections and pharmacist/device acceptance. Software tests do not establish clinical adequacy.
 - Recovery UI for corrupt evidence: history and rejection APIs preserve a recovery path, but detail error screens do not yet expose rejection.
 
@@ -114,3 +114,7 @@ Dedicated repackaging frontend is now implemented locally: typed API bindings, p
 ### Repackaging review discovery
 
 A local pending-proposal list now exposes oldest-first repackaging reviews across assigned locations, with location filtering, pagination and an independent-review filter. Technicians can read the list but cannot request the pharmacist review filter. Server-side organization/site scope and proposal/execution/addendum authorship exclusions match the decision boundary. Applied or rejected proposals leave the pending list. HTTP boundary checks passed 1 test / 59 assertions; TypeScript and route inventory (166 protected pharmacy / 409 total) passed. Optimized 120-page build passed. Chrome verified the empty pending list, location and independent-review filters, and their persistence after reload. The pilot has no pending repackaging record; pending-row visibility and access boundaries were verified through HTTP tests. This increment is unpublished.
+
+### Repackaging integrity rejection recovery
+
+Local detail UI now offers rejection only after an integrity-conflict response, with a pending history summary and an independent pharmacist. It offers no application action on this path. Required rejection evidence is retained by the existing scoped decision API. HTTP regression passed 1 test / 19 assertions: self-review and application are refused, independent rejection retains damaged evidence and reserved identifiers, execution remains unchanged, and the proposal leaves the pending list. TypeScript passed. Optimized 120-page build passed. Chrome verified an intentionally mismatched new synthetic proposal: independent rejection persisted after reload and removed it from the review list. Database comparison preserved execution, ingredients and earlier repackaging; the reserved identifier and damaged evidence remain retained. This increment is unpublished.

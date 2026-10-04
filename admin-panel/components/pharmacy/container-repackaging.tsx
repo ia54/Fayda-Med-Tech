@@ -3,7 +3,7 @@ import {FormEvent,useRef,useState} from 'react'
 import {Button} from '@/components/ui/button'
 import {useAuth} from '@/hooks/useAuth'
 import {Field,errorMessage} from './fields'
-import {CompoundBatch,RepackagingContext,RepackagingQuantity,useGetRepackagingContextQuery,useGetRepackagingHistoryQuery,useGetRepackagingProposalQuery,useCreateRepackagingProposalMutation,useDecideRepackagingProposalMutation} from '@/store/api/pharmacyApiSlice'
+import {CompoundBatch,RepackagingSummary,RepackagingContext,RepackagingQuantity,useGetRepackagingContextQuery,useGetRepackagingHistoryQuery,useGetRepackagingProposalQuery,useCreateRepackagingProposalMutation,useDecideRepackagingProposalMutation} from '@/store/api/pharmacyApiSlice'
 const UNPACKAGED='__UNPACKAGED__'
 function Evidence({name,label}:{name:string;label:string}){return <label className="grid gap-1 text-sm">{label}<textarea name={name} required maxLength={5000} rows={3} className="border rounded p-2 bg-background"/></label>}
 export function ContainerRepackaging({batch}:{batch:CompoundBatch}){
@@ -19,7 +19,7 @@ export function ContainerRepackaging({batch}:{batch:CompoundBatch}){
   <div className="flex gap-3 items-center"><Button variant="outline" disabled={q.isFetching||page===1} onClick={()=>setPage(page-1)}>Previous repackaging records</Button><span>Page {page} / {q.currentData.data.last_page}</span><Button variant="outline" disabled={q.isFetching||page>=q.currentData.data.last_page} onClick={()=>setPage(page+1)}>Next repackaging records</Button></div>
   {q.currentData.pending_output_change?<p>Resolve the pending repackaging, custody or yield correction before retaining another movement.</p>:user?.role==='pharmacist'&&<Button variant="outline" disabled={q.isFetching} onClick={()=>{setCreating(!creating);setSelected(null)}}>{creating?'Close repackaging form':'Record repackaging findings'}</Button>}
   {creating&&!q.currentData.pending_output_change&&<fieldset disabled={q.isFetching} className="min-w-0"><Context id={id} onDone={value=>{setCreating(false);setSelected(value);setPage(1)}}/></fieldset>}
-  {selected&&<Detail key={selected} id={selected} batch={batch}/>}
+  {selected&&<Detail key={selected} id={selected} batch={batch} summary={q.currentData.data.data.find(p=>p.id===selected)}/>}
  </section>
 }
 function Context({id,onDone}:{id:number;onDone:(id:number)=>void}){
@@ -68,10 +68,13 @@ function Create({context,onDone}:{context:RepackagingContext;onDone:(id:number)=
  </form>
 }
 function Quantity({label,value,unit}:{label:string;value:RepackagingQuantity;unit:string}){return <div className="border-b pb-2 space-y-1"><strong>{label}</strong><p>Before: {value.previous_quantity} · Out: {value.outgoing_quantity} · In: {value.incoming_quantity} · Final: {value.quantity} {unit}</p><p className="whitespace-pre-wrap break-words">{value.observation_evidence}</p></div>}
-function Detail({id,batch}:{id:number;batch:CompoundBatch}){
+function Detail({id,batch,summary}:{id:number;batch:CompoundBatch;summary?:RepackagingSummary}){
  const {user}=useAuth();const q=useGetRepackagingProposalQuery(id);const [save,{isLoading}]=useDecideRepackagingProposalMutation();const [error,setError]=useState('');const [success,setSuccess]=useState('')
  async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setError('');setSuccess('');const f=new FormData(e.currentTarget);try{await save({id,decision:String(f.get('decision')) as 'applied'|'rejected',evidence:String(f.get('evidence'))}).unwrap();setSuccess('Repackaging decision retained. Output remains quarantined; no medication release authorized.')}catch(e){setError(errorMessage(e))}}
- if(q.isError)return <p role="alert">Could not load repackaging evidence. <Button onClick={()=>q.refetch()}>Retry repackaging detail</Button></p>
+ const independentSummary=summary&&Number(user?.id)!==summary.created_by&&Number(user?.id)!==batch.execution?.created_by&&!batch.execution?.addenda.some(a=>a.created_by===Number(user?.id))
+ if(q.isError)return <article className="border rounded p-4 space-y-3"><p role="alert">Could not load repackaging evidence. <Button onClick={()=>q.refetch()}>Retry repackaging detail</Button></p>
+  {q.error&&'status' in q.error&&q.error.status===409&&summary?.status==='pending'&&user?.role==='pharmacist'&&independentSummary&&<form onSubmit={submit}><fieldset disabled={isLoading||q.isFetching} className="space-y-3"><p>Evidence could not be verified. You may reject this pending proposal and preserve its findings and reserved identifiers. No container movement will be applied.</p><input type="hidden" name="decision" value="rejected"/><Evidence name="evidence" label="Reason for rejecting unverifiable repackaging evidence"/>{error&&<p role="alert">{error}</p>}<Button>Reject unverifiable repackaging proposal</Button></fieldset></form>}
+  {success&&<p role="status">{success}</p>}</article>
  if(!q.currentData)return <p>Loading repackaging evidence…</p>
  const p=q.currentData.data;const v=p.proposal;const independent=Number(user?.id)!==p.created_by&&Number(user?.id)!==batch.execution?.created_by&&!batch.execution?.addenda.some(a=>a.created_by===Number(user?.id))
  return <article className="border rounded p-4 space-y-3"><h4 className="font-semibold">Repackaging {p.id} · {p.status}</h4><p>Recorded by user {p.created_by} · {p.created_at}</p><p>Held output: {v.held_output} · Prior disposal: {v.previously_disposed} · Accounted yield: {v.recorded_yield} {v.unit}</p>
