@@ -4633,6 +4633,29 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson("/api/pharmacy/batch-quality-results/$id")->assertNotFound();
     }
 
+    public function test_batch_quality_retains_pending_correction_details_even_when_hold_stays_true(): void
+    {
+        [$execution, $lot, $protocol] = $this->batchQualityFixture();
+        $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $execution->batch_id)->first();
+        $receipt = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $body = ['request_id' => (string) Str::uuid(), 'version' => $execution->version, 'receipt_version' => $receipt->version,
+            'corrected_consumed' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($allocation->quantity) + 500),
+            'observed_on_hand' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($receipt->on_hand) - 500),
+            'unit' => $receipt->quantity_unit, 'reason' => 'SYNTHETIC correction', 'measurement_evidence' => 'SYNTHETIC measurement',
+            'source_evidence' => 'SYNTHETIC source', 'receipt_count_evidence' => 'SYNTHETIC count'];
+        $id = app(\App\Services\PharmacyConsumptionCorrectionLedger::class)->retain($this->actor, $execution->id, $allocation->ingredient_key, $body);
+        $context = app(\App\Services\PharmacyBatchQualityContext::class);
+        $before = $context->inspect($this->actor, $execution->id, $protocol);
+        $this->assertTrue($before['batch_hold']);
+        $this->assertSame($id, (int) $before['pending_consumption_corrections'][0]['id']);
+        // Simulate altered retained evidence without changing the pending status or hold.
+        DB::table('pharmacy_consumption_corrections')->where('id', $id)->update(['correction_evidence_hash' => str_repeat('0', 64)]);
+        $after = $context->inspect($this->actor, $execution->id, $protocol);
+        $this->assertTrue($after['batch_hold']);
+        $digest = app(\App\Services\PharmacyCompoundingIncident::class);
+        $this->assertNotSame($digest->digest($before), $digest->digest($after));
+    }
+
     private function qualityProtocolFixture(): array
     {
         $formula = $this->postJson('/api/pharmacy/formulations', $this->formulationBody())->assertCreated()->json('data.id');

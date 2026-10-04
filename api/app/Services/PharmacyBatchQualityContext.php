@@ -49,6 +49,7 @@ class PharmacyBatchQualityContext
                 'addenda' => DB::table('pharmacy_execution_addenda')->where('execution_id', $executionId)->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
                 'output_custody' => app(PharmacyExecutionCustodyLedger::class)->summary($actor, $executionId),
                 'ingredients' => $ingredients, 'batch_hold' => $digest->holdsBatch($actor->organization_id, $batch->id),
+                'pending_consumption_corrections' => DB::table('pharmacy_consumption_corrections')->whereIn('ingredient_lot_id', $allocations->pluck('ingredient_lot_id')->unique()->all())->where('status', 'pending')->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
                 'pending_yield_corrections' => DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
                 'pending_output_custody' => DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
                 'release_enabled' => false];
