@@ -1,6 +1,6 @@
 # Provider and operations closure register
 
-Updated September 30, 2026. Planning and evidence register; no accounts purchased, providers connected, or clinical operations approved.
+Updated October 4, 2026. Planning and evidence register; no accounts purchased, providers connected, or clinical operations approved.
 
 Dr. Ghadeh is the user-identified pharmacy/co-owner and proposed pharmacy operations approver. Her acceptance and authority for each operating location remain to be confirmed. Abe owns software/provider commercial decisions. Existing account inventory is awaiting Dr. Ghadeh; “unknown” does not mean no account exists.
 
@@ -11,7 +11,7 @@ Dr. Ghadeh is the user-identified pharmacy/co-owner and proposed pharmacy operat
 | Clinical medication data | Dr. Ghadeh + owner | Licensed reference source unknown | Supported catalog and clinical screening coverage, update process, license, pharmacist review of matching, interaction/allergy warnings and unavailable-service behavior | No claim of clinical screening |
 | Michigan MAPS | Dr. Ghadeh + reporting provider | Account, submission route and query access unverified | Confirm dispenser submission and query arrangements separately; accepted test reports, acknowledgments, corrections, failure queue and assigned follow-up owner | No submissions or production queries |
 | Controlled medications | Dr. Ghadeh | Operational approval outstanding | Approved controls, role separation, custody, reporting and exception acceptance for each location | Final dispensing remains blocked |
-| Compounding | Dr. Ghadeh + compounding lead | Sterile/nonsterile scope requested; facility/process acceptance missing | Approved formulations and records, quality/release procedures, expiry assignment, environmental/sterility requirements as applicable, independent release acceptance | No finished-product release |
+| Compounding | Dr. Ghadeh + compounding lead | Compounding requested; sterile versus nonsterile scope and facility/process acceptance unconfirmed | Approved formulations and records, quality/release procedures, expiry assignment, environmental/sterility requirements as applicable, independent release acceptance | No finished-product release |
 | PIP and payer transport | Dr. Ghadeh + billing lead | Payer/provider accounts and transport unknown | Payer list, required documents, supported submission method, test acknowledgments/rejections and reconciliation ownership | Record invoices and payments only |
 | AI/OCR | Abe + Dr. Ghadeh + selected provider | GLM likely; hosting/account/processing terms undecided | Approved data processing and deployment arrangement, securely configured account, source-linked quality evaluation and pharmacist review; timeout/failure acceptance | Retained synthetic extraction review only; no live model |
 | Mail, MFA and recovery | Abe + Codex | Production sending and recovery unverified | Approved sender, delivery evidence, role/MFA recovery acceptance and support ownership | Existing synthetic local identity flow; no external mail |
@@ -30,3 +30,24 @@ First obtain provider names and account owners from Dr. Ghadeh. Then establish: 
 2. Close host access and recovery with the hosting administrator in parallel with local pilot preparation.
 3. Freeze and refresh the synthetic shared-platform pilot, log client feedback, and keep provider-dependent actions excluded.
 4. Implement and validate full pharmacy dependencies and remaining workflow gaps. The pilot does not replace any full-scope gate.
+
+
+## Owner intake for dependency closure — prepared October 3
+
+Complete the fields below with names and references only. Do not put passwords, keys or patient records in this register. Unknown items remain open; no answers have been inferred from development progress.
+
+| Response needed | Owner | Response / evidence reference |
+| --- | --- | --- |
+| Operating locations and responsible pharmacist at each location | Dr. Ghadeh | Awaiting response |
+| Controlled and compounding scope per location, including whether sterile preparation is intended | Dr. Ghadeh | Awaiting response |
+| Existing prescribing, clinical reference, MAPS and claims vendors; account owners and location coverage | Dr. Ghadeh / pharmacy billing lead | Awaiting response |
+| Existing pharmacy procedures and person authorized to accept the synthetic workflows | Dr. Ghadeh | Awaiting response |
+| GLM or other AI account owner and approved processing arrangement | Abe, with pharmacy data approval from Dr. Ghadeh | Awaiting response |
+| Restored SSH access and independently confirmed host identity for 144.126.132.98 | Hosting administrator | Awaiting verified access |
+| Client demonstration attendee and feedback owner | Abe / Dr. Ghadeh | Awaiting response |
+
+Upon receiving the inventory, Codex can map each provider to the existing adapters and acceptance checks, identify missing contracts or technical interfaces, and prepare only the remaining decisions. The pharmacy owner approves operational suitability; technical test results do not substitute for that approval. This intake has not been sent to anyone.
+
+## Responsibility clarification — October 4
+
+Abe confirmed Dr. Ghadeh as pharmacist and software co-owner. The existing pharmacy provider inventory is primarily for Dr. Ghadeh, assisted by the billing lead; hosting, the proposed GLM account and commercial approval are for Abe. This assigns follow-up responsibility only. No provider selection, operating authority, contract or acceptance has been confirmed, and no message has been sent to Dr. Ghadeh.

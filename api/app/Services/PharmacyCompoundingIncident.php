@@ -28,12 +28,21 @@ class PharmacyCompoundingIncident
 
     public function holdsBatch(int $organization, int $batch): bool
     {
+        if (DB::table('pharmacy_consumption_corrections as correction')
+            ->join('pharmacy_ingredient_lots as receipt', 'receipt.id', '=', 'correction.ingredient_lot_id')
+            ->join('pharmacy_ingredient_allocations as allocation', 'allocation.ingredient_lot_id', '=', 'receipt.id')
+            ->where('receipt.organization_id', $organization)->where('allocation.batch_id', $batch)
+            ->where('correction.status', 'pending')->exists()) { return true; }
         return DB::table('pharmacy_compounding_incidents')->where('organization_id', $organization)
             ->where('batch_id', $batch)->where('status', '<>', 'reconciled')->exists();
     }
 
     public function holdsLot(int $organization, int $lot): bool
     {
+        if (DB::table('pharmacy_consumption_corrections as correction')
+            ->join('pharmacy_ingredient_lots as receipt', 'receipt.id', '=', 'correction.ingredient_lot_id')
+            ->where('receipt.organization_id', $organization)->where('receipt.id', $lot)
+            ->where('correction.status', 'pending')->exists()) { return true; }
         return DB::table('pharmacy_compounding_incident_lines as line')
             ->join('pharmacy_compounding_incidents as incident', 'incident.id', '=', 'line.incident_id')
             ->where('incident.organization_id', $organization)->where('line.ingredient_lot_id', $lot)

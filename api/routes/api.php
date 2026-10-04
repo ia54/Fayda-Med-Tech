@@ -105,6 +105,12 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/executions/{executionId}/yield-corrections', [$yieldCorrection, 'history']);
         Route::post('/executions/{executionId}/yield-corrections', [$yieldCorrection, 'store']);
         Route::post('/yield-corrections/{proposalId}/decision', [$yieldCorrection, 'decide']);
+        $consumptionCorrection = \App\Http\Controllers\API\PharmacyConsumptionCorrectionController::class;
+        Route::get('/consumption-corrections', [$consumptionCorrection, 'worklist']);
+        Route::get('/executions/{executionId}/consumption-corrections', [$consumptionCorrection, 'history']);
+        Route::get('/executions/{executionId}/ingredients/{ingredientKey}/correction-context', [$consumptionCorrection, 'context']);
+        Route::post('/executions/{executionId}/ingredients/{ingredientKey}/consumption-corrections', [$consumptionCorrection, 'store']);
+        Route::post('/consumption-corrections/{proposalId}/decision', [$consumptionCorrection, 'decide']);
         Route::post('/batch-worksheets/{id}/execution', [$execution, 'store']);
         Route::post('/batch-worksheets/{id}/execution/addenda', [$execution, 'addendum']);
         Route::post('/batch-worksheets/{id}/execution/review', [$execution, 'review']);

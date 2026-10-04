@@ -4784,6 +4784,215 @@ class PharmacyWorkflowTest extends TestCase
         return [$b, $lot];
     }
 
+    public function test_consumption_correction_preserves_shared_receipt_reservations_and_rejects_changed_batch(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->first();
+        $other = $this->reviewedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$other/allocation", ['version' => 2, 'action' => 'reserve', 'evidence' => 'SYNTHETIC shared receipt', 'lots' => [['key' => 'A', 'lot_id' => $lot]]])->assertOk();
+        $otherBatch = (array) DB::table('pharmacy_batch_worksheets')->find($other);
+        $otherAllocation = (array) DB::table('pharmacy_ingredient_allocations')->where('batch_id', $other)->first();
+        $receipt = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $body = ['request_id' => (string) Str::uuid(), 'version' => $execution->version, 'receipt_version' => $receipt->version,
+            'corrected_consumed' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($allocation->quantity) + 500),
+            'observed_on_hand' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($receipt->on_hand) - 500),
+            'unit' => $receipt->quantity_unit, 'reason' => 'SYNTHETIC correction', 'measurement_evidence' => 'SYNTHETIC measurement',
+            'source_evidence' => 'SYNTHETIC source', 'receipt_count_evidence' => 'SYNTHETIC count'];
+        $service = app(\App\Services\PharmacyConsumptionCorrectionLedger::class);
+        $id = $service->retain($this->actor, $execution->id, $allocation->ingredient_key, $body);
+        $reviewer = $this->independentReviewer();
+        $holds = app(\App\Services\PharmacyCompoundingIncident::class);
+        $this->assertTrue($holds->holdsBatch($this->actor->organization_id, $other));
+        DB::table('pharmacy_batch_worksheets')->where('id', $other)->update(['version' => $otherBatch['version'] + 1]);
+        try { $service->apply($reviewer, $id, 'SYNTHETIC stale shared review'); $this->fail('Changed shared batch accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame((array) $receipt, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        DB::table('pharmacy_batch_worksheets')->where('id', $other)->update($otherBatch);
+        $service->apply($reviewer, $id, 'SYNTHETIC shared receipt review');
+        $this->assertSame($otherAllocation, (array) DB::table('pharmacy_ingredient_allocations')->where('batch_id', $other)->first());
+        $this->assertSame($receipt->reserved, DB::table('pharmacy_ingredient_lots')->find($lot)->reserved);
+        $this->assertSame('quarantined', DB::table('pharmacy_ingredient_lots')->find($lot)->status);
+        $details = json_decode(DB::table('pharmacy_compounding_events')->where('action', 'consumption_correction_applied')->value('details'), true);
+        $this->assertEqualsCanonicalizing([$batch, $other], $details['affected_batch_ids']);
+        $this->assertSame([$execution->id], $details['affected_execution_ids']);
+        $this->postJson("/api/pharmacy/batch-worksheets/$other/execution", $this->executionBody())->assertUnprocessable();
+    }
+
+    public function test_consumption_application_is_independent_atomic_and_keeps_quarantine(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->first();
+        $receipt = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $body = ['request_id' => (string) Str::uuid(), 'version' => $execution->version, 'receipt_version' => $receipt->version,
+            'corrected_consumed' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($allocation->quantity) + 500),
+            'observed_on_hand' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($receipt->on_hand) - 500),
+            'unit' => $receipt->quantity_unit, 'reason' => 'SYNTHETIC correction', 'measurement_evidence' => 'SYNTHETIC measurement',
+            'source_evidence' => 'SYNTHETIC source', 'receipt_count_evidence' => 'SYNTHETIC count'];
+        $service = app(\App\Services\PharmacyConsumptionCorrectionLedger::class);
+        $baseUrl = '/api/pharmacy/executions/'.$execution->id;
+        $contextUrl = $baseUrl.'/ingredients/'.$allocation->ingredient_key.'/correction-context';
+        $proposalUrl = $baseUrl.'/ingredients/'.$allocation->ingredient_key.'/consumption-corrections';
+        $historyUrl = $baseUrl.'/consumption-corrections';
+        $this->getJson($contextUrl)->assertOk()->assertJsonPath('data.pending', false)->assertJsonMissingPath('data.receipt_events');
+        $id = $this->postJson($proposalUrl, $body)->assertCreated()->json('data.id');
+        $this->getJson($contextUrl)->assertOk()->assertJsonPath('data.pending', true);
+        $this->getJson('/api/pharmacy/consumption-corrections')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/pharmacy/consumption-corrections?reviewable=1')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson($historyUrl)->assertOk()->assertJsonPath('data.total', 1)->assertJsonMissingPath('data.data.0.source_snapshot');
+        $reviewer = $this->independentReviewer();
+        try { $service->apply($this->actor, $id, 'SYNTHETIC self review'); $this->fail('Self application accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) {
+                throw new \RuntimeException('SYNTHETIC application audit failure');
+            }
+        });
+        try { $service->apply($reviewer, $id, 'SYNTHETIC independent review'); $this->fail('Partial correction accepted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC application audit failure', $e->getMessage()); }
+        $this->assertSame((array) $receipt, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $this->assertSame('pending', DB::table('pharmacy_consumption_corrections')->find($id)->status);
+        $this->assertSame(0, DB::table('pharmacy_ingredient_events')->where('action', 'consumption_correction_applied')->count());
+        $failAudit = false;
+        $this->actingAs($reviewer, 'api');
+        $this->getJson('/api/pharmacy/consumption-corrections?reviewable=1')->assertOk()->assertJsonPath('data.total', 1);
+        $this->postJson('/api/pharmacy/consumption-corrections/'.$id.'/decision', ['decision' => 'applied', 'evidence' => 'SYNTHETIC independent review'])->assertOk();
+        $service->apply($reviewer, $id, 'SYNTHETIC independent review');
+        $after = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $this->assertSame(\App\Services\PharmacyStock::milli($body['observed_on_hand']), \App\Services\PharmacyStock::milli($after->on_hand));
+        $this->assertSame($receipt->reserved, $after->reserved);
+        $this->assertSame('quarantined', $after->status);
+        $this->assertSame($receipt->version + 1, $after->version);
+        $this->assertSame($execution->record, DB::table('pharmacy_batch_executions')->find($execution->id)->record);
+        $this->assertSame('quarantined', DB::table('pharmacy_batch_executions')->find($execution->id)->status);
+        $this->assertSame((array) $allocation, (array) DB::table('pharmacy_ingredient_allocations')->find($allocation->id));
+        $this->assertSame(1, DB::table('pharmacy_ingredient_events')->where('action', 'consumption_correction_applied')->count());
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'consumption_correction_applied')->count());
+        $next = array_replace($body, ['request_id' => (string) Str::uuid(), 'version' => $execution->version + 1,
+            'receipt_version' => $after->version, 'corrected_consumed' => (string) $allocation->quantity, 'observed_on_hand' => (string) $receipt->on_hand]);
+        $second = $service->retain($this->actor, $execution->id, $allocation->ingredient_key, $next);
+        $service->apply($reviewer, $second, 'SYNTHETIC follow-up review');
+        $context = app(\App\Services\PharmacyConsumptionContext::class)->inspect($this->actor, $execution->id, $allocation->ingredient_key);
+        $this->assertSame(\App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($allocation->quantity)), $context['accounted_consumed']);
+        $this->assertCount(2, $context['applied_corrections']);
+        $this->assertSame($execution->record, $context['execution']['record']);
+        $this->assertSame(\App\Services\PharmacyStock::milli($receipt->on_hand), \App\Services\PharmacyStock::milli($context['receipt']['on_hand']));
+        $this->assertSame('quarantined', $context['receipt']['status']);
+        $this->getJson($historyUrl)->assertOk()->assertJsonPath('data.total', 2);
+        $this->getJson('/api/pharmacy/consumption-corrections')->assertOk()->assertJsonPath('data.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($historyUrl)->assertNotFound();
+        $this->getJson('/api/pharmacy/consumption-corrections?location_id='.$this->location)->assertNotFound();
+        $this->getJson($contextUrl)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => true]);
+        $this->app->instance('env', 'production');
+        $this->getJson($historyUrl)->assertStatus(503);
+        $this->getJson('/api/pharmacy/consumption-corrections')->assertStatus(503);
+        $this->getJson($contextUrl)->assertStatus(503);
+        $this->postJson($proposalUrl, $body)->assertStatus(503);
+        $this->postJson('/api/pharmacy/consumption-corrections/'.$id.'/decision', ['decision' => 'applied', 'evidence' => 'SYNTHETIC independent review'])->assertStatus(503);
+        $this->app->instance('env', 'testing');
+        DB::table('pharmacy_consumption_corrections')->where('id', $id)->update(['proposal_hash' => str_repeat('0', 64)]);
+        try { app(\App\Services\PharmacyConsumptionContext::class)->inspect($this->actor, $execution->id, $allocation->ingredient_key); $this->fail('Corrupt history accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+
+    }
+
+    public function test_consumption_proposal_retains_snapshot_without_stock_movement(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $allocation = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->first();
+        $receipt = DB::table('pharmacy_ingredient_lots')->find($lot);
+        $body = ['request_id' => (string) Str::uuid(), 'version' => $execution->version, 'receipt_version' => $receipt->version,
+            'corrected_consumed' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($allocation->quantity) + 500),
+            'observed_on_hand' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($receipt->on_hand) - 500),
+            'unit' => $receipt->quantity_unit, 'reason' => 'SYNTHETIC correction', 'measurement_evidence' => 'SYNTHETIC measurement',
+            'source_evidence' => 'SYNTHETIC source', 'receipt_count_evidence' => 'SYNTHETIC count'];
+        $service = app(\App\Services\PharmacyConsumptionCorrectionLedger::class);
+        $id = $service->retain($this->actor, $execution->id, $allocation->ingredient_key, $body);
+        $this->assertSame($id, $service->retain($this->actor, $execution->id, $allocation->ingredient_key, $body));
+        $proposal = DB::table('pharmacy_consumption_corrections')->find($id);
+        $this->assertSame('pending', $proposal->status);
+        $holds = app(\App\Services\PharmacyCompoundingIncident::class);
+        $this->assertTrue($holds->holdsLot($this->actor->organization_id, $lot));
+        $this->assertTrue($holds->holdsBatch($this->actor->organization_id, $batch));
+        try { $holds->assertLotClear($this->actor->organization_id, $lot); $this->fail('Pending correction did not hold receipt'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+
+        $this->assertSame('0.500', json_decode($proposal->proposal, true)['stock_change_quantity']);
+        $this->assertSame($execution->record, json_decode($proposal->source_snapshot, true)['execution']['record']);
+        foreach (['changed' => $body['request_id'], 'pending' => (string) Str::uuid()] as $case => $request) {
+            $changed = array_replace($body, ['request_id' => $request, 'reason' => 'SYNTHETIC changed']);
+            try { $service->retain($this->actor, $execution->id, $allocation->ingredient_key, $changed); $this->fail('Conflicting proposal accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        }
+        $this->assertSame((array) $receipt, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $this->assertSame((array) $allocation, (array) DB::table('pharmacy_ingredient_allocations')->find($allocation->id));
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'consumption_correction_proposed')->count());
+        try { $service->reject($this->actor, $id, 'SYNTHETIC self-review'); $this->fail('Self rejection accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $reviewer = $this->independentReviewer();
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) {
+                throw new \RuntimeException('SYNTHETIC consumption audit failure');
+            }
+        });
+        try { $service->reject($reviewer, $id, 'SYNTHETIC rejection'); $this->fail('Missing audit accepted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC consumption audit failure', $e->getMessage()); }
+        $this->assertSame((array) $proposal, (array) DB::table('pharmacy_consumption_corrections')->find($id));
+        $failAudit = false;
+        DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update(['version' => $execution->version + 1]);
+        $service->reject($reviewer, $id, 'SYNTHETIC rejection');
+        $service->reject($reviewer, $id, 'SYNTHETIC rejection');
+        $this->assertSame('rejected', DB::table('pharmacy_consumption_corrections')->find($id)->status);
+        $this->assertFalse($holds->holdsLot($this->actor->organization_id, $lot));
+        $this->assertFalse($holds->holdsBatch($this->actor->organization_id, $batch));
+
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'consumption_correction_rejected')->count());
+        $this->assertSame((array) $receipt, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame($execution->record, DB::table('pharmacy_batch_executions')->find($execution->id)->record);
+
+    }
+
+    public function test_consumption_context_preserves_and_validates_receipt_dependencies(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $key = DB::table('pharmacy_ingredient_allocations')->where('batch_id', $batch)->value('ingredient_key');
+        $before = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $service = app(\App\Services\PharmacyConsumptionContext::class);
+        $context = $service->inspect($this->actor, $execution->id, $key);
+        $this->assertSame($execution->record, $context['execution']['record']);
+        $this->assertSame($before, $context['receipt']);
+        $this->assertCount(1, $context['affected_batches']);
+        $this->assertFalse($context['application_enabled']);
+        $this->assertFalse($context['release_enabled']);
+        foreach (['reservation' => 409, 'location' => 404, 'role' => 403, 'production' => 503] as $case => $status) {
+            if ($case === 'reservation') { DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['reserved' => '1']); }
+            if ($case === 'location') { DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]); }
+            if ($case === 'role') { $this->actor->role = 'pharmacy_technician'; }
+            if ($case === 'production') { $this->app->instance('env', 'production'); }
+            try { $service->inspect($this->actor, $execution->id, $key); $this->fail('Unsafe context accepted: '.$case); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame($status, $e->getStatusCode()); }
+            finally {
+                DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['reserved' => $before['reserved']]);
+                DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+                $this->actor->role = 'pharmacist'; $this->app->instance('env', 'testing');
+            }
+        }
+        $this->assertSame($before, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+    }
+
     public function test_yield_correction_retention_preserves_execution_and_stock(): void
     {
         [$batch, $lot] = $this->reservedWorksheet();
