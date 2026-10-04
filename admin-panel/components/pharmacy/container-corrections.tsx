@@ -25,7 +25,7 @@ export function ContainerCorrections({batch}:{batch:CompoundBatch}) {
   {q.currentData.data.data.map(p=><div key={p.id} className="flex flex-wrap justify-between gap-2 border-b pb-2"><p>Container correction {p.id} · {p.status}</p><Button variant="outline" disabled={q.isFetching} onClick={()=>{setSelected(p.id);setCreating(false)}}>Open container correction {p.id}</Button></div>)}
   {!q.currentData.data.total&&<p>No container quantity corrections.</p>}
   <div className="flex gap-3 items-center"><Button variant="outline" disabled={q.isFetching||page===1} onClick={()=>setPage(page-1)}>Previous container corrections</Button><span>Page {page} / {q.currentData.data.last_page}</span><Button variant="outline" disabled={q.isFetching||page>=q.currentData.data.last_page} onClick={()=>setPage(page+1)}>Next container corrections</Button></div>
-  {pending?<p>Resolve the pending yield correction or output custody proposal before recording another correction.</p>:user?.role==='pharmacist'&&<Button variant="outline" disabled={q.isFetching} onClick={()=>{setCreating(!creating);setSelected(null)}}>{creating?'Close recount form':'Record container recount'}</Button>}
+  {pending?<p>Resolve the pending yield correction, output custody or repackaging proposal before recording another correction.</p>:user?.role==='pharmacist'&&<Button variant="outline" disabled={q.isFetching} onClick={()=>{setCreating(!creating);setSelected(null)}}>{creating?'Close recount form':'Record container recount'}</Button>}
   {creating&&!pending&&<fieldset disabled={q.isFetching} className="min-w-0"><Context id={id} onDone={value=>{setCreating(false);setSelected(value);setPage(1)}}/></fieldset>}
   {selected&&<Detail key={selected} id={selected} batch={batch}/>}
  </section>

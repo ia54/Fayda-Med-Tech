@@ -15,7 +15,8 @@ class PharmacyContainerCustodyLedger
             ->where('c.execution_id', $executionId)->whereIn('o.status', ['pending', 'applied'])->exists()
             || DB::table('pharmacy_container_quantity_corrections as c')
                 ->join('pharmacy_yield_correction_proposals as y', 'y.id', '=', 'c.yield_proposal_id')
-                ->where('c.execution_id', $executionId)->whereIn('y.status', ['pending', 'applied'])->exists();
+                ->where('c.execution_id', $executionId)->whereIn('y.status', ['pending', 'applied'])->exists()
+            || DB::table('pharmacy_container_repackaging')->where('execution_id', $executionId)->whereIn('status', ['pending', 'applied'])->exists();
     }
 
     public function context(User $actor, int $executionId): array
@@ -38,12 +39,16 @@ class PharmacyContainerCustodyLedger
                 ->join('pharmacy_yield_correction_proposals as y', 'y.id', '=', 'c.yield_proposal_id')
                 ->where('c.execution_id', $executionId)->where('y.status', 'applied')->select('c.*', 'y.execution_version')->get()
                 ->map(function ($row) { $row->kind = 'correction'; return $row; });
+            $repackaging = DB::table('pharmacy_container_repackaging')->where('execution_id', $executionId)->where('status', 'applied')->get()
+                ->map(function ($row) { $row->kind = 'repackaging'; return $row; });
             $digest = app(PharmacyCompoundingIncident::class);
-            $anchor = null; $balance = null; $previous = null; $previousCorrection = null; $lastVersion = 0;
-            foreach ($rows->concat($corrections)->sortBy('execution_version') as $row) {
+            $anchor = null; $balance = null; $previous = null; $previousCorrection = null; $previousRepackaging = null; $lastVersion = 0;
+            foreach ($rows->concat($corrections)->concat($repackaging)->sortBy('execution_version') as $row) {
                 abort_unless((int) $row->execution_version > $lastVersion && (int) $row->execution_version < (int) $execution->version, 409, 'Container history has conflicting execution versions.');
                 $lastVersion = (int) $row->execution_version;
-                if ($row->kind === 'correction') {
+                if ($row->kind === 'repackaging') {
+                    [$source, $projection] = app(PharmacyContainerRepackagingLedger::class)->checked($row);
+                } elseif ($row->kind === 'correction') {
                     $yield = DB::table('pharmacy_yield_correction_proposals')->find($row->yield_proposal_id);
                     [$source, $projection] = app(PharmacyContainerQuantityCorrectionLedger::class)->checked($row, $yield);
                 } else {
@@ -56,7 +61,13 @@ class PharmacyContainerCustodyLedger
                 abort_unless($digest->digest($source['packaging_context']) === $digest->digest($anchor)
                     && $source['previous_record_id'] === $previous
                     && ($source['previous_correction_id'] ?? null) === $previousCorrection
+                    && ($source['previous_repackaging_id'] ?? null) === $previousRepackaging
                     && $digest->digest($source['container_balance']) === $digest->digest($balance), 409, 'Container custody ancestry is inconsistent.');
+                if ($row->kind === 'repackaging') {
+                    $balance = app(PharmacyContainerRepackagingLedger::class)->after($balance, $projection);
+                    $previousRepackaging = (int) $row->id;
+                    continue;
+                }
                 if ($row->kind === 'correction') {
                     $balance = app(PharmacyContainerQuantityCorrectionLedger::class)->after($balance, $projection);
                     $previousCorrection = (int) $row->id;
@@ -79,6 +90,7 @@ class PharmacyContainerCustodyLedger
                 foreach ($anchor['container_identities'] as $identity) {
                     $current = DB::table('pharmacy_container_identities')->find($identity['id']);
                     abort_unless($current && $digest->digest((array) $current) === $digest->digest($identity), 409, 'Established container identity changed.');
+                    app(PharmacyContainerIdentifiers::class)->assertInitial($current);
                 }
             }
             foreach (['recorded_yield', 'previously_disposed', 'held_output', 'unit'] as $key) {
@@ -90,6 +102,7 @@ class PharmacyContainerCustodyLedger
                 'addenda' => DB::table('pharmacy_execution_addenda')->where('execution_id', $executionId)->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
                 'packaging_context' => $anchor, 'previous_record_id' => $previous, 'container_balance' => $balance];
             if ($previousCorrection !== null) { $context['previous_correction_id'] = $previousCorrection; }
+            if ($previousRepackaging !== null) { $context['previous_repackaging_id'] = $previousRepackaging; }
             return $context;
         });
     }

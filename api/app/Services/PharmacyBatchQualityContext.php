@@ -43,7 +43,7 @@ class PharmacyBatchQualityContext
             abort_unless(count($keys) > 0 && $keys === $allocationKeys, 409, 'Execution ingredient lineage is incomplete.');
             $rx = DB::table('pharmacy_prescriptions')->where('id', $batch->prescription_id)->where('organization_id', $actor->organization_id)->where('location_id', $batch->location_id)->first();
             abort_unless($rx, 409, 'Prescription scope requires reconciliation.');
-            return ['execution' => (array) $execution, 'batch' => (array) $batch, 'prescription' => (array) $rx,
+            $context = ['execution' => (array) $execution, 'batch' => (array) $batch, 'prescription' => (array) $rx,
                 'formulation' => (array) $formula, 'protocol' => (array) $protocol, 'protocol_record' => $record,
                 'protocol_review' => (array) $review,
                 'addenda' => DB::table('pharmacy_execution_addenda')->where('execution_id', $executionId)->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
@@ -53,6 +53,12 @@ class PharmacyBatchQualityContext
                 'pending_yield_corrections' => DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
                 'pending_output_custody' => DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
                 'release_enabled' => false];
+            $repackaging = DB::table('pharmacy_container_repackaging')->where('execution_id', $executionId)->where('status', 'pending')->orderBy('id')->get()->map(fn ($r) => (array) $r)->all();
+            if ($repackaging) { $context['pending_repackaging'] = $repackaging; }
+            if (DB::table('pharmacy_container_repackaging')->where('execution_id', $executionId)->where('status', 'applied')->exists()) {
+                $context['repackaged_container_state'] = app(PharmacyContainerCustodyLedger::class)->context($actor, $executionId);
+            }
+            return $context;
         });
     }
 }

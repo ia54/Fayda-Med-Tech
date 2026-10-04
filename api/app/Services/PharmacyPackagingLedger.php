@@ -88,7 +88,9 @@ class PharmacyPackagingLedger
                 $checked = app(PharmacyFinishedPackaging::class)->project($current['output_balance'], $packagingInput);
                 abort_unless(hash_equals($p->proposal_hash, $digest->digest($checked)), 409, 'Packaging projection changed.');
                 foreach ($checked['containers'] as $container) {
-                    abort_unless(DB::table('pharmacy_container_identities')->where('organization_id', $actor->organization_id)->where('execution_id', $execution->id)->where('identifier', $container['identifier'])->exists(), 409, 'Container identity binding is missing.');
+                    $identity = DB::table('pharmacy_container_identities')->where('organization_id', $actor->organization_id)->where('execution_id', $execution->id)->where('identifier', $container['identifier'])->first();
+                    abort_unless($identity, 409, 'Container identity binding is missing.');
+                    app(PharmacyContainerIdentifiers::class)->assertInitial($identity);
                 }
             }
             DB::table('pharmacy_packaging_proposals')->where('id', $id)->update(['status' => $decision, 'reviewed_by' => $actor->id,
@@ -104,9 +106,11 @@ class PharmacyPackagingLedger
             if ($existing) {
                 abort_unless((int) $existing->execution_id === $executionId, 409, 'Container identifier belongs to another preparation.');
             } else {
-                DB::table('pharmacy_container_identities')->insert(['organization_id' => $actor->organization_id, 'execution_id' => $executionId,
+                $identityId = DB::table('pharmacy_container_identities')->insertGetId(['organization_id' => $actor->organization_id, 'execution_id' => $executionId,
                     'first_proposal_id' => $proposalId, 'identifier' => $container['identifier'], 'created_at' => now()]);
+                $existing = DB::table('pharmacy_container_identities')->find($identityId);
             }
+            app(PharmacyContainerIdentifiers::class)->reserveInitial($existing);
         }
     }
 

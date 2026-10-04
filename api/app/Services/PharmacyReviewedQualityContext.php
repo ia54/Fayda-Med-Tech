@@ -40,7 +40,7 @@ class PharmacyReviewedQualityContext
             abort_unless(hash_equals($p->source_hash, $digest->digest($current)), 409, 'Quality source evidence changed. Retain and review a replacement.');
             $checked = app(PharmacyQualityEvidence::class)->inspect($current['protocol_record'], array_column($results['evidence'], 'result'));
             abort_unless(hash_equals($p->results_hash, $digest->digest($checked)) && ! $checked['requires_follow_up'], 409, 'Failed or unassessed quality observations require resolution.');
-            abort_if($current['batch_hold'] || count($current['pending_yield_corrections']) || count($current['pending_output_custody'])
+            abort_if($current['batch_hold'] || ! empty($current['pending_repackaging']) || count($current['pending_yield_corrections']) || count($current['pending_output_custody'])
                 || count($current['pending_consumption_corrections']), 409, 'Resolve pending batch evidence before dating proposals.');
             foreach ($current['ingredients'] as $ingredient) {
                 abort_if($ingredient['receipt']['status'] === 'recalled', 409, 'Recalled ingredient evidence blocks dating proposals.');

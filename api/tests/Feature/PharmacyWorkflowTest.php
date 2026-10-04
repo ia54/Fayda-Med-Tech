@@ -4801,6 +4801,283 @@ class PharmacyWorkflowTest extends TestCase
         return [$execution, $lot, $reviewer, $body, app(\App\Services\PharmacyPackagingLedger::class)];
     }
 
+    private function reservedRepackagingFixture(object $execution, string $identifier): int
+    {
+        $projection = ['containers' => [['identifier' => $identifier, 'new_identity' => true]]];
+        return DB::table('pharmacy_container_repackaging')->insertGetId(['execution_id' => $execution->id,
+            'created_by' => $this->actor->id, 'request_id' => (string) Str::uuid(), 'request_hash' => str_repeat('a', 64),
+            'execution_version' => $execution->version, 'source_snapshot' => '{}', 'source_hash' => str_repeat('b', 64),
+            'proposal' => json_encode($projection), 'proposal_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($projection),
+            'status' => 'pending', 'created_at' => now()]);
+    }
+
+    public function test_container_identifier_registry_preserves_original_identity_and_rejects_repackaging_reuse(): void
+    {
+        [$execution, $lot, $reviewer, $body, $packaging] = $this->packagingFixture();
+        $id = $packaging->retain($this->actor, $execution->id, $body);
+        $identity = DB::table('pharmacy_container_identities')->first();
+        $registry = app(\App\Services\PharmacyContainerIdentifiers::class);
+        $registry->assertInitial($identity);
+        $reservation = DB::table('pharmacy_container_identifier_reservations')->first();
+        $this->assertSame((int) $identity->id, (int) $reservation->initial_identity_id);
+        $this->assertNull($reservation->repackaging_id);
+        $repack = $this->reservedRepackagingFixture($execution, 'SYN-CONTAINER-1');
+        try { DB::transaction(fn () => $registry->reserveRepackaging($this->actor->organization_id, $execution->id, $repack)); $this->fail('Original identifier reused for repackaging'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame((array) $identity, (array) DB::table('pharmacy_container_identities')->find($identity->id));
+        $this->assertSame((array) $reservation, (array) DB::table('pharmacy_container_identifier_reservations')->find($reservation->id));
+        $this->assertSame($id, (int) $identity->first_proposal_id);
+    }
+
+    public function test_reserved_repackaging_identifier_cannot_be_reused_by_initial_packaging_or_rejection(): void
+    {
+        [$execution, $lot, $reviewer, $body, $packaging] = $this->packagingFixture();
+        $registry = app(\App\Services\PharmacyContainerIdentifiers::class);
+        $id = $this->reservedRepackagingFixture($execution, 'SYN-CONTAINER-1');
+        DB::transaction(fn () => $registry->reserveRepackaging($this->actor->organization_id, $execution->id, $id));
+        DB::transaction(fn () => $registry->reserveRepackaging($this->actor->organization_id, $execution->id, $id));
+        $this->assertSame(1, DB::table('pharmacy_container_identifier_reservations')->count());
+        try { $packaging->retain($this->actor, $execution->id, $body); $this->fail('Repackaging identifier reused by initial packaging'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame(0, DB::table('pharmacy_packaging_proposals')->count());
+        $this->assertSame(0, DB::table('pharmacy_container_identities')->count());
+        DB::table('pharmacy_container_repackaging')->where('id', $id)->update(['status' => 'rejected']);
+        $next = $this->reservedRepackagingFixture($execution, 'SYN-CONTAINER-1');
+        try { DB::transaction(fn () => $registry->reserveRepackaging($this->actor->organization_id, $execution->id, $next)); $this->fail('Rejected identifier recycled'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame($id, (int) DB::table('pharmacy_container_identifier_reservations')->first()->repackaging_id);
+    }
+
+    public function test_container_identifier_reservation_requires_transaction_scope_and_intact_evidence(): void
+    {
+        [$execution] = $this->packagingFixture();
+        $registry = app(\App\Services\PharmacyContainerIdentifiers::class);
+        $id = $this->reservedRepackagingFixture($execution, 'SYN-REPACK-NEW');
+        try { $registry->reserveRepackaging($this->actor->organization_id, $execution->id, $id); $this->fail('Reservation escaped its proposal transaction'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        try { DB::transaction(fn () => $registry->reserveRepackaging(2, $execution->id, $id)); $this->fail('Cross-organization reservation accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_container_repackaging')->where('id', $id)->update(['proposal_hash' => str_repeat('0', 64)]);
+        try { DB::transaction(fn () => $registry->reserveRepackaging($this->actor->organization_id, $execution->id, $id)); $this->fail('Corrupt identity projection accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame(0, DB::table('pharmacy_container_identifier_reservations')->count());
+    }
+
+    public function test_container_identifier_backfill_preserves_historical_custody_snapshots(): void
+    {
+        [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $input);
+        app(\App\Services\PharmacyExecutionCustodyLedger::class)->decide($reviewer, $id, 'applied', 'SYNTHETIC existing reviewed custody');
+        $context = $ledger->context($this->actor, $execution->id);
+        $identity = (array) DB::table('pharmacy_container_identities')->first();
+        $custody = (array) DB::table('pharmacy_container_custody_records')->first();
+        // Disposable in-memory migration rehearsal only; no retained pilot or production database.
+        \Illuminate\Support\Facades\Schema::drop('pharmacy_container_identifier_reservations');
+        \Illuminate\Support\Facades\Schema::drop('pharmacy_container_repackaging');
+        $migration = require database_path('migrations/2026_10_04_000047_create_container_repackaging_records.php');
+        $migration->up();
+        $this->assertSame($identity, (array) DB::table('pharmacy_container_identities')->first());
+        $this->assertSame($custody, (array) DB::table('pharmacy_container_custody_records')->first());
+        $this->assertSame($context, $ledger->context($this->actor, $execution->id));
+        $this->assertSame($identity['id'], DB::table('pharmacy_container_identifier_reservations')->first()->initial_identity_id);
+        DB::table('pharmacy_container_identifier_reservations')->where('initial_identity_id', $identity['id'])->update(['execution_id' => $execution->id, 'initial_identity_id' => null]);
+        try { $ledger->context($this->actor, $execution->id); $this->fail('Damaged identifier reservation accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+    }
+
+    private function repackagingInput(int $executionId, string $destination = 'SYN-REPACK-A'): array
+    {
+        $context = app(\App\Services\PharmacyContainerCustodyLedger::class)->context($this->actor, $executionId);
+        $balance = $context['container_balance']; $transfers = []; $observed = [];
+        foreach ($balance['containers'] as $c) {
+            if (\App\Services\PharmacyStock::milli($c['quantity']) > 0) {
+                $transfers[] = ['from_identifier' => $c['identifier'], 'to_identifier' => $destination, 'quantity' => $c['quantity'], 'evidence' => 'SYNTHETIC measured movement'];
+            }
+            $observed[] = ['identifier' => $c['identifier'], 'quantity' => '0', 'evidence' => 'SYNTHETIC empty source retained'];
+        }
+        if (\App\Services\PharmacyStock::milli($balance['unpackaged_quantity']) > 0) {
+            $transfers[] = ['from_identifier' => null, 'to_identifier' => $destination, 'quantity' => $balance['unpackaged_quantity'], 'evidence' => 'SYNTHETIC measured remainder'];
+        }
+        $observed[] = ['identifier' => $destination, 'quantity' => $balance['held_output'], 'evidence' => 'SYNTHETIC final destination'];
+        return ['request_id' => (string) Str::uuid(), 'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($context),
+            'decision' => ['unit' => $balance['unit'], 'new_containers' => [['identifier' => $destination, 'container_reference' => 'SYNTHETIC replacement container', 'storage_reference' => 'SYNTHETIC storage']],
+                'transfers' => $transfers, 'observed_containers' => $observed, 'observed_unpackaged' => ['quantity' => '0', 'evidence' => 'SYNTHETIC empty remainder'],
+                'process_evidence' => 'SYNTHETIC process', 'reconciliation_evidence' => 'SYNTHETIC reconciliation']];
+    }
+
+    public function test_repackaging_disposal_and_recount_replay_preserves_quantity_and_origins(): void
+    {
+        [$execution, $lot, $reviewer, $custody] = $this->containerCustodyFixture('9');
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $originalIdentity = (array) DB::table('pharmacy_container_identities')->first();
+        $ledger = app(\App\Services\PharmacyContainerRepackagingLedger::class);
+        $body = $this->repackagingInput($execution->id); $id = $ledger->retain($this->actor, $execution->id, $body);
+        $this->assertSame($id, $ledger->retain($this->actor, $execution->id, $body));
+        $this->assertSame(1, count($custody->context($this->actor, $execution->id)['container_balance']['containers']));
+        try { $ledger->decide($this->actor, $id, 'applied', 'SYNTHETIC'); $this->fail('Self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $id, 'applied', 'SYNTHETIC independent repackaging review');
+        $ledger->decide($reviewer, $id, 'applied', 'SYNTHETIC independent repackaging review');
+        $this->assertSame($id, $ledger->retain($this->actor, $execution->id, $body));
+        $context = $custody->context($this->actor, $execution->id);
+        $this->assertSame($id, $context['previous_repackaging_id']);
+        $this->assertSame('0.000', $context['container_balance']['containers'][0]['quantity']);
+        $this->assertSame('9.000', $context['container_balance']['containers'][1]['quantity']);
+        $finding = fn ($held, $disposed) => ['retained_quarantined' => $held, 'disposed_output' => $disposed, 'unaccounted_output' => '0', 'evidence' => 'SYNTHETIC disposition'];
+        $disposal = $custody->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($context),
+            'decision' => ['unit' => 'tablet', 'evidence' => 'SYNTHETIC custody after repackaging',
+                'containers' => [['identifier' => 'SYN-CONTAINER-1'] + $finding('0', '0'), ['identifier' => 'SYN-REPACK-A'] + $finding('8', '1')], 'unpackaged' => $finding('0', '0')]]);
+        app(\App\Services\PharmacyExecutionCustodyLedger::class)->decide($reviewer, $disposal, 'applied', 'SYNTHETIC independent disposition');
+        $context = $custody->context($this->actor, $execution->id);
+        $evidence = ['reason' => 'SYNTHETIC correction', 'measurement_evidence' => 'SYNTHETIC measured', 'source_evidence' => 'SYNTHETIC original'];
+        $correction = app(\App\Services\PharmacyContainerQuantityCorrectionLedger::class)->retain($this->actor, $execution->id,
+            ['request_id' => (string) Str::uuid(), 'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($context), 'decision' => ['unit' => 'tablet', 'corrected_yield' => '8',
+                'containers' => [['identifier' => 'SYN-CONTAINER-1', 'observed_quantity' => '0'] + $evidence, ['identifier' => 'SYN-REPACK-A', 'observed_quantity' => '7'] + $evidence],
+                'unpackaged' => ['observed_quantity' => '0'] + $evidence] + $evidence]);
+        app(\App\Services\PharmacyYieldCorrectionLedger::class)->decide($reviewer, $correction, 'applied', 'SYNTHETIC correction after repackaging');
+        $next = $ledger->retain($this->actor, $execution->id, $this->repackagingInput($execution->id, 'SYN-REPACK-B'));
+        $ledger->decide($reviewer, $next, 'applied', 'SYNTHETIC second independent movement');
+        $balance = $custody->context($this->actor, $execution->id)['container_balance'];
+        $this->assertSame(['0.000', '0.000', '7.000'], array_column($balance['containers'], 'quantity'));
+        $this->assertSame('8.000', $balance['recorded_yield']); $this->assertSame('1.000', $balance['previously_disposed']);
+        $this->assertSame('7.000', $balance['held_output']);
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame($originalIdentity, (array) DB::table('pharmacy_container_identities')->first());
+        $current = DB::table('pharmacy_batch_executions')->find($execution->id);
+        $this->assertSame($execution->record, $current->record); $this->assertSame((int) $execution->version + 4, (int) $current->version);
+        $this->assertSame('quarantined', $current->status);
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'container_repackaging_applied')->count());
+        $this->assertSame(3, DB::table('pharmacy_container_identifier_reservations')->count());
+    }
+
+    public function test_pending_repackaging_blocks_competing_output_changes_and_clinical_context(): void
+    {
+        [$execution, $lot, $reviewer, $custody, $source, $custodyBody] = $this->containerCustodyFixture();
+        $ledger = app(\App\Services\PharmacyContainerRepackagingLedger::class);
+        $body = $this->repackagingInput($execution->id); $correction = $this->containerCorrectionInput($execution->id, '7');
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        foreach ([fn () => $custody->retain($this->actor, $execution->id, $custodyBody),
+            fn () => app(\App\Services\PharmacyContainerQuantityCorrectionLedger::class)->retain($this->actor, $execution->id, $correction),
+            fn () => $ledger->retain($this->actor, $execution->id, $this->repackagingInput($execution->id, 'SYN-OTHER')),
+            fn () => app(\App\Services\PharmacyReviewedQualityContext::class)->inspect($this->actor, $execution->id)] as $attempt) {
+            try { $attempt(); $this->fail('Conflicting pending operation accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        }
+        $protocol = DB::table('pharmacy_quality_protocols')->first()->id;
+        $quality = app(\App\Services\PharmacyBatchQualityContext::class)->inspect($this->actor, $execution->id, $protocol);
+        $this->assertSame($id, (int) $quality['pending_repackaging'][0]['id']);
+        $ledger->decide($reviewer, $id, 'rejected', 'SYNTHETIC reject retains identifier');
+        $this->assertSame(2, DB::table('pharmacy_container_identifier_reservations')->count());
+        $this->assertSame((int) $execution->version, (int) DB::table('pharmacy_batch_executions')->find($execution->id)->version);
+    }
+
+    public function test_repackaging_audit_failure_rolls_back_reservations_and_decisions(): void
+    {
+        [$execution, $lot, $reviewer] = $this->containerCustodyFixture();
+        $ledger = app(\App\Services\PharmacyContainerRepackagingLedger::class); $body = $this->repackagingInput($execution->id);
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC repackaging audit failure'); }
+        });
+        try { $ledger->retain($this->actor, $execution->id, $body); $this->fail('Unaudited repackaging retained'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC repackaging audit failure', $e->getMessage()); }
+        $this->assertSame(0, DB::table('pharmacy_container_repackaging')->count());
+        $this->assertSame(1, DB::table('pharmacy_container_identifier_reservations')->count());
+        $failAudit = false; $id = $ledger->retain($this->actor, $execution->id, $body); $failAudit = true;
+        try { $ledger->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Unaudited repackaging applied'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC repackaging audit failure', $e->getMessage()); }
+        $this->assertSame('pending', DB::table('pharmacy_container_repackaging')->find($id)->status);
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $failAudit = false; $ledger->decide($reviewer, $id, 'applied', 'SYNTHETIC audited review');
+        $this->assertSame('applied', DB::table('pharmacy_container_repackaging')->find($id)->status);
+    }
+
+    public function test_repackaging_rechecks_scope_stale_sources_and_damaged_origins(): void
+    {
+        [$execution, $lot, $reviewer, $custody] = $this->containerCustodyFixture();
+        $ledger = app(\App\Services\PharmacyContainerRepackagingLedger::class); $body = $this->repackagingInput($execution->id);
+        $this->actor->role = 'pharmacy_technician';
+        try { $ledger->retain($this->actor, $execution->id, $body); $this->fail('Technician repackaging accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(403, $e->getStatusCode()); }
+        $this->actor->role = 'pharmacist'; $this->actor->organization_id = 2;
+        try { $ledger->retain($this->actor, $execution->id, $body); $this->fail('Cross-organization repackaging accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        $this->actor->organization_id = 1;
+        $stale = $body; $stale['source_hash'] = str_repeat('0', 64);
+        try { $ledger->retain($this->actor, $execution->id, $stale); $this->fail('Stale source retained'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $changed = $body; $changed['decision']['process_evidence'] = 'SYNTHETIC different process';
+        try { $ledger->retain($this->actor, $execution->id, $changed); $this->fail('Changed retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        try { $ledger->retain($reviewer, $execution->id, $body); $this->fail('Other author retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_batch_executions')->where('id', $execution->id)->increment('version');
+        try { $ledger->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Stale repackaging applied'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $id, 'rejected', 'SYNTHETIC stale evidence preserved');
+        $next = $ledger->retain($this->actor, $execution->id, $this->repackagingInput($execution->id, 'SYN-REPACK-B'));
+        $reservation = DB::table('pharmacy_container_identifier_reservations')->where('repackaging_id', $next)->first();
+        DB::table('pharmacy_container_identifier_reservations')->where('id', $reservation->id)->update(['repackaging_id' => $id]);
+        try { $ledger->decide($reviewer, $next, 'applied', 'SYNTHETIC'); $this->fail('Changed origin applied'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $next, 'rejected', 'SYNTHETIC damaged origin retained');
+        $this->assertSame(3, DB::table('pharmacy_container_identifier_reservations')->count());
+        $this->app->instance('env', 'production');
+        try { $ledger->retain($this->actor, $execution->id, $body); $this->fail('Production repackaging accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(503, $e->getStatusCode()); }
+    }
+
+    public function test_repackaging_revocation_and_replay_audit_protect_new_quality_context(): void
+    {
+        [$execution, $lot, $reviewer, $custody] = $this->containerCustodyFixture();
+        $ledger = app(\App\Services\PharmacyContainerRepackagingLedger::class);
+        $id = $ledger->retain($this->actor, $execution->id, $this->repackagingInput($execution->id));
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        try { $ledger->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Unassigned reviewer accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => true]);
+        DB::table('users')->where('id', $this->actor->id)->update(['status' => 'inactive']);
+        try { $ledger->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Revoked author accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('users')->where('id', $this->actor->id)->update(['status' => 'active']);
+        $ledger->decide($reviewer, $id, 'applied', 'SYNTHETIC independent review');
+        $protocol = DB::table('pharmacy_quality_protocols')->first()->id;
+        $quality = app(\App\Services\PharmacyBatchQualityContext::class);
+        $this->assertSame($id, $quality->inspect($this->actor, $execution->id, $protocol)['repackaged_container_state']['previous_repackaging_id']);
+        DB::table('pharmacy_compounding_events')->where('action', 'container_repackaging_applied')->update(['action' => 'synthetic_corrupt']);
+        foreach ([fn () => $custody->context($this->actor, $execution->id), fn () => $quality->inspect($this->actor, $execution->id, $protocol)] as $attempt) {
+            try { $attempt(); $this->fail('Missing audit accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        }
+        $this->assertSame('applied', DB::table('pharmacy_container_repackaging')->find($id)->status);
+    }
+
+    public function test_repackaging_http_scopes_history_and_independent_decisions(): void
+    {
+        [$execution, $lot, $reviewer] = $this->containerCustodyFixture();
+        $body = $this->repackagingInput($execution->id); $base = "/api/pharmacy/executions/{$execution->id}/repackaging";
+        $this->getJson("$base-context")->assertOk()->assertJsonPath('data.source_hash', $body['source_hash'])->assertJsonMissingPath('data.packaging_context');
+        $id = $this->postJson($base, $body)->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonPath('release_enabled', false)->json('data.id');
+        $detail = "/api/pharmacy/repackaging/$id";
+        $this->getJson($base)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('pending_output_change', true);
+        $this->getJson("/api/pharmacy/executions/{$execution->id}/container-custody")->assertOk()->assertJsonPath('pending', true);
+        $this->getJson("/api/pharmacy/executions/{$execution->id}/container-corrections")->assertOk()->assertJsonPath('pending', true);
+        $this->getJson($detail)->assertOk()->assertJsonPath('data.proposal.containers.1.identifier', 'SYN-REPACK-A')->assertJsonMissingPath('data.source_snapshot')->assertJsonMissingPath('data.request_hash');
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertStatus(422);
+        $this->actingAs($reviewer, 'api'); $reviewer->update(['role' => 'pharmacy_technician']);
+        $this->getJson($detail)->assertOk(); $this->getJson("$base-context")->assertForbidden();
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertForbidden();
+        $reviewer->update(['role' => 'pharmacist']);
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC independent review'])->assertOk()->assertJsonPath('data.status', 'applied');
+        $this->getJson("$base-context")->assertOk()->assertJsonPath('data.balance.containers.1.quantity', '9.000');
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($detail)->assertNotFound(); $this->getJson($base)->assertNotFound();
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertNotFound();
+        $this->app->instance('env', 'production');
+        $this->getJson($detail)->assertStatus(503); $this->postJson($base, $body)->assertStatus(503);
+    }
+
     private function containerCustodyFixture(?string $yieldQuantity = null): array
     {
         [$execution, $lot, $reviewer, $body, $packaging] = $this->packagingFixture($yieldQuantity);
@@ -5271,6 +5548,8 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(1, DB::table('pharmacy_packaging_proposals')->count());
         $this->assertSame(1, DB::table('pharmacy_container_identities')->count());
         $this->assertFalse(DB::table('pharmacy_container_identities')->where('identifier', 'SYN-NEW')->exists());
+        $this->assertSame(1, DB::table('pharmacy_container_identifier_reservations')->count());
+        $this->assertFalse(DB::table('pharmacy_container_identifier_reservations')->where('identifier', 'SYN-NEW')->exists());
         $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'packaging_proposed')->count());
     }
 

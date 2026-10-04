@@ -43,6 +43,7 @@ class PharmacyReviewedPackagingContext
                 $identity = DB::table('pharmacy_container_identities')->where('organization_id', $actor->organization_id)
                     ->where('execution_id', $executionId)->where('identifier', $container['identifier'])->first();
                 abort_unless($identity, 409, 'Container identity binding is missing.');
+                app(PharmacyContainerIdentifiers::class)->assertInitial($identity);
                 $first = DB::table('pharmacy_packaging_proposals')->where('id', $identity->first_proposal_id)->where('execution_id', $executionId)->first();
                 abort_unless($first && (int) $first->id <= (int) $p->id, 409, 'Container origin evidence is missing.');
                 $original = json_decode($first->proposal, true, 512, JSON_THROW_ON_ERROR);

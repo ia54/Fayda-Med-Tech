@@ -40,7 +40,8 @@ class PharmacyContainerQuantityCorrectionController extends Controller
         $rows = DB::table('pharmacy_container_quantity_corrections as c')->join('pharmacy_yield_correction_proposals as o', 'o.id', '=', 'c.yield_proposal_id')
             ->where('c.execution_id', $executionId)->where('o.execution_id', $executionId)->orderByDesc('c.id')->paginate(20,
                 ['o.id', 'c.id as container_correction_id', 'c.execution_id', 'c.packaging_proposal_id', 'o.created_by', 'o.status', 'o.reviewed_by', 'o.reviewed_at', 'o.created_at']);
-        return response()->json(['data' => $rows, 'pending' => DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
+        return response()->json(['data' => $rows, 'pending' => DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists()
+                || DB::table('pharmacy_container_repackaging')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
             'custody_pending' => DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
             'release_enabled' => false]);
     }

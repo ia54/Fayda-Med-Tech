@@ -31,6 +31,7 @@ class PharmacyYieldCorrectionLedger
                 return;
             }
             if ($decision === 'applied') {
+                abort_if(DB::table('pharmacy_container_repackaging')->where('execution_id', $execution->id)->where('status', 'pending')->exists(), 409, 'Resolve pending container repackaging first.');
                 $containerChecked = app(PharmacyContainerQuantityCorrectionLedger::class)->validateApplication($actor, $proposal);
                 $author = User::find($proposal->created_by);
                 abort_unless($author && $author->role === 'pharmacist' && $author->status === 'active' && (int) $author->organization_id === (int) $actor->organization_id, 409, 'The proposal author is no longer authorized.');
@@ -101,6 +102,7 @@ class PharmacyYieldCorrectionLedger
 
                 return (int) $old->id;
             }
+            abort_if(DB::table('pharmacy_container_repackaging')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'Resolve pending container repackaging first.');
             if ($containers) {
                 [$containerSource, $containerProjection] = app(PharmacyContainerQuantityCorrectionLedger::class)->prepare($actor, $executionId, $data);
                 $data = ['request_id' => $data['request_id'], 'version' => (int) $execution->version,
