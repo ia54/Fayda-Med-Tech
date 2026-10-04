@@ -12,7 +12,10 @@ class PharmacyContainerCustodyLedger
     {
         return DB::table('pharmacy_container_custody_records as c')
             ->join('pharmacy_execution_custody_proposals as o', 'o.id', '=', 'c.output_proposal_id')
-            ->where('c.execution_id', $executionId)->whereIn('o.status', ['pending', 'applied'])->exists();
+            ->where('c.execution_id', $executionId)->whereIn('o.status', ['pending', 'applied'])->exists()
+            || DB::table('pharmacy_container_quantity_corrections as c')
+                ->join('pharmacy_yield_correction_proposals as y', 'y.id', '=', 'c.yield_proposal_id')
+                ->where('c.execution_id', $executionId)->whereIn('y.status', ['pending', 'applied'])->exists();
     }
 
     public function context(User $actor, int $executionId): array
@@ -29,18 +32,36 @@ class PharmacyContainerCustodyLedger
             $aggregate = app(PharmacyExecutionCustodyLedger::class)->summary($actor, $executionId);
             $rows = DB::table('pharmacy_container_custody_records as c')
                 ->join('pharmacy_execution_custody_proposals as o', 'o.id', '=', 'c.output_proposal_id')
-                ->where('c.execution_id', $executionId)->where('o.status', 'applied')->orderBy('o.execution_version')->select('c.*')->get();
+                ->where('c.execution_id', $executionId)->where('o.status', 'applied')->select('c.*', 'o.execution_version')->get()
+                ->map(function ($row) { $row->kind = 'custody'; return $row; });
+            $corrections = DB::table('pharmacy_container_quantity_corrections as c')
+                ->join('pharmacy_yield_correction_proposals as y', 'y.id', '=', 'c.yield_proposal_id')
+                ->where('c.execution_id', $executionId)->where('y.status', 'applied')->select('c.*', 'y.execution_version')->get()
+                ->map(function ($row) { $row->kind = 'correction'; return $row; });
             $digest = app(PharmacyCompoundingIncident::class);
-            $anchor = null; $balance = null; $previous = null;
-            foreach ($rows as $row) {
-                [$source, $projection] = $this->evidence($row);
+            $anchor = null; $balance = null; $previous = null; $previousCorrection = null; $lastVersion = 0;
+            foreach ($rows->concat($corrections)->sortBy('execution_version') as $row) {
+                abort_unless((int) $row->execution_version > $lastVersion && (int) $row->execution_version < (int) $execution->version, 409, 'Container history has conflicting execution versions.');
+                $lastVersion = (int) $row->execution_version;
+                if ($row->kind === 'correction') {
+                    $yield = DB::table('pharmacy_yield_correction_proposals')->find($row->yield_proposal_id);
+                    [$source, $projection] = app(PharmacyContainerQuantityCorrectionLedger::class)->checked($row, $yield);
+                } else {
+                    [$source, $projection] = $this->evidence($row);
+                }
                 if ($anchor === null) {
                     $anchor = $source['packaging_context'];
                     $balance = $anchor['packaging'];
                 }
                 abort_unless($digest->digest($source['packaging_context']) === $digest->digest($anchor)
                     && $source['previous_record_id'] === $previous
+                    && ($source['previous_correction_id'] ?? null) === $previousCorrection
                     && $digest->digest($source['container_balance']) === $digest->digest($balance), 409, 'Container custody ancestry is inconsistent.');
+                if ($row->kind === 'correction') {
+                    $balance = app(PharmacyContainerQuantityCorrectionLedger::class)->after($balance, $projection);
+                    $previousCorrection = (int) $row->id;
+                    continue;
+                }
                 $checked = app(PharmacyContainerCustody::class)->project($balance, $this->input($projection));
                 abort_unless(hash_equals($row->proposal_hash, $digest->digest($checked)) && $checked['accounting_complete'], 409, 'Applied container accounting is inconsistent.');
                 $output = DB::table('pharmacy_execution_custody_proposals')->find($row->output_proposal_id);
@@ -65,9 +86,11 @@ class PharmacyContainerCustodyLedger
                     : PharmacyStock::milli($balance[$key]) === PharmacyStock::milli($aggregate[$key]);
                 abort_unless($matches, 409, 'Container and aggregate output balances diverged.');
             }
-            return ['execution' => (array) $execution, 'batch' => (array) $batch,
+            $context = ['execution' => (array) $execution, 'batch' => (array) $batch,
                 'addenda' => DB::table('pharmacy_execution_addenda')->where('execution_id', $executionId)->orderBy('id')->get()->map(fn ($r) => (array) $r)->all(),
                 'packaging_context' => $anchor, 'previous_record_id' => $previous, 'container_balance' => $balance];
+            if ($previousCorrection !== null) { $context['previous_correction_id'] = $previousCorrection; }
+            return $context;
         });
     }
 

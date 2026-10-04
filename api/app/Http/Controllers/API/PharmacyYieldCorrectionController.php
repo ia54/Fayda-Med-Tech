@@ -50,12 +50,13 @@ class PharmacyYieldCorrectionController extends Controller
             ['id', 'created_by', 'execution_version', 'proposal', 'correction_evidence', 'status', 'reviewed_by', 'review_evidence', 'reviewed_at', 'created_at']);
         $rows->getCollection()->transform(function ($row) {
             $row->correction_evidence = json_decode($row->correction_evidence, true, 512, JSON_THROW_ON_ERROR);
+            $row->container_correction_id = DB::table('pharmacy_container_quantity_corrections')->where('yield_proposal_id', $row->id)->value('id');
             $row->proposal = json_decode($row->proposal, true, 512, JSON_THROW_ON_ERROR);
 
             return $row;
         });
 
-        return response()->json(['data' => $rows, 'execution_version' => $execution->version,
+        return response()->json(['container_established' => app(\App\Services\PharmacyContainerCustodyLedger::class)->established($executionId), 'data' => $rows, 'execution_version' => $execution->version,
             'balance' => app(PharmacyExecutionCustodyLedger::class)->summary($r->user(), $executionId),
             'pending' => DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
             'custody_pending' => DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(),
@@ -69,6 +70,14 @@ class PharmacyYieldCorrectionController extends Controller
 
     public function decide(Request $r, int $proposalId)
     {
+        if ($linked = DB::table('pharmacy_container_quantity_corrections')->where('yield_proposal_id', $proposalId)->first()) {
+            abort_unless($r->user()?->role === 'pharmacist' && $r->user()->status === 'active' && $r->user()->organization_id, 403);
+            $execution = DB::table('pharmacy_batch_executions')->find($linked->execution_id);
+            $batch = $execution ? DB::table('pharmacy_batch_worksheets')->where('id', $execution->batch_id)->where('organization_id', $r->user()->organization_id)->first() : null;
+            abort_unless($batch, 404);
+            app(PharmacyAccess::class)->requireLocation($r->user(), $batch->location_id);
+            abort(409, 'Review individual container quantities through container corrections.');
+        }
         $data = $r->validate(['decision' => 'required|in:applied,rejected', 'evidence' => 'required|string|max:5000']);
         app(PharmacyYieldCorrectionLedger::class)->decide($r->user(), $proposalId, $data['decision'], $data['evidence']);
 

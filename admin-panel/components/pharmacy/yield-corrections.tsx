@@ -41,11 +41,13 @@ export function YieldCorrections({batch}:{batch:CompoundBatch}) {
     <p className="whitespace-pre-wrap break-words">Measurement evidence: {p.correction_evidence.measurement_evidence}</p>
     <p className="whitespace-pre-wrap break-words">Original-source evidence: {p.correction_evidence.source_evidence}</p>
     {p.review_evidence&&<p className="whitespace-pre-wrap break-words">Review: {p.review_evidence}</p>}
-    {p.status==='pending'&&(independent&&Number(user?.id)!==p.created_by?<YieldDecision proposal={p} disabled={isFetching}/>:<p>A pharmacist who authored neither this proposal, the execution nor its addenda must review.</p>)}
+    {p.container_correction_id&&<p><a className="underline" href="#container-corrections">Review the individual quantities in Container quantity corrections.</a></p>}
+    {p.status==='pending'&&!p.container_correction_id&&(independent&&Number(user?.id)!==p.created_by?<YieldDecision proposal={p} disabled={isFetching}/>:<p>A pharmacist who authored neither this proposal, the execution nor its addenda must review.</p>)}
    </article>)}
    <div className="flex gap-3 items-center"><Button variant="outline" disabled={page===1||isFetching} onClick={()=>setPage(page-1)}>Previous correction page</Button><span>Page {page} of {currentData.data.last_page}</span><Button variant="outline" disabled={page>=currentData.data.last_page||isFetching} onClick={()=>setPage(page+1)}>Next correction page</Button></div>
    {currentData.custody_pending&&<p>Resolve the pending output custody proposal before proposing a yield correction.</p>}
-   {pharmacist&&!currentData.pending&&!currentData.custody_pending&&<form onSubmit={submit} className="space-y-3">
+   {currentData.container_established&&<p>Container quantities are established. Use <a className="underline" href="#container-corrections">Container quantity corrections</a> to retain each measured amount.</p>}
+   {pharmacist&&!currentData.container_established&&!currentData.pending&&!currentData.custody_pending&&<form onSubmit={submit} className="space-y-3">
     <h5 className="font-medium">Propose a yield correction</h5>
     <p>Use {execution.record.yield_unit}. Corrected total must equal observed held output plus all previously disposed output.</p>
     <Field name="corrected_yield" label="Corrected total output" type="number" min="0" max="999999.999" step="0.001"/>

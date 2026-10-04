@@ -13,6 +13,7 @@ class PharmacyYieldCorrectionLedger
         abort_unless(app()->environment(['local', 'testing']), 503);
         abort_unless($actor->role === 'pharmacist' && $actor->status === 'active' && $actor->organization_id, 403);
         validator(compact('decision', 'evidence'), ['decision' => 'required|in:applied,rejected', 'evidence' => 'required|string|max:5000'])->validate();
+        abort_unless(trim($evidence) !== '', 422, 'Review evidence is required.');
         DB::transaction(function () use ($actor, $proposalId, $decision, $evidence) {
             DB::table('organizations')->where('id', $actor->organization_id)->lockForUpdate()->first();
             $proposal = DB::table('pharmacy_yield_correction_proposals')->where('id', $proposalId)->lockForUpdate()->first();
@@ -30,7 +31,7 @@ class PharmacyYieldCorrectionLedger
                 return;
             }
             if ($decision === 'applied') {
-                abort_if(app(PharmacyContainerCustodyLedger::class)->established($execution->id), 409, 'Yield corrections require container-level reconciliation after custody is established.');
+                $containerChecked = app(PharmacyContainerQuantityCorrectionLedger::class)->validateApplication($actor, $proposal);
                 $author = User::find($proposal->created_by);
                 abort_unless($author && $author->role === 'pharmacist' && $author->status === 'active' && (int) $author->organization_id === (int) $actor->organization_id, 409, 'The proposal author is no longer authorized.');
                 app(PharmacyAccess::class)->requireLocation($author, $batch->location_id);
@@ -47,7 +48,7 @@ class PharmacyYieldCorrectionLedger
                 abort_unless((int) $execution->version === (int) $proposal->execution_version && hash_equals($proposal->source_hash, $digest->digest($current)), 409, 'Execution evidence changed; reject and replace this proposal.');
                 $correctionEvidence = json_decode($proposal->correction_evidence, true, 512, JSON_THROW_ON_ERROR);
                 abort_unless(hash_equals($proposal->correction_evidence_hash, $digest->digest($correctionEvidence)), 409, 'Correction supporting evidence changed.');
-                $checked = app(PharmacyYieldCorrection::class)->project($source, ['corrected_yield' => $projection['corrected_yield'],
+                $checked = $containerChecked ?? app(PharmacyYieldCorrection::class)->project($source, ['corrected_yield' => $projection['corrected_yield'],
                     'observed_held' => $projection['corrected_held_output'], 'unit' => $projection['unit']] + $correctionEvidence);
                 abort_unless(hash_equals($digest->digest($checked), $digest->digest($projection)), 422, 'The correction does not match its retained evidence.');
                 DB::table('pharmacy_batch_executions')->where('id', $execution->id)->update(['version' => $execution->version + 1,
@@ -63,6 +64,16 @@ class PharmacyYieldCorrectionLedger
 
     public function retain(User $actor, int $executionId, array $data): int
     {
+        return $this->retainRecord($actor, $executionId, $data, false);
+    }
+
+    public function retainContainers(User $actor, int $executionId, array $data): int
+    {
+        return $this->retainRecord($actor, $executionId, $data, true);
+    }
+
+    private function retainRecord(User $actor, int $executionId, array $data, bool $containers): int
+    {
         abort_unless(app()->environment(['local', 'testing']), 503);
         abort_unless($actor->role === 'pharmacist' && $actor->status === 'active' && $actor->organization_id, 403);
         $rules = ['request_id' => 'required|uuid', 'version' => 'required|integer|min:1',
@@ -72,9 +83,10 @@ class PharmacyYieldCorrectionLedger
         foreach (['corrected_yield', 'observed_held'] as $field) {
             $rules[$field] = 'required|numeric|min:0|max:999999.999|decimal:0,3';
         }
+        if ($containers) { $rules = ['request_id' => 'required|uuid', 'source_hash' => 'required|string|regex:/^[a-f0-9]{64}$/', 'decision' => 'required|array']; }
         $data = validator($data, $rules)->validate();
 
-        return DB::transaction(function () use ($actor, $executionId, $data) {
+        return DB::transaction(function () use ($actor, $executionId, $data, $containers) {
             DB::table('organizations')->where('id', $actor->organization_id)->lockForUpdate()->first();
             $execution = DB::table('pharmacy_batch_executions')->where('id', $executionId)->lockForUpdate()->first();
             abort_unless($execution, 404);
@@ -89,7 +101,14 @@ class PharmacyYieldCorrectionLedger
 
                 return (int) $old->id;
             }
-            abort_if(app(PharmacyContainerCustodyLedger::class)->established($executionId), 409, 'Yield corrections require container-level reconciliation after custody is established.');
+            if ($containers) {
+                [$containerSource, $containerProjection] = app(PharmacyContainerQuantityCorrectionLedger::class)->prepare($actor, $executionId, $data);
+                $data = ['request_id' => $data['request_id'], 'version' => (int) $execution->version,
+                    'corrected_yield' => $containerProjection['corrected_yield'], 'observed_held' => $containerProjection['corrected_held_output'],
+                    'unit' => $containerProjection['unit']] + array_intersect_key($containerProjection, array_flip(['reason', 'measurement_evidence', 'source_evidence']));
+            } else {
+                abort_if(app(PharmacyContainerCustodyLedger::class)->established($executionId), 409, 'Yield corrections require container-level reconciliation after custody is established.');
+            }
             abort_unless((int) $execution->version === $data['version'], 409, 'The execution evidence changed. Refresh before proposing a yield correction.');
             abort_if(DB::table('pharmacy_yield_correction_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'An output yield correction is already awaiting review.');
             abort_if(DB::table('pharmacy_execution_custody_proposals')->where('execution_id', $executionId)->where('status', 'pending')->exists(), 409, 'Resolve pending output custody before proposing a yield correction.');
@@ -97,7 +116,8 @@ class PharmacyYieldCorrectionLedger
             $record = json_decode($execution->record, true, 512, JSON_THROW_ON_ERROR);
             $source = ['original_yield' => $record['yield_quantity'], 'accounted_yield' => $custody['recorded_yield'],
                 'previously_disposed' => $custody['previously_disposed'], 'held_output' => $custody['held_output'], 'unit' => $custody['unit']];
-            $proposal = app(PharmacyYieldCorrection::class)->project($source, $data);
+            $proposal = $containers ? app(PharmacyContainerQuantityCorrectionLedger::class)->aggregate($containerProjection)
+                : app(PharmacyYieldCorrection::class)->project($source, $data);
             $snapshot = ['execution' => (array) $execution, 'batch' => (array) $batch, 'yield' => $source,
                 'addenda' => DB::table('pharmacy_execution_addenda')->where('execution_id', $executionId)->orderBy('id')->get()->map(fn ($row) => (array) $row)->all()];
             $id = DB::table('pharmacy_yield_correction_proposals')->insertGetId([
@@ -107,6 +127,7 @@ class PharmacyYieldCorrectionLedger
                 'proposal_hash' => $digest->digest($proposal),
                 'correction_evidence_hash' => $digest->digest(array_intersect_key($data, array_flip(['reason', 'measurement_evidence', 'source_evidence']))), 'correction_evidence' => json_encode(array_intersect_key($data, array_flip(['reason', 'measurement_evidence', 'source_evidence'])), JSON_THROW_ON_ERROR), 'created_at' => now(),
             ]);
+            if ($containers) { app(PharmacyContainerQuantityCorrectionLedger::class)->record($executionId, $id, $containerSource, $containerProjection); }
             DB::table('pharmacy_compounding_events')->insert(['formulation_id' => $batch->formulation_id, 'batch_id' => $batch->id,
                 'actor_id' => $actor->id, 'action' => 'yield_correction_proposed',
                 'details' => json_encode(['proposal_id' => $id, 'execution_id' => $executionId, 'stock_adjusted' => false, 'release_enabled' => false], JSON_THROW_ON_ERROR), 'created_at' => now()]);

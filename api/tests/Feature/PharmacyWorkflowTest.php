@@ -4817,6 +4817,183 @@ class PharmacyWorkflowTest extends TestCase
         return [$execution, $lot, $reviewer, $ledger, $context, $input];
     }
 
+    private function containerCorrectionInput(int $executionId, string $held, string $unpackaged = '0.000'): array
+    {
+        $source = app(\App\Services\PharmacyContainerCustodyLedger::class)->context($this->actor, $executionId);
+        $evidence = ['reason' => 'SYNTHETIC recount correction', 'measurement_evidence' => 'SYNTHETIC measured count', 'source_evidence' => 'SYNTHETIC original source'];
+        return ['request_id' => (string) Str::uuid(), 'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($source),
+            'decision' => ['unit' => $source['container_balance']['unit'],
+                'corrected_yield' => \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($held) + \App\Services\PharmacyStock::milli($unpackaged) + \App\Services\PharmacyStock::milli($source['container_balance']['previously_disposed'])),
+                'containers' => [['identifier' => 'SYN-CONTAINER-1', 'observed_quantity' => $held] + $evidence],
+                'unpackaged' => ['observed_quantity' => $unpackaged] + $evidence] + $evidence];
+    }
+
+    public function test_container_recount_and_disposal_replay_in_execution_order_without_stock_movement(): void
+    {
+        [$execution, $lot, $reviewer, $custody, $source, $input] = $this->containerCustodyFixture('8');
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $corrections = app(\App\Services\PharmacyContainerQuantityCorrectionLedger::class);
+        $yield = app(\App\Services\PharmacyYieldCorrectionLedger::class);
+        $output = app(\App\Services\PharmacyExecutionCustodyLedger::class);
+        // Correct before any custody disposition, then dispose, then recount with the same aggregate total.
+        $body = $this->containerCorrectionInput($execution->id, '7.000');
+        $id = $corrections->retain($this->actor, $execution->id, $body);
+        $this->assertSame($id, $corrections->retain($this->actor, $execution->id, $body));
+        $this->assertSame('8', $output->summary($this->actor, $execution->id)['held_output']);
+        try { $yield->decide($this->actor, $id, 'applied', 'SYNTHETIC'); $this->fail('Self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC independent recount');
+        $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC independent recount');
+        $this->assertSame($id, $corrections->retain($this->actor, $execution->id, $body));
+        $context = $custody->context($this->actor, $execution->id);
+        $this->assertSame('7.000', $context['container_balance']['held_output']);
+        $this->assertSame(1, $context['previous_correction_id']);
+        $input['source_hash'] = app(\App\Services\PharmacyCompoundingIncident::class)->digest($context);
+        $input['decision']['containers'][0]['retained_quarantined'] = '6.000';
+        $disposition = $custody->retain($this->actor, $execution->id, $input);
+        $output->decide($reviewer, $disposition, 'applied', 'SYNTHETIC independent disposition');
+        $body2 = $this->containerCorrectionInput($execution->id, '5.500', '0.500');
+        $id2 = $corrections->retain($this->actor, $execution->id, $body2);
+        $yield->decide($reviewer, $id2, 'applied', 'SYNTHETIC balanced measured correction, no transfer');
+        $context = $custody->context($this->actor, $execution->id);
+        $this->assertSame('5.500', $context['container_balance']['containers'][0]['quantity']);
+        $this->assertSame('0.500', $context['container_balance']['unpackaged_quantity']);
+        $this->assertSame('1.000', $context['container_balance']['previously_disposed']);
+        $this->assertSame('7.000', $context['container_balance']['recorded_yield']);
+        $this->assertSame('6.000', $output->summary($this->actor, $execution->id)['held_output']);
+        $aggregate = json_decode(DB::table('pharmacy_yield_correction_proposals')->find($id2)->proposal, true);
+        $this->assertSame('unchanged', $aggregate['change_direction']);
+        $this->assertSame('0.000', $aggregate['change_quantity']);
+        $current = DB::table('pharmacy_batch_executions')->find($execution->id);
+        $this->assertSame($execution->record, $current->record);
+        $this->assertSame((int) $execution->version + 3, (int) $current->version);
+        $this->assertSame('quarantined', $current->status);
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame(2, DB::table('pharmacy_compounding_events')->where('action', 'yield_correction_applied')->count());
+        $this->assertSame(2, DB::table('pharmacy_container_quantity_corrections')->count());
+    }
+
+    public function test_container_recount_rejects_stale_scope_conflicts_and_corruption_with_retained_rejection(): void
+    {
+        [$execution, $lot, $reviewer, $custody, $source, $input] = $this->containerCustodyFixture();
+        $corrections = app(\App\Services\PharmacyContainerQuantityCorrectionLedger::class);
+        $yield = app(\App\Services\PharmacyYieldCorrectionLedger::class);
+        $body = $this->containerCorrectionInput($execution->id, '7.000');
+        $org = $this->actor->organization_id;
+        $this->actor->organization_id = 999999;
+        try { $corrections->retain($this->actor, $execution->id, $body); $this->fail('Cross tenant correction accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        $this->actor->organization_id = $org; $this->actor->role = 'pharmacy_technician';
+        try { $corrections->retain($this->actor, $execution->id, $body); $this->fail('Technician correction accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(403, $e->getStatusCode()); }
+        $this->actor->role = 'pharmacist';
+        $stale = $body; $stale['source_hash'] = str_repeat('0', 64);
+        try { $corrections->retain($this->actor, $execution->id, $stale); $this->fail('Stale correction accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $id = $corrections->retain($this->actor, $execution->id, $body);
+        $changed = $body; $changed['decision']['reason'] = 'SYNTHETIC different request';
+        try { $corrections->retain($this->actor, $execution->id, $changed); $this->fail('Different retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        try { $corrections->retain($reviewer, $execution->id, $body); $this->fail('Different author retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        try { $custody->retain($this->actor, $execution->id, $input); $this->fail('Concurrent custody accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $next = $body; $next['request_id'] = (string) Str::uuid();
+        try { $corrections->retain($this->actor, $execution->id, $next); $this->fail('Second pending correction accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $row = DB::table('pharmacy_container_quantity_corrections')->where('yield_proposal_id', $id)->first();
+        DB::table('pharmacy_container_quantity_corrections')->where('id', $row->id)->update(['proposal_hash' => str_repeat('0', 64)]);
+        try { $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Damaged correction applied'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $yield->decide($reviewer, $id, 'rejected', 'SYNTHETIC damaged evidence retained');
+        $this->assertSame('rejected', DB::table('pharmacy_yield_correction_proposals')->find($id)->status);
+        $this->assertSame($row->proposal, DB::table('pharmacy_container_quantity_corrections')->find($row->id)->proposal);
+        $this->assertSame((int) $execution->version, (int) DB::table('pharmacy_batch_executions')->find($execution->id)->version);
+        $this->assertSame($source['container_balance']['held_output'], $custody->context($this->actor, $execution->id)['container_balance']['held_output']);
+    }
+
+    public function test_container_recount_atomic_audit_rollback_and_revoked_author(): void
+    {
+        [$execution, $lot, $reviewer] = $this->containerCustodyFixture();
+        $corrections = app(\App\Services\PharmacyContainerQuantityCorrectionLedger::class);
+        $yield = app(\App\Services\PharmacyYieldCorrectionLedger::class);
+        $body = $this->containerCorrectionInput($execution->id, '7.000');
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC recount audit failure'); }
+        });
+        try { $corrections->retain($this->actor, $execution->id, $body); $this->fail('Unaudited recount retained'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC recount audit failure', $e->getMessage()); }
+        $this->assertSame(0, DB::table('pharmacy_container_quantity_corrections')->count());
+        $this->assertSame(0, DB::table('pharmacy_yield_correction_proposals')->count());
+        $failAudit = false;
+        $id = $corrections->retain($this->actor, $execution->id, $body);
+        $before = (array) DB::table('pharmacy_yield_correction_proposals')->find($id);
+        $failAudit = true;
+        try { $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Unaudited recount applied'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC recount audit failure', $e->getMessage()); }
+        $this->assertSame($before, (array) DB::table('pharmacy_yield_correction_proposals')->find($id));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $failAudit = false;
+        DB::table('users')->where('id', $this->actor->id)->update(['status' => 'inactive']);
+        try { $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Revoked author accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $yield->decide($reviewer, $id, 'rejected', 'SYNTHETIC revoked author');
+        $this->assertSame('rejected', DB::table('pharmacy_yield_correction_proposals')->find($id)->status);
+    }
+
+    public function test_container_recount_rechecks_review_source_and_replay_audit(): void
+    {
+        [$execution, $lot, $reviewer, $custody] = $this->containerCustodyFixture();
+        $corrections = app(\App\Services\PharmacyContainerQuantityCorrectionLedger::class);
+        $yield = app(\App\Services\PharmacyYieldCorrectionLedger::class);
+        $body = $this->containerCorrectionInput($execution->id, '7.000');
+        $id = $corrections->retain($this->actor, $execution->id, $body);
+        DB::table('pharmacy_batch_executions')->where('id', $execution->id)->increment('version');
+        try { $yield->decide($reviewer, $id, 'applied', 'SYNTHETIC'); $this->fail('Stale source applied'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $yield->decide($reviewer, $id, 'rejected', 'SYNTHETIC superseded source');
+        $next = $corrections->retain($this->actor, $execution->id, $this->containerCorrectionInput($execution->id, '7.000'));
+        $yield->decide($reviewer, $next, 'applied', 'SYNTHETIC independent review');
+        $event = DB::table('pharmacy_compounding_events')->where('action', 'yield_correction_applied')->first();
+        DB::table('pharmacy_compounding_events')->where('id', $event->id)->update(['action' => 'synthetic_damaged']);
+        try { $custody->context($this->actor, $execution->id); $this->fail('Unaudited correction replayed'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_compounding_events')->where('id', $event->id)->update(['action' => 'yield_correction_applied']);
+        $this->assertSame('7.000', $custody->context($this->actor, $execution->id)['container_balance']['held_output']);
+        $this->app->instance('env', 'production');
+        try { $corrections->retain($this->actor, $execution->id, $body); $this->fail('Production recount accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(503, $e->getStatusCode()); }
+    }
+
+    public function test_container_recount_http_requires_scoped_independent_review_of_individual_quantities(): void
+    {
+        [$execution, $lot, $reviewer] = $this->containerCustodyFixture();
+        $body = $this->containerCorrectionInput($execution->id, '7.000');
+        $base = "/api/pharmacy/executions/{$execution->id}/container-corrections";
+        $this->getJson("$base-context")->assertOk()->assertJsonPath('data.source_hash', $body['source_hash'])->assertJsonMissingPath('data.packaging_context');
+        $id = $this->postJson($base, $body)->assertCreated()->assertJsonPath('data.status', 'pending')->json('data.id');
+        $this->getJson($base)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('pending', true);
+        $detail = "/api/pharmacy/container-corrections/$id";
+        $this->getJson($detail)->assertOk()->assertJsonPath('data.proposal.containers.0.observed_quantity', '7.000')->assertJsonMissingPath('data.source_snapshot')->assertJsonMissingPath('data.request_hash');
+        $this->getJson("/api/pharmacy/executions/{$execution->id}/yield-corrections")->assertOk()->assertJsonPath('container_established', true)->assertJsonPath('data.data.0.container_correction_id', 1);
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertStatus(422);
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/yield-corrections/$id/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertStatus(409);
+        $reviewer->update(['role' => 'pharmacy_technician']);
+        $this->getJson($detail)->assertOk();
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertForbidden();
+        $this->getJson("$base-context")->assertForbidden();
+        $reviewer->update(['role' => 'pharmacist']);
+        $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC independent recount review'])->assertOk()->assertJsonPath('release_enabled', false);
+        $this->getJson($detail)->assertOk()->assertJsonPath('data.status', 'applied');
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($detail)->assertNotFound(); $this->getJson($base)->assertNotFound();
+        $this->postJson("/api/pharmacy/yield-corrections/$id/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertNotFound();
+        $this->app->instance('env', 'production');
+        $this->getJson($detail)->assertStatus(503); $this->postJson($base, $body)->assertStatus(503);
+    }
+
     public function test_container_custody_http_routes_scope_history_and_independent_decisions(): void
     {
         [$execution, $lot, $reviewer, $ledger, $source, $input] = $this->containerCustodyFixture();

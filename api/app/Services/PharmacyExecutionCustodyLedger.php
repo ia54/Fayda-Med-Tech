@@ -96,8 +96,14 @@ class PharmacyExecutionCustodyLedger
                     && $digest->digest($snapshot['yield'] ?? []) === $digest->digest($expected), 409, 'Prior yield correction evidence is inconsistent.');
                 $evidence = json_decode($prior->correction_evidence, true, 512, JSON_THROW_ON_ERROR);
                 abort_unless(hash_equals($prior->correction_evidence_hash, $digest->digest($evidence)), 409, 'Prior correction supporting evidence changed.');
-                $checked = app(PharmacyYieldCorrection::class)->project($expected, ['corrected_yield' => $projection['corrected_yield'],
-                    'observed_held' => $projection['corrected_held_output'], 'unit' => $projection['unit']] + $evidence);
+                $containerRow = DB::table('pharmacy_container_quantity_corrections')->where('yield_proposal_id', $prior->id)->first();
+                if ($containerRow) {
+                    [, $containerProjection] = app(PharmacyContainerQuantityCorrectionLedger::class)->checked($containerRow, $prior);
+                    $checked = app(PharmacyContainerQuantityCorrectionLedger::class)->aggregate($containerProjection);
+                } else {
+                    $checked = app(PharmacyYieldCorrection::class)->project($expected, ['corrected_yield' => $projection['corrected_yield'],
+                        'observed_held' => $projection['corrected_held_output'], 'unit' => $projection['unit']] + $evidence);
+                }
                 abort_unless(hash_equals($digest->digest($checked), $digest->digest($projection)), 409, 'Prior yield correction is inconsistent.');
                 $source['recorded_yield'] = $checked['corrected_yield'];
                 $source['held_output'] = $checked['corrected_held_output'];
