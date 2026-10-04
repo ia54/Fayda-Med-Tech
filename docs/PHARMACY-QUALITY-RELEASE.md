@@ -148,3 +148,27 @@ Migration 048 ran in the backed-up synthetic pilot; all 130 prior data tables we
 The suitability screen now includes paginated history, explicit per-container outcomes/evidence, reviewed dating comparisons, stale-source blocking, retry-bound submissions and independent review. Negative/unassessed findings remain visible after documentary review. TypeScript passed; full backend regression, optimized frontend build and Chrome acceptance are running or pending. Local/unpublished.
 
 Suitability local acceptance completed: full backend regression passed 424 tests / 8,331 assertions; TypeScript and optimized 120-page frontend build passed. Chrome retained author 1's explicit not-assessed finding and reviewer 3's independent documentary review; the unresolved warning and evidence persisted after reload. Database comparison preserved execution, ingredient/finished stock, fills and earlier container history. Migration preserved 130 prior pilot tables. No release or clinical suitability was inferred. Publication and hosted verification remain outstanding.
+
+### Current suitability prerequisite verification
+
+Local `PharmacyReviewedSuitabilityContext` requires the latest independently reviewed suitability record, current source/dating evidence, intact hashes and projection, active assigned contributors, proposal/review audits, and no unsuitable/unassessed outcomes. It does not grant clinical verification or release. Focused context/ledger/HTTP regression passed 4 tests / 94 assertions, including negative findings, pending replacements and missing review audits. Label integration remains outstanding; this addition is unpublished.
+
+### Finished-container label source foundation
+
+A local label-proof context now selects a nonempty container from current independently reviewed suitability, and binds prescription/formulation/dating, scoped active location and curated patient identity. Current case scope and patient enrollment or case linkage are required. It is synthetic-only, exposes no unrelated patient profile fields, and grants no release. Initial integration coverage passed 1 test / 28 assertions before the additional linkage guards; final guard regression is recorded separately. Label rendering, immutable revisions, print lineage, API/UI and device acceptance remain outstanding.
+
+Finished-container proof rendering is implemented locally from the source snapshot: scoped pharmacy/patient, prescription directions, exact container quantity, formulation revision and supplied dating/storage evidence. The document is explicitly synthetic/quarantined, blocks external content with CSP and escapes dynamic text. Focused integration passed 1 test / 35 assertions, including HTML escaping and refusal of a release-marked source. Immutable proof storage, print lineage, browser layout/device checks and operating acceptance remain outstanding; no proof was issued to production.
+
+Migration 049 and the local finished-container proof ledger retain immutable source/document bytes and hashes, per-container revision/predecessor lineage, actor-bound retry identity and an atomic audit event. Initial integration passed 1 test / 39 assertions, including exact retry and preservation of the original revision. Broader failure/access coverage, pilot migration, print events, API/UI and visual acceptance remain outstanding. No operational label or stock movement is created.
+
+Proof retention/integrity focused regression now passes 1 test / 46 assertions, covering audit rollback, stale-source rejection, altered retries, unchanged prior revisions and document tampering. Read-side verification checks source/document hashes, execution/container binding and the retained audit event. API serving and print lineage remain unimplemented; this is unpublished local work.
+
+### Finished-container label screen (local implementation)
+
+The batch worksheet now exposes paginated retained proof history and pharmacist-only source review and document viewing. Current nonempty containers are selected from the reviewed container context. Each new proof binds its source hash and previous revision; retries preserve the same request identifier. The document endpoint rejects superseded or altered proofs and rechecks current prerequisites. Documents display synthetic/quarantine notices and are rendered in a sandboxed viewer. Viewing and downloading never record printing or authorize release. Technician access remains history-only.
+
+Validation: the label API and retention scenarios pass 2 tests / 88 assertions; route inventory includes 175 protected pharmacy declarations. Browser acceptance, print lineage, physical-device validation and production acceptance remain outstanding.
+
+### Container print and reprint evidence
+
+Pharmacists can retain simulated output evidence against an exact current proof and document hash. Copy count (1–20), output date, reason, output-check reference and confirmation are required. New evidence rejects superseded proofs, changed patient/source evidence, altered documents, future dates and dates predating the proof. Actor-bound retries return the existing record; each distinct reprint is append-only. Audit failure rolls back the record. Technicians may read scoped history only. No printer transport is configured, and these records do not authorize dispensing or satisfy physical-device acceptance.

@@ -5170,6 +5170,73 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
         $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
         $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'container_suitability_reviewed')->count());
+        $eligibility = app(\App\Services\PharmacyReviewedSuitabilityContext::class);
+        try { $eligibility->inspect($this->actor, $execution->id); $this->fail('Unassessed review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $body['request_id'] = (string) Str::uuid(); $body['previous_id'] = $id; $body['proposal'][0]['outcome'] = 'suitable';
+        $next = $ledger->retain($this->actor, $execution->id, $body);
+        try { $eligibility->inspect($this->actor, $execution->id); $this->fail('Pending replacement accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $next, 'reviewed', 'SYNTHETIC suitable finding reviewed');
+        $eligible = $eligibility->inspect($this->actor, $execution->id);
+        $this->assertSame($next, (int) $eligible['suitability_proposal']['id']);
+        $this->assertFalse($eligible['release_enabled']);
+        $this->assertFalse($eligible['clinical_suitability_verified']);
+        $labels = app(\App\Services\PharmacyFinishedContainerLabelContext::class);
+        $labelSource = $labels->inspect($this->actor, $execution->id, 'SYN-CONTAINER-1');
+        $this->assertSame('SYN-CONTAINER-1', $labelSource['container']['identifier']);
+        $this->assertFalse($labelSource['release_enabled']);
+        $this->assertTrue($labelSource['synthetic_only']);
+        $this->assertArrayNotHasKey('password', $labelSource['patient']);
+        $proofs = app(\App\Services\PharmacyFinishedContainerLabelLedger::class);
+        $proofBody = ['request_id' => (string) Str::uuid(), 'identifier' => 'SYN-CONTAINER-1', 'previous_id' => null,
+            'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($labelSource)];
+        $proofId = $proofs->retain($this->actor, $execution->id, $proofBody);
+        $this->assertSame($proofId, $proofs->retain($this->actor, $execution->id, $proofBody));
+        $originalProof = (array) DB::table('pharmacy_container_label_proofs')->find($proofId);
+        $this->assertSame('SYN-CONTAINER-1', $proofs->checked((object) $originalProof)['container']['identifier']);
+        $damagedProof = (object) $originalProof; $damagedProof->document .= 'altered';
+        try { $proofs->checked($damagedProof); $this->fail('Damaged document accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame(hash('sha256', $originalProof['document']), $originalProof['document_hash']);
+        $proofBody['request_id'] = (string) Str::uuid(); $proofBody['previous_id'] = $proofId;
+        $secondProof = $proofs->retain($this->actor, $execution->id, $proofBody);
+        $this->assertDatabaseHas('pharmacy_container_label_proofs', ['id' => $secondProof, 'revision' => 2, 'previous_id' => $proofId]);
+        $this->assertSame($originalProof, (array) DB::table('pharmacy_container_label_proofs')->find($proofId));
+        $proofBody['request_id'] = (string) Str::uuid(); $proofBody['previous_id'] = $secondProof;
+        $failProofAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failProofAudit) {
+            if ($failProofAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC proof audit failure'); }
+        });
+        try { $proofs->retain($this->actor, $execution->id, $proofBody); $this->fail('Unaudited proof retained'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC proof audit failure', $e->getMessage()); }
+        $this->assertSame(2, DB::table('pharmacy_container_label_proofs')->count());
+        $failProofAudit = false;
+        $staleProof = $proofBody; $staleProof['source_hash'] = str_repeat('0', 64);
+        try { $proofs->retain($this->actor, $execution->id, $staleProof); $this->fail('Stale source accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame(2, DB::table('pharmacy_container_label_proofs')->count());
+        $wrongRetry = $proofBody; $wrongRetry['request_id'] = $originalProof['request_id'];
+        try { $proofs->retain($this->actor, $execution->id, $wrongRetry); $this->fail('Altered retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+
+        $labelSource['prescription']['directions'] = '<script>alert("unsafe")</script>';
+        $document = app(\App\Services\PharmacyFinishedContainerLabelDocument::class)->render($labelSource, 1);
+        $this->assertStringContainsString('SYNTHETIC PROOF — NOT FOR DISPENSING', $document);
+        $this->assertStringContainsString('QUARANTINED — NO MEDICATION RELEASE', $document);
+        $this->assertStringContainsString('&lt;script&gt;', $document);
+        $this->assertStringNotContainsString('<script>', $document);
+        $this->assertStringContainsString('SYN-CONTAINER-1', $document);
+        $this->assertStringContainsString($labelSource['dating_evidence']['proposed_bud_at'], $document);
+        $labelSource['release_enabled'] = true;
+        try { app(\App\Services\PharmacyFinishedContainerLabelDocument::class)->render($labelSource, 1); $this->fail('Release-marked proof accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+
+        try { $labels->inspect($this->actor, $execution->id, 'UNKNOWN'); $this->fail('Unknown container accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        DB::table('pharmacy_compounding_events')->where('action', 'container_suitability_reviewed')->where('details->proposal_id', $next)->delete();
+        try { $eligibility->inspect($this->actor, $execution->id); $this->fail('Missing review audit accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
     }
 
     public function test_container_suitability_audit_failure_rolls_back_and_missing_audit_blocks_review(): void
@@ -5233,6 +5300,87 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson($detail)->assertNotFound(); $this->getJson($base)->assertNotFound();
         $this->app->instance('env', 'production');
         $this->getJson($detail)->assertStatus(503); $this->postJson($base, $body)->assertStatus(503);
+    }
+
+    public function test_container_label_http_preserves_scope_freshness_and_quarantine(): void
+    {
+        [$execution, $lot, $reviewer] = $this->containerCustodyFixture();
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $source = app(\App\Services\PharmacyCurrentContainerReviewContext::class)->inspect($this->actor, $execution->id);
+        $ledger = app(\App\Services\PharmacyContainerSuitabilityLedger::class);
+        $id = $ledger->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'previous_id' => null,
+            'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($source),
+            'proposal' => [['identifier' => 'SYN-CONTAINER-1', 'outcome' => 'suitable', 'container_evidence' => 'SYNTHETIC', 'storage_evidence' => 'SYNTHETIC', 'dating_scope_evidence' => 'SYNTHETIC']]]);
+        $base = "/api/pharmacy/executions/{$execution->id}/container-labels";
+        $context = "/api/pharmacy/executions/{$execution->id}/container-label-context?identifier=SYN-CONTAINER-1";
+        $this->getJson($context)->assertStatus(409);
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC independent review');
+        $hash = $this->getJson($context)->assertOk()->assertJsonPath('release_enabled', false)->assertJsonMissingPath('data.patient.password')->json('data.source_hash');
+        $body = ['request_id' => (string) Str::uuid(), 'identifier' => 'SYN-CONTAINER-1', 'previous_id' => null, 'source_hash' => $hash];
+        $proof = $this->postJson($base, $body)->assertCreated()->assertJsonPath('release_enabled', false)->json('data.id');
+        $this->postJson($base, $body)->assertCreated()->assertJsonPath('data.id', $proof);
+        $document = "/api/pharmacy/container-labels/$proof/document";
+        $this->getJson($document)->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff')->assertSee('NOT FOR DISPENSING');
+        $this->getJson($base)->assertOk()->assertJsonPath('data.total', 1)->assertJsonMissingPath('data.data.0.source_snapshot');
+        $this->getJson($context)->assertOk()->assertJsonPath('data.previous_id', $proof);
+        $printPath = "/api/pharmacy/container-labels/$proof/prints";
+        $print = ['request_id' => (string) Str::uuid(), 'document_hash' => DB::table('pharmacy_container_label_proofs')->where('id', $proof)->value('document_hash'),
+            'copies' => 1, 'occurred_on' => now()->toDateString(), 'reason' => 'SYNTHETIC first output', 'reference' => 'SYNTHETIC checked proof, no physical printer', 'confirmed' => true];
+        $printId = $this->postJson($printPath, $print)->assertCreated()->assertJsonPath('simulated_only', true)->assertJsonPath('printer_command_sent', false)->assertJsonPath('release_enabled', false)->json('data.id');
+        $this->postJson($printPath, $print)->assertCreated()->assertJsonPath('data.id', $printId);
+        $this->postJson($printPath, array_replace($print, ['copies' => 2]))->assertStatus(409);
+        $this->getJson($printPath)->assertOk()->assertJsonPath('data.total', 1)->assertJsonMissingPath('data.data.0.request_hash');
+        foreach (['copies' => 0, 'confirmed' => false, 'reason' => ' ', 'occurred_on' => now()->addDay()->toDateString()] as $key => $bad) {
+            $this->postJson($printPath, array_replace($print, ['request_id' => (string) Str::uuid(), $key => $bad]))->assertUnprocessable();
+        }
+        $this->postJson($printPath, array_replace($print, ['request_id' => (string) Str::uuid(), 'document_hash' => str_repeat('0', 64)]))->assertStatus(409);
+        $reprint = array_replace($print, ['request_id' => (string) Str::uuid(), 'copies' => 2, 'reason' => 'SYNTHETIC replacement output']);
+        $this->postJson($printPath, $reprint)->assertCreated();
+        $this->assertSame(2, DB::table('pharmacy_container_label_prints')->count());
+        $failPrintAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failPrintAudit) {
+            if ($failPrintAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC print audit failure'); }
+        });
+        try { app(\App\Services\PharmacyContainerLabelPrintLedger::class)->retain($this->actor, $proof, array_replace($print, ['request_id' => (string) Str::uuid()])); $this->fail('Unaudited print evidence retained'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC print audit failure', $e->getMessage()); }
+        $failPrintAudit = false;
+        $this->assertSame(2, DB::table('pharmacy_container_label_prints')->count());
+
+        $body['request_id'] = (string) Str::uuid(); $body['previous_id'] = $proof;
+        $new = $this->postJson($base, $body)->assertCreated()->json('data.id');
+        $this->getJson($document)->assertStatus(409);
+        $this->postJson($printPath, array_replace($print, ['request_id' => (string) Str::uuid()]))->assertStatus(409);
+        $this->postJson($printPath, $print)->assertCreated()->assertJsonPath('data.id', $printId);
+        $document = "/api/pharmacy/container-labels/$new/document";
+        $this->actingAs($reviewer, 'api'); $reviewer->role = 'pharmacy_technician';
+        $this->getJson($base)->assertOk(); $this->getJson($context)->assertForbidden();
+        $this->getJson($document)->assertForbidden(); $this->postJson($base, $body)->assertForbidden();
+        $this->getJson($printPath)->assertOk(); $this->postJson($printPath, $print)->assertForbidden();
+        $reviewer->role = 'pharmacist'; $reviewer->organization_id = 2;
+        $this->getJson($base)->assertNotFound(); $this->getJson($document)->assertNotFound();
+        $this->getJson($printPath)->assertNotFound(); $this->postJson($printPath, $print)->assertNotFound();
+        $reviewer->organization_id = 1;
+        $this->getJson($document)->assertOk();
+        $latestPrint = array_replace($print, ['request_id' => (string) Str::uuid(), 'document_hash' => DB::table('pharmacy_container_label_proofs')->where('id', $new)->value('document_hash')]);
+        $latestPrintPath = "/api/pharmacy/container-labels/$new/prints";
+        $labelSource = json_decode(DB::table('pharmacy_container_label_proofs')->where('id', $new)->value('source_snapshot'), true);
+        $patientTable = $labelSource['patient_source'] === 'pharmacy_patient' ? 'pharmacy_patients' : 'users';
+        DB::table($patientTable)->where('id', $labelSource['patient']['id'])->update(['first_name' => 'SYNTHETIC changed identity']);
+        $this->getJson($document)->assertStatus(409);
+        $this->postJson($latestPrintPath, $latestPrint)->assertStatus(409);
+        DB::table($patientTable)->where('id', $labelSource['patient']['id'])->update(['first_name' => $labelSource['patient']['first_name']]);
+        DB::table('pharmacy_container_label_proofs')->where('id', $new)->update(['document' => 'SYNTHETIC damaged proof']);
+        $this->postJson($latestPrintPath, $latestPrint)->assertStatus(409);
+        $this->getJson($document)->assertStatus(409);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($base)->assertNotFound(); $this->getJson($document)->assertNotFound();
+        $this->getJson($printPath)->assertNotFound(); $this->postJson($printPath, $print)->assertNotFound();
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $this->app->instance('env', 'production');
+        $this->getJson($context)->assertStatus(503); $this->getJson($base)->assertStatus(503);
+        $this->getJson($document)->assertStatus(503); $this->postJson($base, $body)->assertStatus(503);
+        $this->getJson($printPath)->assertStatus(503); $this->postJson($printPath, $print)->assertStatus(503);
     }
 
     private function containerCustodyFixture(?string $yieldQuantity = null): array

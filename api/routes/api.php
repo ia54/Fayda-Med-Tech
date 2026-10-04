@@ -95,6 +95,13 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/batch-worksheets/{id}/incidents', [$incidents, 'index']);
         Route::post('/batch-worksheets/{id}/incidents', [$incidents, 'store']);
         $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;
+        $containerLabels = \App\Http\Controllers\API\PharmacyFinishedContainerLabelController::class;
+        Route::get('/executions/{executionId}/container-label-context', [$containerLabels, 'context']);
+        Route::get('/executions/{executionId}/container-labels', [$containerLabels, 'history']);
+        Route::post('/executions/{executionId}/container-labels', [$containerLabels, 'store']);
+        Route::get('/container-labels/{id}/document', [$containerLabels, 'document']);
+        Route::get('/container-labels/{id}/prints', [$containerLabels, 'prints']);
+        Route::post('/container-labels/{id}/prints', [$containerLabels, 'storePrint']);
         $suitability = \App\Http\Controllers\API\PharmacyContainerSuitabilityController::class;
         Route::get('/executions/{executionId}/container-suitability-context', [$suitability, 'context']);
         Route::get('/executions/{executionId}/container-suitability', [$suitability, 'history']);
