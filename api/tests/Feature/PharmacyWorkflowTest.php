@@ -4438,6 +4438,128 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
     }
 
+    public function test_quality_protocol_api_scopes_history_and_independent_review(): void
+    {
+        [$formula, $reviewer, $body] = $this->qualityProtocolFixture();
+        $body += ['location_id' => $this->location, 'formulation_id' => $formula];
+        $id = $this->postJson('/api/pharmacy/quality-protocols', $body)->assertCreated()->assertJsonPath('release_enabled', false)
+            ->assertJsonPath('operational_acceptance', false)->assertJsonMissingPath('data.request_hash')->json('data.id');
+        $url = "/api/pharmacy/quality-protocols/$id";
+        $this->getJson($url)->assertOk()->assertJsonPath('data.formulation_evidence_current', true)->assertJsonPath('data.record.revision', 'A');
+        $this->getJson('/api/pharmacy/quality-protocols?reviewable=1')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson("$url/history")->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.action', 'created');
+        $decision = ['version' => 1, 'decision' => 'reviewed', 'evidence' => 'SYNTHETIC independent review'];
+        $this->postJson("$url/decision", $decision)->assertStatus(422);
+        $this->actingAs($reviewer, 'api');
+        $this->getJson('/api/pharmacy/quality-protocols?reviewable=1')->assertOk()->assertJsonPath('data.total', 1);
+        $reviewer->role = 'pharmacy_technician'; $reviewer->save();
+        $this->getJson($url)->assertOk();
+        $this->getJson('/api/pharmacy/quality-protocols?reviewable=1')->assertForbidden();
+        $this->postJson("$url/decision", $decision)->assertForbidden();
+        $this->postJson('/api/pharmacy/quality-protocols', $body)->assertForbidden();
+        $reviewer->role = 'pharmacist'; $reviewer->save();
+        $this->postJson("$url/decision", $decision)->assertOk()->assertJsonPath('data.status', 'reviewed');
+        $this->getJson('/api/pharmacy/quality-protocols?reviewable=1')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson("$url/history")->assertOk()->assertJsonPath('data.total', 2);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($url)->assertNotFound();
+        $this->getJson("$url/history")->assertNotFound();
+        $this->getJson('/api/pharmacy/quality-protocols')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/pharmacy/quality-protocols?location_id='.$this->location)->assertNotFound();
+        $this->postJson("$url/decision", ['version' => 2, 'decision' => 'retired', 'evidence' => 'SYNTHETIC'])->assertNotFound();
+        $reviewer->organization_id = 2; $reviewer->save();
+        $this->getJson($url)->assertNotFound();
+        $this->getJson('/api/pharmacy/quality-protocols')->assertOk()->assertJsonPath('data.total', 0);
+        $this->app->instance('env', 'production');
+        try { $this->getJson($url)->assertStatus(503); $this->getJson('/api/pharmacy/quality-protocols')->assertStatus(503); }
+        finally { $this->app->instance('env', 'testing'); }
+        $this->assertSame('reviewed', DB::table('pharmacy_quality_protocols')->find($id)->status);
+    }
+
+    private function qualityProtocolFixture(): array
+    {
+        $formula = $this->postJson('/api/pharmacy/formulations', $this->formulationBody())->assertCreated()->json('data.id');
+        $reviewer = $this->independentReviewer();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/formulations/$formula/review", ['version' => 1, 'action' => 'review', 'evidence' => 'SYNTHETIC'])->assertOk();
+        $this->actingAs($this->actor, 'api');
+        $body = ['request_id' => (string) Str::uuid(), 'previous_id' => null, 'record' => ['reference' => 'SYNTHETIC protocol', 'revision' => 'A',
+            'requirements' => [['key' => 'appearance', 'label' => 'Appearance', 'criterion' => 'SYNTHETIC criterion', 'method_reference' => 'SYNTHETIC method']]],
+            'evidence' => 'SYNTHETIC governance; no clinical approval'];
+        return [$formula, $reviewer, $body, app(\App\Services\PharmacyQualityProtocolLedger::class)];
+    }
+
+    public function test_quality_protocol_revision_review_and_retirement_preserve_records(): void
+    {
+        [$formula, $reviewer, $body, $service] = $this->qualityProtocolFixture();
+        $id = $service->retain($this->actor, $this->location, $formula, $body);
+        $this->assertSame($id, $service->retain($this->actor, $this->location, $formula, $body));
+        $original = DB::table('pharmacy_quality_protocols')->find($id)->record;
+        try { $service->decide($this->actor, $id, 1, 'reviewed', 'SYNTHETIC'); $this->fail('Self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $service->decide($reviewer, $id, 1, 'reviewed', 'SYNTHETIC independent review');
+        $service->decide($reviewer, $id, 1, 'reviewed', 'SYNTHETIC independent review');
+        $this->assertSame(2, DB::table('pharmacy_quality_protocol_events')->where('protocol_id', $id)->count());
+        $next = $body; $next['request_id'] = (string) Str::uuid(); $next['previous_id'] = $id; $next['record']['revision'] = 'B';
+        $replacement = $service->retain($this->actor, $this->location, $formula, $next);
+        $this->assertSame('reviewed', DB::table('pharmacy_quality_protocols')->find($id)->status);
+        $failReplacement = true;
+        DB::connection()->beforeExecuting(function ($query, $bindings) use (&$failReplacement, $replacement) {
+            if ($failReplacement && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_quality_protocol_events')
+                && in_array('reviewed', $bindings, true)) { throw new \RuntimeException('SYNTHETIC replacement audit failure'); }
+        });
+        try { $service->decide($reviewer, $replacement, 1, 'reviewed', 'SYNTHETIC replacement'); $this->fail('Partial replacement accepted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC replacement audit failure', $e->getMessage()); }
+        $this->assertSame('reviewed', DB::table('pharmacy_quality_protocols')->find($id)->status);
+        $this->assertSame('draft', DB::table('pharmacy_quality_protocols')->find($replacement)->status);
+        $this->assertSame(3, DB::table('pharmacy_quality_protocol_events')->count());
+        $failReplacement = false;
+        $service->decide($reviewer, $replacement, 1, 'reviewed', 'SYNTHETIC replacement');
+        $this->assertSame('retired', DB::table('pharmacy_quality_protocols')->find($id)->status);
+        $this->assertSame($original, DB::table('pharmacy_quality_protocols')->find($id)->record);
+        $this->assertSame(1, DB::table('pharmacy_quality_protocols')->where('status', 'reviewed')->count());
+        $service->decide($this->actor, $replacement, 2, 'retired', 'SYNTHETIC withdrawal');
+        $this->assertSame(0, DB::table('pharmacy_quality_protocols')->where('status', 'reviewed')->count());
+        $this->assertSame(0, DB::table('pharmacy_batch_executions')->count());
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->count());
+    }
+
+    public function test_quality_protocol_access_changed_evidence_and_audit_failure_fail_closed(): void
+    {
+        [$formula, $reviewer, $body, $service] = $this->qualityProtocolFixture();
+        $id = $service->retain($this->actor, $this->location, $formula, $body);
+        $before = (array) DB::table('pharmacy_quality_protocols')->find($id);
+        foreach (['author_revoked', 'foreign_org', 'wrong_role', 'altered_record'] as $case) {
+            $actor = clone $reviewer;
+            if ($case === 'author_revoked') { DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]); }
+            if ($case === 'foreign_org') { $actor->organization_id = 2; }
+            if ($case === 'wrong_role') { $actor->role = 'pharmacy_technician'; }
+            if ($case === 'altered_record') { DB::table('pharmacy_quality_protocols')->where('id', $id)->update(['record' => json_encode(['tampered' => true])]); }
+            try { $service->decide($actor, $id, 1, 'reviewed', 'SYNTHETIC'); $this->fail('Unsafe review accepted: '.$case); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertContains($e->getStatusCode(), [403, 404, 409]); }
+            DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+            DB::table('pharmacy_quality_protocols')->where('id', $id)->update(['record' => $before['record']]);
+        }
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_quality_protocol_events')) { throw new \RuntimeException('SYNTHETIC quality audit failure'); }
+        });
+        try { $service->decide($reviewer, $id, 1, 'reviewed', 'SYNTHETIC'); $this->fail('Missing audit accepted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC quality audit failure', $e->getMessage()); }
+        $this->assertSame($before, (array) DB::table('pharmacy_quality_protocols')->find($id));
+        $this->assertSame(1, DB::table('pharmacy_quality_protocol_events')->count());
+        $failAudit = false;
+        DB::table('pharmacy_formulations')->where('id', $formula)->update(['status' => 'retired']);
+        try { $service->decide($reviewer, $id, 1, 'reviewed', 'SYNTHETIC'); $this->fail('Retired formulation accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $service->decide($reviewer, $id, 1, 'rejected', 'SYNTHETIC stale protocol rejected');
+        $this->assertSame('rejected', DB::table('pharmacy_quality_protocols')->find($id)->status);
+        $this->app->instance('env', 'production');
+        try { $service->retain($this->actor, $this->location, $formula, $body); $this->fail('Production accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(503, $e->getStatusCode()); }
+        finally { $this->app->instance('env', 'testing'); }
+    }
+
     private function formulationBody(array $overrides = []): array
     {
         return array_replace(['request_id' => (string) Str::uuid(), 'code' => 'SYN-NOT-FOR-USE', 'name' => 'Synthetic formulation NOT FOR USE',
