@@ -5416,6 +5416,9 @@ class PharmacyWorkflowTest extends TestCase
         $ledger = app(\App\Services\PharmacyContainerLabelComparisonLedger::class);
         $body = ['request_id' => (string) Str::uuid(), 'print_id' => $print, 'label_code' => $proof->barcode_code, 'container_identifier' => 'SYN-CONTAINER-1',
             'document_hash' => $proof->document_hash, 'input_method' => 'manual', 'manual_reason' => 'SYNTHETIC no scanner', 'evidence' => 'SYNTHETIC exact comparison', 'confirmed' => true];
+        $labelReadiness = app(\App\Services\PharmacyCurrentContainerLabels::class);
+        try { $labelReadiness->inspect($reviewer, $execution->id); $this->fail('Missing comparison accepted as current'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
         $comparison = $ledger->retain($this->actor, $label, $body);
         $path = "/api/pharmacy/container-labels/$label/comparisons";
         $this->getJson($path)->assertOk()->assertJsonPath('data.total', 1)->assertJsonMissingPath('data.data.0.request_hash');
@@ -5433,6 +5436,33 @@ class PharmacyWorkflowTest extends TestCase
 
         $this->assertSame($comparison, $ledger->retain($this->actor, $label, $body));
         $this->assertDatabaseHas('pharmacy_container_label_comparisons', ['id' => $comparison, 'input_method' => 'manual', 'print_id' => $print]);
+        $readiness = $labelReadiness->inspect($reviewer, $execution->id);
+        $checkPath = "/api/pharmacy/executions/{$execution->id}/container-label-check";
+        $this->getJson($checkPath)->assertOk()->assertJsonPath('data.release_enabled', false)->assertJsonPath('data.containers.0.comparison_id', $comparison);
+        $this->actingAs($reviewer, 'api'); $reviewer->role = 'pharmacy_technician';
+        $this->getJson($checkPath)->assertForbidden(); $reviewer->role = 'pharmacist';
+        $reviewer->organization_id = 2; $this->getJson($checkPath)->assertNotFound(); $reviewer->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($checkPath)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => true]);
+        $this->actingAs($this->actor, 'api');
+
+        $this->assertSame($comparison, $readiness['containers'][0]['comparison_id']);
+        $this->assertSame($label, $readiness['containers'][0]['proof_id']);
+        $this->assertFalse($readiness['release_enabled']);
+        $this->assertFalse($readiness['operational_acceptance_verified']);
+        $this->assertFalse($readiness['physical_device_verified']);
+        $originalPrint = DB::table('pharmacy_container_label_prints')->find($print);
+        DB::table('pharmacy_container_label_prints')->where('id', $print)->update(['reference' => 'SYNTHETIC changed print evidence']);
+        try { $labelReadiness->inspect($reviewer, $execution->id); $this->fail('Altered print evidence accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_container_label_prints')->where('id', $print)->update(['reference' => $originalPrint->reference]);
+
+        DB::table('pharmacy_container_label_comparisons')->where('id', $comparison)->update(['evidence' => 'SYNTHETIC altered evidence']);
+        try { $labelReadiness->inspect($reviewer, $execution->id); $this->fail('Changed comparison accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_container_label_comparisons')->where('id', $comparison)->update(['evidence' => $body['evidence']]);
+
         foreach (['label_code' => 'FMTCL-'.str_repeat('Z', 20), 'container_identifier' => 'OTHER', 'print_id' => 99999] as $key => $value) {
             try { $ledger->retain($this->actor, $label, array_replace($body, ['request_id' => (string) Str::uuid(), $key => $value])); $this->fail('Mismatched comparison accepted'); }
             catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
@@ -5447,6 +5477,13 @@ class PharmacyWorkflowTest extends TestCase
         $audit = DB::table('pharmacy_compounding_events')->where('action', 'container_label_comparison_retained')->where('details->comparison_id', $scan)->first();
         $this->assertFalse(json_decode($audit->details, true)['physical_device_verified']);
         $this->assertFalse(json_decode($audit->details, true)['release_enabled']);
+        $this->assertSame($scan, $labelReadiness->inspect($reviewer, $execution->id)['containers'][0]['comparison_id']);
+        $unbound = json_decode($audit->details, true); unset($unbound['evidence_hash']);
+        DB::table('pharmacy_compounding_events')->where('id', $audit->id)->update(['details' => json_encode($unbound)]);
+        try { $labelReadiness->inspect($reviewer, $execution->id); $this->fail('Legacy unbound audit reused'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_compounding_events')->where('id', $audit->id)->update(['details' => $audit->details]);
+
         $failAudit = true;
         DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
             if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC comparison audit failure'); }
@@ -5461,9 +5498,60 @@ class PharmacyWorkflowTest extends TestCase
         $labels->retain($this->actor, $execution->id, array_replace($labelBody, ['request_id' => (string) Str::uuid(), 'previous_id' => $label]));
         try { $ledger->retain($this->actor, $label, array_replace($body, ['request_id' => (string) Str::uuid()])); $this->fail('Superseded code accepted'); }
         catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        try { $labelReadiness->inspect($reviewer, $execution->id); $this->fail('New proof without comparison accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
         $this->assertSame($comparison, $ledger->retain($this->actor, $label, $body));
         $this->app->instance('env', 'production');
         $this->getJson($path)->assertStatus(503); $this->postJson($path, $body)->assertStatus(503);
+        $this->getJson($checkPath)->assertStatus(503);
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+    }
+
+    public function test_current_container_labels_checks_every_container_and_preserves_unpackaged_remainder(): void
+    {
+        [$execution, $lot, $reviewer, $packBody, $packaging] = $this->packagingFixture('9');
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $packBody['proposal']['containers'][0]['quantity'] = '3';
+        $packBody['proposal']['containers'][] = ['identifier' => 'SYN-CONTAINER-2', 'quantity' => '4', 'container_reference' => 'SYNTHETIC second container', 'storage_reference' => 'SYNTHETIC storage'];
+        $packBody['proposal']['unpackaged_quantity'] = '2';
+        $pack = $packaging->retain($this->actor, $execution->id, $packBody);
+        $packaging->decide($reviewer, $pack, 'reviewed', 'SYNTHETIC split packaging review');
+        $digest = app(\App\Services\PharmacyCompoundingIncident::class);
+        $current = app(\App\Services\PharmacyCurrentContainerReviewContext::class)->inspect($this->actor, $execution->id);
+        $findings = array_map(fn ($c) => ['identifier' => $c['identifier'], 'outcome' => 'suitable', 'container_evidence' => 'SYNTHETIC', 'storage_evidence' => 'SYNTHETIC', 'dating_scope_evidence' => 'SYNTHETIC'], $current['containers_for_review']);
+        $suitability = app(\App\Services\PharmacyContainerSuitabilityLedger::class);
+        $review = $suitability->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'previous_id' => null, 'source_hash' => $digest->digest($current), 'proposal' => $findings]);
+        $suitability->decide($reviewer, $review, 'reviewed', 'SYNTHETIC both container findings');
+        $check = app(\App\Services\PharmacyCurrentContainerLabels::class);
+        $labels = app(\App\Services\PharmacyFinishedContainerLabelLedger::class);
+        $proofs = [];
+        foreach (['SYN-CONTAINER-1', 'SYN-CONTAINER-2'] as $identifier) {
+            $source = app(\App\Services\PharmacyFinishedContainerLabelContext::class)->inspect($this->actor, $execution->id, $identifier);
+            $id = $labels->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'identifier' => $identifier, 'previous_id' => null, 'source_hash' => $digest->digest($source)]);
+            $proof = DB::table('pharmacy_container_label_proofs')->find($id); $proofs[] = $proof;
+            try { $check->inspect($reviewer, $execution->id); $this->fail('Partial container evidence accepted'); }
+            catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+            $print = app(\App\Services\PharmacyContainerLabelPrintLedger::class)->retain($this->actor, $id, ['request_id' => (string) Str::uuid(), 'document_hash' => $proof->document_hash,
+                'copies' => 1, 'occurred_on' => now()->toDateString(), 'reason' => 'SYNTHETIC', 'reference' => 'SYNTHETIC no physical output', 'confirmed' => true]);
+            app(\App\Services\PharmacyContainerLabelComparisonLedger::class)->retain($this->actor, $id, ['request_id' => (string) Str::uuid(), 'print_id' => $print,
+                'label_code' => $proof->barcode_code, 'container_identifier' => $identifier, 'document_hash' => $proof->document_hash,
+                'input_method' => 'manual', 'manual_reason' => 'SYNTHETIC no scanner', 'evidence' => 'SYNTHETIC compared', 'confirmed' => true]);
+            if ($identifier === 'SYN-CONTAINER-1') {
+                try { $check->inspect($reviewer, $execution->id); $this->fail('First container masked missing second proof'); }
+                catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+            }
+        }
+        $result = $check->inspect($reviewer, $execution->id);
+        $this->assertCount(2, $result['containers']);
+        $this->assertSame(['SYN-CONTAINER-1', 'SYN-CONTAINER-2'], array_column(array_column($result['containers'], 'container'), 'identifier'));
+        $this->assertSame('2.000', $result['unpackaged_quantity']);
+        $this->assertFalse($result['all_held_output_labeled']);
+        $this->assertFalse($result['release_enabled']);
+        $this->assertSame('tablet', $result['unit']);
+        DB::table('pharmacy_container_label_proofs')->where('id', $proofs[0]->id)->update(['document' => 'SYNTHETIC damaged first proof']);
+        try { $check->inspect($reviewer, $execution->id); $this->fail('Second valid container masked damaged first proof'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
         $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
         $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
     }

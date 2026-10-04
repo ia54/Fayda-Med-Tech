@@ -73,6 +73,7 @@ export type ContainerCustodyContext = {execution_id:number;execution_version:num
 export type ContainerCustodySummary = {id:number;container_record_id:number;execution_id:number;packaging_proposal_id:number;created_by:number;status:'pending'|'applied'|'rejected';reviewed_by:number|null;reviewed_at:string|null;created_at:string};
 export type ContainerCustodyDetail = ContainerCustodySummary & {execution_version:number;review_evidence:string|null;proposal:ContainerCustodyInput & {recorded_yield:string;previously_disposed:string;held_before:string;retained_quarantined:string;disposed_output:string;total_disposed:string;unaccounted_output:string;accounting_complete:boolean;release_enabled:false}};
 export const pharmacyApi=apiSlice.injectEndpoints({endpoints:(b)=>({
+ getContainerLabelCheck:b.query<{data:ContainerLabelCheck},number>({query:id=>`/pharmacy/executions/${id}/container-label-check`,providesTags:[TAG_TYPES.PHARMACY]}),
  getContainerLabelComparisons:b.query<{data:{data:ContainerLabelComparison[];total:number;last_page:number}},{id:number;page:number}>({query:({id,page})=>({url:`/pharmacy/container-labels/${id}/comparisons`,params:{page}}),providesTags:[TAG_TYPES.PHARMACY]}),
  createContainerLabelComparison:b.mutation<{data:{id:number}},{id:number;request_id:string;print_id:number;label_code:string;container_identifier:string;document_hash:string;input_method:'scanner'|'manual';manual_reason:string|null;evidence:string;confirmed:boolean}>({query:({id,...body})=>({url:`/pharmacy/container-labels/${id}/comparisons`,method:'POST',body}),invalidatesTags:[TAG_TYPES.PHARMACY]}),
  getContainerLabelPrints:b.query<{data:{data:ContainerLabelPrint[];total:number;last_page:number}},{id:number;page:number}>({query:({id,page})=>({url:`/pharmacy/container-labels/${id}/prints`,params:{page}}),providesTags:[TAG_TYPES.PHARMACY]}),
@@ -207,3 +208,6 @@ export const {useGetContainerLabelPrintsQuery,useCreateContainerLabelPrintMutati
 
 export type ContainerLabelComparison={id:number;label_id:number;print_id:number;created_by:number;document_hash:string;barcode_code:string;container_identifier:string;input_method:'scanner'|'manual';manual_reason:string|null;evidence:string;created_at:string}
 export const {useGetContainerLabelComparisonsQuery,useCreateContainerLabelComparisonMutation}=pharmacyApi
+
+export type ContainerLabelCheck={unit:string;execution_id:number;suitability_id:number;containers:{container:SuitabilityContainer;proof_id:number;proof_revision:number;document_hash:string;barcode_code:string;print_id:number;comparison_id:number;input_method:'manual'|'scanner'}[];unpackaged_quantity:string;all_held_output_labeled:boolean;physical_device_verified:false;operational_acceptance_verified:false;release_enabled:false}
+export const {useGetContainerLabelCheckQuery}=pharmacyApi

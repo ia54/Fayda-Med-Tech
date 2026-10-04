@@ -1,0 +1,9 @@
+'use client'
+import {useState} from 'react'
+import {Button} from '@/components/ui/button'
+import {errorMessage} from './fields'
+import {useGetContainerLabelCheckQuery} from '@/store/api/pharmacyApiSlice'
+export function ContainerLabelCheck({execution}:{execution:number}){
+ const [open,setOpen]=useState(false);const q=useGetContainerLabelCheckQuery(execution,{skip:!open})
+ return <div className="border rounded p-3 space-y-3"><Button variant="outline" onClick={()=>setOpen(!open)}>{open?'Close current label check':'Check current label evidence'}</Button>{open&&<><p>This read-only check revalidates the latest proof and audited comparison for every nonempty container. It does not authorize release.</p>{q.isError?<p role="alert">Current label evidence is incomplete. {errorMessage(q.error)} <Button onClick={()=>q.refetch()}>Recheck label evidence</Button></p>:!q.currentData||q.isFetching?<p>Checking current label evidence…</p>:<><h4 className="font-semibold">Documentary check passed for the listed containers</h4>{q.currentData.data.containers.map(c=><p key={c.container.identifier}>{c.container.identifier} · {c.container.quantity} {q.currentData?.data.unit} · Proof {c.proof_id}, revision {c.proof_revision} · Output record {c.print_id} · Comparison {c.comparison_id} ({c.input_method==='manual'?'manual comparison':'scanner-reported input'})</p>)}<p>Unpackaged quantity: {q.currentData.data.unpackaged_quantity} {q.currentData.data.unit}. {q.currentData.data.all_held_output_labeled?'All held output is represented by the checked container labels.':'Unpackaged output remains outside this label check and stays quarantined.'}</p><p>Physical-device and operational acceptance remain unverified. Medication release is disabled.</p><Button disabled={q.isFetching} onClick={()=>q.refetch()}>Recheck label evidence</Button></>}</>}</div>
+}

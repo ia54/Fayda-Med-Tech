@@ -97,6 +97,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         $execution = \App\Http\Controllers\API\PharmacyExecutionController::class;
         $containerLabels = \App\Http\Controllers\API\PharmacyFinishedContainerLabelController::class;
         Route::get('/executions/{executionId}/container-label-context', [$containerLabels, 'context']);
+        Route::get('/executions/{executionId}/container-label-check', [$containerLabels, 'check']);
         Route::get('/executions/{executionId}/container-labels', [$containerLabels, 'history']);
         Route::post('/executions/{executionId}/container-labels', [$containerLabels, 'store']);
         Route::get('/container-labels/{id}/document', [$containerLabels, 'document']);

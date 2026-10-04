@@ -19,6 +19,11 @@ class PharmacyFinishedContainerLabelController extends Controller
         $b = $e ? DB::table('pharmacy_batch_worksheets')->where('id', $e->batch_id)->where('organization_id', $a->organization_id)->first() : null;
         abort_unless($b, 404);app(PharmacyAccess::class)->requireLocation($a, $b->location_id);
     }
+    public function check(Request $r, int $executionId)
+    {
+        $this->scope($r, $executionId);
+        return response()->json(['data' => app(\App\Services\PharmacyCurrentContainerLabels::class)->inspect($r->user(), $executionId)]);
+    }
     public function context(Request $r, int $executionId)
     {
         $this->scope($r, $executionId);

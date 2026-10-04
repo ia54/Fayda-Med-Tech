@@ -31,15 +31,15 @@ class PharmacyContainerLabelComparisonLedger
    abort_unless(hash_equals($p->document_hash,$d['document_hash']),409,'The compared document differs from the retained proof.');
    $print=DB::table('pharmacy_container_label_prints')->where('id',$d['print_id'])->where('label_id',$labelId)->first();
    abort_unless($print && hash_equals($print->document_hash,$p->document_hash),422,'Select print evidence for this exact proof.');
-   abort_unless(DB::table('pharmacy_compounding_events')->where('batch_id',$b->id)->where('actor_id',$print->created_by)
-    ->where('action','container_label_print_evidence_retained')->where('details->label_id',$labelId)->where('details->print_id',$print->id)
-    ->where('details->document_hash',$p->document_hash)->exists(),409,'Print evidence audit is missing.');
-   $id=DB::table('pharmacy_container_label_comparisons')->insertGetId(['label_id'=>$labelId,'print_id'=>$print->id,'created_by'=>$actor->id,
+   app(PharmacyContainerLabelPrintLedger::class)->checked($print,(int)$b->id);
+   $comparison = ['label_id'=>$labelId,'print_id'=>$print->id,'created_by'=>$actor->id,
     'request_id'=>$d['request_id'],'request_hash'=>$hash,'document_hash'=>$p->document_hash,'barcode_code'=>$p->barcode_code,
-    'container_identifier'=>$p->container_identifier,'input_method'=>$d['input_method'],'manual_reason'=>$d['manual_reason']??null,'evidence'=>$d['evidence'],'created_at'=>now()]);
+    'container_identifier'=>$p->container_identifier,'input_method'=>$d['input_method'],'manual_reason'=>$d['manual_reason']??null,'evidence'=>$d['evidence'],'created_at'=>now()];
+   $id=DB::table('pharmacy_container_label_comparisons')->insertGetId($comparison);
+   $evidenceHash=app(PharmacyCompoundingIncident::class)->digest(array_intersect_key($comparison,array_flip(['label_id','print_id','created_by','document_hash','barcode_code','container_identifier','input_method','manual_reason','evidence'])));
    DB::table('pharmacy_compounding_events')->insert(['formulation_id'=>$b->formulation_id,'batch_id'=>$b->id,'actor_id'=>$actor->id,
     'action'=>'container_label_comparison_retained','details'=>json_encode(['label_id'=>$labelId,'comparison_id'=>$id,'print_id'=>$print->id,
-     'document_hash'=>$p->document_hash,'physical_device_verified'=>false,'release_enabled'=>false],JSON_THROW_ON_ERROR),'created_at'=>now()]);
+     'document_hash'=>$p->document_hash,'evidence_hash'=>$evidenceHash,'physical_device_verified'=>false,'release_enabled'=>false],JSON_THROW_ON_ERROR),'created_at'=>now()]);
    return $id;
   });
  }
