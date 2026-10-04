@@ -32,7 +32,7 @@ class PharmacyFinishedContainerLabelContext
             }
             $patient = $episode->pharmacy_patient_id
                 ? DB::table('pharmacy_patients')->where('id', $episode->pharmacy_patient_id)->where('organization_id', $actor->organization_id)->first()
-                : DB::table('users')->where('id', $episode->patient_id)->where('organization_id', $actor->organization_id)->first();
+                : DB::table('users')->where('id', $episode->patient_id)->where('organization_id', $actor->organization_id)->where('role', 'client')->where('status', 'active')->first();
             abort_unless($patient, 409, 'Patient evidence is missing.');
             // Retain only identity/version fields required by the proof, never unrelated profile fields.
             $identity = array_intersect_key((array) $patient, array_flip(['id', 'first_name', 'last_name', 'version']));

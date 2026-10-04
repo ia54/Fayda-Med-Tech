@@ -5378,6 +5378,17 @@ class PharmacyWorkflowTest extends TestCase
         $latestPrintPath = "/api/pharmacy/container-labels/$new/prints";
         $labelSource = json_decode(DB::table('pharmacy_container_label_proofs')->where('id', $new)->value('source_snapshot'), true);
         $patientTable = $labelSource['patient_source'] === 'pharmacy_patient' ? 'pharmacy_patients' : 'users';
+        $this->assertSame('portal_user', $labelSource['patient_source']);
+        foreach (['role' => 'attorney', 'status' => 'inactive'] as $field => $invalid) {
+            $original = DB::table('users')->where('id', $labelSource['patient']['id'])->value($field);
+            DB::table('users')->where('id', $labelSource['patient']['id'])->update([$field => $invalid]);
+            $this->getJson($context)->assertStatus(409);
+            $this->getJson($document)->assertStatus(409);
+            $this->postJson($latestPrintPath, $latestPrint)->assertStatus(409);
+            DB::table('users')->where('id', $labelSource['patient']['id'])->update([$field => $original]);
+            $this->getJson($document)->assertOk();
+        }
+
         DB::table($patientTable)->where('id', $labelSource['patient']['id'])->update(['first_name' => 'SYNTHETIC changed identity']);
         $this->getJson($document)->assertStatus(409);
         $this->postJson($latestPrintPath, $latestPrint)->assertStatus(409);
