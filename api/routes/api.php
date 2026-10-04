@@ -102,6 +102,8 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/container-labels/{id}/document', [$containerLabels, 'document']);
         Route::get('/container-labels/{id}/prints', [$containerLabels, 'prints']);
         Route::post('/container-labels/{id}/prints', [$containerLabels, 'storePrint']);
+        Route::get('/container-labels/{id}/comparisons', [$containerLabels, 'comparisons']);
+        Route::post('/container-labels/{id}/comparisons', [$containerLabels, 'storeComparison']);
         $suitability = \App\Http\Controllers\API\PharmacyContainerSuitabilityController::class;
         Route::get('/executions/{executionId}/container-suitability-context', [$suitability, 'context']);
         Route::get('/executions/{executionId}/container-suitability', [$suitability, 'history']);

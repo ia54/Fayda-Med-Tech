@@ -34,7 +34,7 @@ Prior Chrome acceptance covered independent protocol, quality and dating review,
 
 ## Remaining implementation and acceptance
 
-- Container custody, recount and repackaging persistence/reconciliation are implemented in the later sections below. Finished-product labels and final release authorization, with revalidation through reservation and handover, remain unfinished.
+- Container custody, recount and repackaging persistence/reconciliation are implemented in the later sections below. Finished-product label proofs and simulated print evidence are now published; barcode comparison is under local acceptance. Final release authorization, with revalidation through reservation and handover, remains unfinished.
 - Applicable official standards, site capability, sterile/nonsterile scope, provider connections and pharmacist/device acceptance. Software tests do not establish clinical adequacy.
 - Recovery UI for corrupt evidence: history and rejection APIs preserve a recovery path, but detail error screens do not yet expose rejection.
 
@@ -172,3 +172,15 @@ Validation: the label API and retention scenarios pass 2 tests / 88 assertions; 
 ### Container print and reprint evidence
 
 Pharmacists can retain simulated output evidence against an exact current proof and document hash. Copy count (1–20), output date, reason, output-check reference and confirmation are required. New evidence rejects superseded proofs, changed patient/source evidence, altered documents, future dates and dates predating the proof. Actor-bound retries return the existing record; each distinct reprint is append-only. Audit failure rolls back the record. Technicians may read scoped history only. No printer transport is configured, and these records do not authorize dispensing or satisfy physical-device acceptance.
+
+### Internal finished-container proof codes
+
+New proof revisions retain a unique random internal Code 128 identity with the exact HTML document. The code identifies a proof revision, not a drug or manufacturer package, and includes no patient information. Existing proofs and print history remain byte-preserved with a null code; they are explicitly historical for barcode purposes. Missing or mismatched retained code bindings fail integrity checks. This does not establish physical scanner/printer acceptance or authorize release. Barcode comparison evidence and release integration remain outstanding.
+
+### Container code comparison evidence
+
+The local API retains an exact current proof code and container comparison against a selected print record with matching document hash and audit. Input method is explicit: scanner-reported input or manual comparison with a required reason. Neither method establishes physical-device acceptance. Mismatches, superseded sources, missing print audits and cross-site access fail; exact actor-bound retries preserve the original comparison and audit failure rolls back new evidence. Role/scope and production boundaries passed 1 test / 42 assertions. UI, migration acceptance and release integration remain outstanding.
+
+Container comparison UI now links each form to an explicit print record, leaves observed code/container inputs empty, requires a manual-entry reason when applicable, and retains paginated history. Changed form bodies receive a new retry identifier; failed saves preserve entered evidence. TypeScript passed. Synthetic migration 052 preserved 133 prior data tables. Optimized build, full regression and Chrome acceptance are in progress.
+
+Barcode/comparison local acceptance: 426 tests / 8,486 assertions and optimized 120-page build passed. Chrome verified readable code and barcode rendering, legacy proof retention, selected-print lineage, wrong-code rejection with preserved inputs, corrected manual comparison and reload persistence. Old proof/print rows, stock and execution were unchanged. Physical scanner/printer and operating acceptance remain unverified.

@@ -33,7 +33,7 @@ class PharmacyFinishedContainerLabelController extends Controller
     {
         $this->scope($r, $executionId);$r->validate(['page' => 'nullable|integer|min:1']);
         return response()->json(['data' => DB::table('pharmacy_container_label_proofs')->where('execution_id', $executionId)->orderByDesc('id')
-            ->paginate(20, ['id', 'execution_id', 'container_identifier', 'revision', 'previous_id', 'created_by', 'created_at', 'document_hash']), 'release_enabled' => false]);
+            ->paginate(20, ['id', 'execution_id', 'container_identifier', 'revision', 'previous_id', 'created_by', 'created_at', 'document_hash', 'barcode_code']), 'release_enabled' => false]);
     }
     public function store(Request $r, int $executionId)
     {
@@ -55,6 +55,21 @@ class PharmacyFinishedContainerLabelController extends Controller
         $this->scope($r, $p->execution_id);
         $saved = app(\App\Services\PharmacyContainerLabelPrintLedger::class)->retain($r->user(), $id, $r->all());
         return response()->json(['data' => ['id' => $saved], 'simulated_only' => true, 'printer_command_sent' => false, 'release_enabled' => false], 201);
+    }
+    public function comparisons(Request $r, int $id)
+    {
+        $p = DB::table('pharmacy_container_label_proofs')->find($id); abort_unless($p, 404);
+        $this->scope($r, $p->execution_id); $r->validate(['page' => 'nullable|integer|min:1']);
+        return response()->json(['data' => DB::table('pharmacy_container_label_comparisons')->where('label_id', $id)->orderByDesc('id')
+            ->paginate(20, ['id', 'label_id', 'print_id', 'created_by', 'document_hash', 'barcode_code', 'container_identifier', 'input_method', 'manual_reason', 'evidence', 'created_at']),
+            'physical_device_verified' => false, 'release_enabled' => false]);
+    }
+    public function storeComparison(Request $r, int $id)
+    {
+        $p = DB::table('pharmacy_container_label_proofs')->find($id); abort_unless($p, 404);
+        $this->scope($r, $p->execution_id);
+        $saved = app(\App\Services\PharmacyContainerLabelComparisonLedger::class)->retain($r->user(), $id, $r->all());
+        return response()->json(['data' => ['id' => $saved], 'physical_device_verified' => false, 'release_enabled' => false], 201);
     }
     public function document(Request $r, int $id)
     {

@@ -11,5 +11,8 @@
 <p>Prepared: {{ $s['dating_evidence']['prepared_at'] }}<br>Reviewed proposed beyond-use: {{ $s['dating_evidence']['proposed_bud_at'] }}<br>Timezone: {{ $s['dating_evidence']['timezone'] }}</p>
 <p class="storage">Reviewed storage: {{ $s['dating_evidence']['storage_conditions'] }}</p>
 <p class="meta">Formulation {{ $s['formulation']['code'] }} · revision {{ $s['formulation']['revision'] }}<br>Suitability record {{ $s['reviewed_suitability']['suitability_proposal']['id'] }} · Proof revision {{ $revision }}</p>
+@if ($barcodeCode)
+<div data-container-label-code="{{ $barcodeCode }}" aria-label="Internal container proof barcode" style="background:#fff;padding:12px;overflow-x:auto">{!! app(\App\Services\PharmacyContainerLabelBarcode::class)->svg($barcodeCode) !!}<p class="meta">{{ $barcodeCode }}</p></div>
+@endif
 <p class="meta">Documentary proof only. Dates and instructions are retained source evidence, not newly selected by this document. Printer sizing, physical output, clinical adequacy and professional acceptance remain unverified.</p>
 </main></body></html>

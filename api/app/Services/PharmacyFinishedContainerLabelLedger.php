@@ -26,6 +26,12 @@ class PharmacyFinishedContainerLabelLedger
         abort_unless((int) $source['reviewed_suitability']['current_container_evidence']['custody']['execution']['id'] === (int) $proof->execution_id
             && $source['container']['identifier'] === $proof->container_identifier, 409, 'Retained proof source binding differs.');
         abort_unless(($source['synthetic_only'] ?? null) === true && ($source['release_enabled'] ?? null) === false, 409, 'Retained proof authority is invalid.');
+        if ($proof->barcode_code ?? null) {
+            abort_unless(app(PharmacyContainerLabelBarcode::class)->valid($proof->barcode_code)
+                && str_contains($proof->document, 'data-container-label-code="'.$proof->barcode_code.'"'), 409, 'Container label code binding differs.');
+        } else {
+            abort_if(str_contains($proof->document, 'data-container-label-code='), 409, 'Retained container label code is missing.');
+        }
         $batch = $source['reviewed_suitability']['current_container_evidence']['custody']['batch'];
         abort_unless(DB::table('pharmacy_compounding_events')->where('batch_id', $batch['id'])->where('actor_id', $proof->created_by)
             ->where('action', 'container_label_proof_retained')->where('details->label_id', $proof->id)->exists(), 409, 'Retained proof audit is missing.');
@@ -55,9 +61,10 @@ class PharmacyFinishedContainerLabelLedger
             $source = app(PharmacyFinishedContainerLabelContext::class)->inspect($actor, $executionId, $d['identifier']);
             abort_unless(hash_equals($d['source_hash'], $digest->digest($source)), 409, 'Label source changed; refresh and compare before saving.');
             $revision = $last ? $last->revision + 1 : 1;
-            $document = app(PharmacyFinishedContainerLabelDocument::class)->render($source, $revision);
+            $code = app(PharmacyContainerLabelBarcode::class)->create();
+            $document = app(PharmacyFinishedContainerLabelDocument::class)->render($source, $revision, $code);
             $id = DB::table('pharmacy_container_label_proofs')->insertGetId(['execution_id' => $executionId, 'container_identifier' => $d['identifier'],
-                'revision' => $revision, 'previous_id' => $d['previous_id'], 'created_by' => $actor->id, 'request_id' => $d['request_id'],
+                'barcode_code' => $code, 'revision' => $revision, 'previous_id' => $d['previous_id'], 'created_by' => $actor->id, 'request_id' => $d['request_id'],
                 'request_hash' => $requestHash, 'source_snapshot' => json_encode($source, JSON_THROW_ON_ERROR), 'source_hash' => $d['source_hash'],
                 'document' => $document, 'document_hash' => hash('sha256', $document), 'created_at' => now()]);
             DB::table('pharmacy_compounding_events')->insert(['formulation_id' => $batch->formulation_id, 'batch_id' => $batch->id,
