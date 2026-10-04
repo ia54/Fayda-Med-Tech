@@ -106,6 +106,12 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/executions/{executionId}/yield-corrections', [$yieldCorrection, 'store']);
         Route::post('/yield-corrections/{proposalId}/decision', [$yieldCorrection, 'decide']);
         $consumptionCorrection = \App\Http\Controllers\API\PharmacyConsumptionCorrectionController::class;
+        $batchQuality = \App\Http\Controllers\API\PharmacyBatchQualityController::class;
+        Route::get('/executions/{executionId}/quality-context', [$batchQuality, 'context']);
+        Route::get('/executions/{executionId}/quality-results', [$batchQuality, 'history']);
+        Route::post('/executions/{executionId}/quality-results', [$batchQuality, 'store']);
+        Route::get('/batch-quality-results/{id}', [$batchQuality, 'show']);
+        Route::post('/batch-quality-results/{id}/decision', [$batchQuality, 'decide']);
         $qualityProtocol = \App\Http\Controllers\API\PharmacyQualityProtocolController::class;
         Route::get('/quality-protocols', [$qualityProtocol, 'index']);
         Route::post('/quality-protocols', [$qualityProtocol, 'store']);

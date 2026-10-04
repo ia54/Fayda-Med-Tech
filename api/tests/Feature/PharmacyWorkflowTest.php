@@ -4476,6 +4476,163 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('reviewed', DB::table('pharmacy_quality_protocols')->find($id)->status);
     }
 
+    public function test_batch_quality_context_binds_protocol_custody_and_ingredient_lineage(): void
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $worksheet = DB::table('pharmacy_batch_worksheets')->find($batch);
+        $body = ['request_id' => (string) Str::uuid(), 'previous_id' => null, 'record' => ['reference' => 'SYNTHETIC', 'revision' => 'A',
+            'requirements' => [['key' => 'appearance', 'label' => 'Appearance', 'criterion' => 'SYNTHETIC', 'method_reference' => 'SYNTHETIC']]], 'evidence' => 'SYNTHETIC'];
+        $ledger = app(\App\Services\PharmacyQualityProtocolLedger::class);
+        $protocol = $ledger->retain($this->actor, $this->location, $worksheet->formulation_id, $body);
+        $reviewer = $this->independentReviewer();
+        $ledger->decide($reviewer, $protocol, 1, 'reviewed', 'SYNTHETIC independent review');
+        $context = app(\App\Services\PharmacyBatchQualityContext::class);
+        $initial = $context->inspect($this->actor, $execution->id, $protocol);
+        $this->assertFalse($initial['release_enabled']);
+        $this->assertSame($protocol, $initial['protocol']['id']);
+        $this->assertSame($reviewer->id, $initial['protocol_review']['actor_id']);
+        $this->assertSame($execution->record, $initial['execution']['record']);
+        $this->assertSame($lot, $initial['ingredients'][0]['receipt']['id']);
+        $this->assertFalse($initial['batch_hold']);
+        $digest = app(\App\Services\PharmacyCompoundingIncident::class);
+        $this->assertSame($digest->digest($initial), $digest->digest($context->inspect($this->actor, $execution->id, $protocol)));
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['status' => 'recalled']);
+        $changed = $context->inspect($this->actor, $execution->id, $protocol);
+        $this->assertNotSame($digest->digest($initial), $digest->digest($changed));
+        $this->assertSame('recalled', $changed['ingredients'][0]['receipt']['status']);
+        $this->assertSame($execution->record, DB::table('pharmacy_batch_executions')->find($execution->id)->record);
+        $other = $ledger->retain($this->actor, $this->otherLocation, $worksheet->formulation_id, array_replace($body, ['request_id' => (string) Str::uuid()]));
+        try { $context->inspect($this->actor, $execution->id, $other); $this->fail('Cross-location protocol accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $protocol, 2, 'retired', 'SYNTHETIC retirement');
+        try { $context->inspect($this->actor, $execution->id, $protocol); $this->fail('Retired protocol accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+    }
+
+    private function batchQualityFixture(): array
+    {
+        [$batch, $lot] = $this->reservedWorksheet();
+        $this->postJson("/api/pharmacy/batch-worksheets/$batch/execution", $this->executionBody())->assertCreated();
+        $execution = DB::table('pharmacy_batch_executions')->where('batch_id', $batch)->first();
+        $worksheet = DB::table('pharmacy_batch_worksheets')->find($batch);
+        $reviewer = $this->independentReviewer();
+        $protocols = app(\App\Services\PharmacyQualityProtocolLedger::class);
+        $protocol = $protocols->retain($this->actor, $this->location, $worksheet->formulation_id, [
+            'request_id' => (string) Str::uuid(), 'previous_id' => null, 'record' => ['reference' => 'SYNTHETIC', 'revision' => 'A',
+            'requirements' => [['key' => 'appearance', 'label' => 'Appearance', 'criterion' => 'SYNTHETIC', 'method_reference' => 'SYNTHETIC']]], 'evidence' => 'SYNTHETIC']);
+        $protocols->decide($reviewer, $protocol, 1, 'reviewed', 'SYNTHETIC independent review');
+        $source = app(\App\Services\PharmacyBatchQualityContext::class)->inspect($this->actor, $execution->id, $protocol);
+        $body = ['request_id' => (string) Str::uuid(), 'previous_id' => null, 'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($source),
+            'results' => [['key' => 'appearance', 'outcome' => 'fail', 'observation' => 'SYNTHETIC failed fixture observation', 'evidence_reference' => 'SYNTHETIC record']],
+            'evidence' => 'SYNTHETIC documentary quality review only'];
+        return [$execution, $lot, $protocol, $reviewer, $body, app(\App\Services\PharmacyBatchQualityLedger::class)];
+    }
+
+    public function test_batch_quality_results_preserve_failure_history_and_never_move_stock(): void
+    {
+        [$execution, $lot, $protocol, $reviewer, $body, $ledger] = $this->batchQualityFixture();
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $id = $ledger->retain($this->actor, $execution->id, $protocol, $body);
+        $this->assertSame($id, $ledger->retain($this->actor, $execution->id, $protocol, $body));
+        try { $ledger->retain($this->actor, $execution->id, $protocol, array_replace($body, ['evidence' => 'changed'])); $this->fail('Changed retry accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        try { $ledger->decide($this->actor, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC failure confirmed; no release');
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC failure confirmed; no release');
+        $record = DB::table('pharmacy_batch_quality_records')->find($id);
+        $results = json_decode($record->results, true);
+        $this->assertSame('reviewed', $record->status);
+        $this->assertSame(1, $results['reported_outcomes']['fail']);
+        $this->assertTrue($results['requires_follow_up']);
+        $this->assertFalse($results['release_enabled']);
+        $this->assertFalse($results['clinical_quality_verified']);
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'quality_results_reviewed')->count());
+        $replacement = $body; $replacement['request_id'] = (string) Str::uuid(); $replacement['previous_id'] = $id; $replacement['results'][0]['outcome'] = 'not_assessed';
+        $next = $ledger->retain($this->actor, $execution->id, $protocol, $replacement);
+        $this->assertSame($id, (int) DB::table('pharmacy_batch_quality_records')->find($next)->previous_id);
+        $this->assertSame((array) $record, (array) DB::table('pharmacy_batch_quality_records')->find($id));
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+    }
+
+    public function test_batch_quality_review_rejects_stale_evidence_and_rolls_back_failed_audits(): void
+    {
+        [$execution, $lot, $protocol, $reviewer, $body, $ledger] = $this->batchQualityFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $protocol, $body);
+        $before = (array) DB::table('pharmacy_batch_quality_records')->find($id);
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC quality audit failure'); }
+        });
+        foreach (['reviewed', 'rejected'] as $decision) {
+            try { $ledger->decide($reviewer, $id, $decision, 'SYNTHETIC'); $this->fail('Missing audit accepted'); }
+            catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC quality audit failure', $e->getMessage()); }
+            $this->assertSame($before, (array) DB::table('pharmacy_batch_quality_records')->find($id));
+        }
+        $failAudit = false;
+        DB::table('pharmacy_batch_quality_records')->where('id', $id)->update(['evidence' => 'altered']);
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Altered evidence accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        DB::table('pharmacy_batch_quality_records')->where('id', $id)->update(['evidence' => $before['evidence']]);
+        DB::table('pharmacy_ingredient_lots')->where('id', $lot)->update(['status' => 'recalled']);
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Stale receipt evidence accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $id, 'rejected', 'SYNTHETIC replace stale evidence');
+        $this->assertSame('rejected', DB::table('pharmacy_batch_quality_records')->find($id)->status);
+        $retry = array_replace($body, ['request_id' => (string) Str::uuid(), 'previous_id' => $id]);
+        try { $ledger->retain($this->actor, $execution->id, $protocol, $retry); $this->fail('Stale source submitted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame(1, DB::table('pharmacy_batch_quality_records')->count());
+    }
+
+    public function test_batch_quality_creation_rolls_back_when_audit_fails(): void
+    {
+        [$execution, $lot, $protocol, $reviewer, $body, $ledger] = $this->batchQualityFixture();
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) {
+                throw new \RuntimeException('SYNTHETIC creation audit failure');
+            }
+        });
+        try { $ledger->retain($this->actor, $execution->id, $protocol, $body); $this->fail('Unaudited record persisted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC creation audit failure', $e->getMessage()); }
+        $this->assertSame(0, DB::table('pharmacy_batch_quality_records')->count());
+        $failAudit = false;
+        $id = $ledger->retain($this->actor, $execution->id, $protocol, $body);
+        $reviewer->role = 'pharmacy_technician';
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Technician review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(403, $e->getStatusCode()); }
+        $reviewer->role = 'pharmacist';
+        $reviewer->organization_id = $this->actor->organization_id + 100000;
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Cross-organization review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        $reviewer->organization_id = $this->actor->organization_id;
+        DB::table('users')->where('id', $this->actor->id)->update(['status' => 'inactive']);
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Revoked author accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame('pending', DB::table('pharmacy_batch_quality_records')->find($id)->status);
+    }
+
+    public function test_batch_quality_http_routes_retain_scoped_results_and_review(): void
+    {
+        [$execution, $lot, $protocol, $reviewer, $body] = $this->batchQualityFixture();
+        $base = "/api/pharmacy/executions/{$execution->id}";
+        $this->getJson("$base/quality-context?protocol_id=$protocol")->assertOk()->assertJsonPath('data.source_hash', $body['source_hash'])->assertJsonPath('release_enabled', false);
+        $id = $this->postJson("$base/quality-results", $body + ['protocol_id' => $protocol])->assertCreated()->assertJsonPath('data.status', 'pending')->json('data.id');
+        $this->getJson("$base/quality-results")->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson("/api/pharmacy/batch-quality-results/$id")->assertOk()->assertJsonMissingPath('data.source_snapshot')->assertJsonMissingPath('data.request_hash');
+        $this->postJson("/api/pharmacy/batch-quality-results/$id/decision", ['decision' => 'reviewed', 'evidence' => 'SYNTHETIC'])->assertStatus(422);
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/batch-quality-results/$id/decision", ['decision' => 'reviewed', 'evidence' => 'SYNTHETIC independent documentary review'])->assertOk()->assertJsonPath('release_enabled', false);
+        $this->getJson("/api/pharmacy/batch-quality-results/$id")->assertOk()->assertJsonPath('data.results.reported_outcomes.fail', 1)->assertJsonPath('clinical_quality_verified', false);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson("$base/quality-results")->assertNotFound();
+        $this->getJson("/api/pharmacy/batch-quality-results/$id")->assertNotFound();
+    }
+
     private function qualityProtocolFixture(): array
     {
         $formula = $this->postJson('/api/pharmacy/formulations', $this->formulationBody())->assertCreated()->json('data.id');
