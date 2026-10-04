@@ -5059,6 +5059,10 @@ class PharmacyWorkflowTest extends TestCase
         $body = $this->repackagingInput($execution->id); $base = "/api/pharmacy/executions/{$execution->id}/repackaging";
         $this->getJson("$base-context")->assertOk()->assertJsonPath('data.source_hash', $body['source_hash'])->assertJsonMissingPath('data.packaging_context');
         $id = $this->postJson($base, $body)->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonPath('release_enabled', false)->json('data.id');
+        $queue = '/api/pharmacy/repackaging';
+        $this->getJson($queue)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.id', $id)->assertJsonMissingPath('data.data.0.source_snapshot');
+        $this->getJson("$queue?reviewable=1")->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson("$queue?page=0")->assertUnprocessable();
         $detail = "/api/pharmacy/repackaging/$id";
         $this->getJson($base)->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('pending_output_change', true);
         $this->getJson("/api/pharmacy/executions/{$execution->id}/container-custody")->assertOk()->assertJsonPath('pending', true);
@@ -5066,15 +5070,27 @@ class PharmacyWorkflowTest extends TestCase
         $this->getJson($detail)->assertOk()->assertJsonPath('data.proposal.containers.1.identifier', 'SYN-REPACK-A')->assertJsonMissingPath('data.source_snapshot')->assertJsonMissingPath('data.request_hash');
         $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertStatus(422);
         $this->actingAs($reviewer, 'api'); $reviewer->update(['role' => 'pharmacy_technician']);
+        $this->getJson($queue)->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson("$queue?reviewable=1")->assertForbidden();
         $this->getJson($detail)->assertOk(); $this->getJson("$base-context")->assertForbidden();
         $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertForbidden();
         $reviewer->update(['role' => 'pharmacist']);
+        $this->getJson("$queue?reviewable=1")->assertOk()->assertJsonPath('data.total', 1);
+        $reviewer->organization_id = 2;
+        $this->getJson($queue)->assertOk()->assertJsonPath('data.total', 0);
+        $reviewer->organization_id = 1;
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson($queue)->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson("$queue?location_id=".$this->location)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => true]);
         $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC independent review'])->assertOk()->assertJsonPath('data.status', 'applied');
+        $this->getJson($queue)->assertOk()->assertJsonPath('data.total', 0);
         $this->getJson("$base-context")->assertOk()->assertJsonPath('data.balance.containers.1.quantity', '9.000');
         DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
         $this->getJson($detail)->assertNotFound(); $this->getJson($base)->assertNotFound();
         $this->postJson("$detail/decision", ['decision' => 'applied', 'evidence' => 'SYNTHETIC'])->assertNotFound();
         $this->app->instance('env', 'production');
+        $this->getJson($queue)->assertStatus(503);
         $this->getJson($detail)->assertStatus(503); $this->postJson($base, $body)->assertStatus(503);
     }
 

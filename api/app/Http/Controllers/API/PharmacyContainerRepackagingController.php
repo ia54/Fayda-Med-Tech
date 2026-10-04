@@ -12,6 +12,32 @@ use Illuminate\Support\Facades\DB;
 
 class PharmacyContainerRepackagingController extends Controller
 {
+    public function worklist(Request $r)
+    {
+        $actor = $r->user();
+        abort_unless(in_array($actor?->role, ['pharmacist', 'pharmacy_technician'], true) && $actor->status === 'active' && $actor->organization_id, 403);
+        $data = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer|min:1', 'reviewable' => 'nullable|boolean']);
+        $query = DB::table('pharmacy_container_repackaging as p')
+            ->join('pharmacy_batch_executions as e', 'e.id', '=', 'p.execution_id')
+            ->join('pharmacy_batch_worksheets as b', 'b.id', '=', 'e.batch_id')
+            ->where('b.organization_id', $actor->organization_id)->where('p.status', 'pending');
+        app(PharmacyAccess::class)->scope($query, $actor, 'b.location_id');
+        if (! empty($data['location_id'])) {
+            app(PharmacyAccess::class)->requireLocation($actor, $data['location_id']);
+            $query->where('b.location_id', $data['location_id']);
+        }
+        if ($r->boolean('reviewable')) {
+            abort_unless($actor->role === 'pharmacist', 403);
+            $query->where('p.created_by', '<>', $actor->id)->where('e.created_by', '<>', $actor->id)
+                ->whereNotExists(function ($q) use ($actor) {
+                    $q->selectRaw('1')->from('pharmacy_execution_addenda as a')->whereColumn('a.execution_id', 'e.id')->where('a.created_by', $actor->id);
+                });
+        }
+
+        return response()->json(['data' => $query->orderBy('p.created_at')->orderBy('p.id')->paginate(20,
+            ['p.id', 'p.execution_id', 'p.created_by', 'p.created_at', 'b.id as batch_id', 'b.batch_number', 'b.location_id']), 'release_enabled' => false]);
+    }
+
     private function scope(Request $r, int $executionId): void
     {
         abort_unless(in_array($r->user()?->role, ['pharmacist', 'pharmacy_technician'], true) && $r->user()->status === 'active' && $r->user()->organization_id, 403);

@@ -99,6 +99,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/executions/{executionId}/repackaging-context', [$repackaging, 'context']);
         Route::get('/executions/{executionId}/repackaging', [$repackaging, 'history']);
         Route::post('/executions/{executionId}/repackaging', [$repackaging, 'store']);
+        Route::get('/repackaging', [$repackaging, 'worklist']);
         Route::get('/repackaging/{id}', [$repackaging, 'show']);
         Route::post('/repackaging/{id}/decision', [$repackaging, 'decide']);
         $containerCorrection = \App\Http\Controllers\API\PharmacyContainerQuantityCorrectionController::class;
