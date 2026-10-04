@@ -4765,6 +4765,133 @@ class PharmacyWorkflowTest extends TestCase
         $this->postJson("$base/beyond-use-proposals", $body)->assertStatus(503);
     }
 
+    public function test_reviewed_dating_context_rejects_expiry_and_pending_replacement(): void
+    {
+        [$execution, $lot, $reviewer, $body, $ledger] = $this->beyondUseFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC independent dating review');
+        $context = app(\App\Services\PharmacyReviewedBeyondUseContext::class);
+        $initial = $context->inspect($this->actor, $execution->id);
+        $this->assertSame($id, (int) $initial['dating_proposal']['id']);
+        $this->assertFalse($initial['release_enabled']);
+        $this->assertFalse($initial['clinical_limits_verified']);
+        $this->assertSame($initial['quality']['source']['output_custody'], $initial['output_balance']);
+        $this->travel(2)->days();
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Expired reviewed proposal accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->travel(-2)->days();
+        $body['request_id'] = (string) Str::uuid(); $body['previous_id'] = $id;
+        $ledger->retain($this->actor, $execution->id, $body);
+        try { $context->inspect($this->actor, $execution->id); $this->fail('Earlier proposal reused during replacement'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $this->assertSame('reviewed', DB::table('pharmacy_beyond_use_proposals')->find($id)->status);
+    }
+
+    private function packagingFixture(): array
+    {
+        [$execution, $lot, $reviewer, $datingBody, $dating] = $this->beyondUseFixture();
+        $dateId = $dating->retain($this->actor, $execution->id, $datingBody);
+        $dating->decide($reviewer, $dateId, 'reviewed', 'SYNTHETIC dating review');
+        $source = app(\App\Services\PharmacyReviewedBeyondUseContext::class)->inspect($this->actor, $execution->id);
+        $body = ['request_id' => (string) Str::uuid(), 'previous_id' => null,
+            'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($source),
+            'proposal' => ['unit' => $source['output_balance']['unit'], 'containers' => [['identifier' => 'SYN-CONTAINER-1',
+                'quantity' => $source['output_balance']['held_output'], 'container_reference' => 'SYNTHETIC container', 'storage_reference' => 'SYNTHETIC storage']],
+                'unpackaged_quantity' => '0.000', 'evidence' => 'SYNTHETIC existing output only']];
+        return [$execution, $lot, $reviewer, $body, app(\App\Services\PharmacyPackagingLedger::class)];
+    }
+
+    public function test_packaging_retains_container_identity_and_reviews_without_new_stock(): void
+    {
+        [$execution, $lot, $reviewer, $body, $ledger] = $this->packagingFixture();
+        $stock = (array) DB::table('pharmacy_ingredient_lots')->find($lot);
+        $ledger = app(\App\Services\PharmacyPackagingLedger::class);
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $this->assertSame($id, $ledger->retain($this->actor, $execution->id, $body));
+        $this->assertSame(1, DB::table('pharmacy_container_identities')->count());
+        try { $ledger->decide($this->actor, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Self review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(422, $e->getStatusCode()); }
+        $failAudit = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$failAudit) {
+            if ($failAudit && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC packaging audit failure'); }
+        });
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Unaudited review accepted'); }
+        catch (\RuntimeException $e) { $this->assertSame('SYNTHETIC packaging audit failure', $e->getMessage()); }
+        $this->assertSame('pending', DB::table('pharmacy_packaging_proposals')->find($id)->status);
+        $failAudit = false;
+        $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC retained container review');
+        $p = DB::table('pharmacy_packaging_proposals')->find($id);
+        $this->assertSame('reviewed', $p->status);
+        $this->assertFalse(json_decode($p->proposal, true)['release_enabled']);
+        $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
+        $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+        $body['request_id'] = (string) Str::uuid(); $body['previous_id'] = $id;
+        $ledger->retain($this->actor, $execution->id, $body);
+        $this->assertSame(1, DB::table('pharmacy_container_identities')->count());
+        $this->assertSame((array) $p, (array) DB::table('pharmacy_packaging_proposals')->find($id));
+    }
+
+    public function test_packaging_identity_conflict_rolls_back_new_proposal_and_new_identifiers(): void
+    {
+        [$execution, $lot, $reviewer, $body, $ledger] = $this->packagingFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $ledger->decide($reviewer, $id, 'rejected', 'SYNTHETIC rejected proposal retains identifiers');
+        $otherBatch = $this->reviewedWorksheet();
+        $other = (array) $execution; unset($other['id']); $other['batch_id'] = $otherBatch;
+        $otherId = DB::table('pharmacy_batch_executions')->insertGetId($other);
+        // Simulate an existing claim on this identifier by another retained preparation.
+        DB::table('pharmacy_container_identities')->where('identifier', 'SYN-CONTAINER-1')->update(['execution_id' => $otherId]);
+        $body['request_id'] = (string) Str::uuid(); $body['previous_id'] = $id;
+        $line = $body['proposal']['containers'][0];
+        $line['identifier'] = 'SYN-NEW'; $line['quantity'] = '1.000';
+        $body['proposal']['containers'][0]['quantity'] = \App\Services\PharmacyStock::decimal(\App\Services\PharmacyStock::milli($body['proposal']['containers'][0]['quantity']) - 1000);
+        array_unshift($body['proposal']['containers'], $line);
+        try { $ledger->retain($this->actor, $execution->id, $body); $this->fail('Conflicting container identity accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); $this->assertSame('Container identifier belongs to another preparation.', $e->getMessage()); }
+        $this->assertSame(1, DB::table('pharmacy_packaging_proposals')->count());
+        $this->assertSame(1, DB::table('pharmacy_container_identities')->count());
+        $this->assertFalse(DB::table('pharmacy_container_identities')->where('identifier', 'SYN-NEW')->exists());
+        $this->assertSame(1, DB::table('pharmacy_compounding_events')->where('action', 'packaging_proposed')->count());
+    }
+
+    public function test_packaging_rejects_wrong_roles_organizations_and_stale_dates(): void
+    {
+        [$execution, $lot, $reviewer, $body, $ledger] = $this->packagingFixture();
+        $id = $ledger->retain($this->actor, $execution->id, $body);
+        $reviewer->role = 'pharmacy_technician';
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Technician review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(403, $e->getStatusCode()); }
+        $reviewer->role = 'pharmacist'; $reviewer->organization_id = 999999;
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Cross-organization review accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(404, $e->getStatusCode()); }
+        $reviewer->organization_id = $this->actor->organization_id;
+        $this->travel(2)->days();
+        try { $ledger->decide($reviewer, $id, 'reviewed', 'SYNTHETIC'); $this->fail('Expired dating accepted'); }
+        catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
+        $ledger->decide($reviewer, $id, 'rejected', 'SYNTHETIC stale proposal rejected');
+        $this->assertSame('rejected', DB::table('pharmacy_packaging_proposals')->find($id)->status);
+        $this->assertSame(1, DB::table('pharmacy_container_identities')->count());
+    }
+
+    public function test_packaging_http_routes_scope_records_and_independent_decisions(): void
+    {
+        [$execution, $lot, $reviewer, $body] = $this->packagingFixture();
+        $base = "/api/pharmacy/executions/{$execution->id}";
+        $this->getJson("$base/packaging-context")->assertOk()->assertJsonPath('data.source_hash', $body['source_hash'])->assertJsonMissingPath('data.source_snapshot');
+        $id = $this->postJson("$base/packaging-proposals", $body)->assertCreated()->assertJsonPath('data.status', 'pending')->assertJsonPath('release_enabled', false)->json('data.id');
+        $this->getJson("$base/packaging-proposals")->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson("/api/pharmacy/packaging-proposals/$id")->assertOk()->assertJsonPath('data.proposal.containers.0.identifier', 'SYN-CONTAINER-1')->assertJsonMissingPath('data.request_hash');
+        $this->postJson("/api/pharmacy/packaging-proposals/$id/decision", ['decision' => 'reviewed', 'evidence' => 'SYNTHETIC'])->assertStatus(422);
+        $this->actingAs($reviewer, 'api');
+        $this->postJson("/api/pharmacy/packaging-proposals/$id/decision", ['decision' => 'reviewed', 'evidence' => 'SYNTHETIC independent packaging review'])->assertOk()->assertJsonPath('release_enabled', false);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $reviewer->id)->update(['active' => false]);
+        $this->getJson("$base/packaging-proposals")->assertNotFound();
+        $this->getJson("/api/pharmacy/packaging-proposals/$id")->assertNotFound();
+        $this->app->instance('env', 'production');
+        $this->getJson("$base/packaging-context")->assertStatus(503);
+        $this->postJson("$base/packaging-proposals", $body)->assertStatus(503);
+    }
+
     private function qualityProtocolFixture(): array
     {
         $formula = $this->postJson('/api/pharmacy/formulations', $this->formulationBody())->assertCreated()->json('data.id');

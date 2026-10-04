@@ -69,3 +69,22 @@ Optimized BUD admin build passed all 120 pages. Chrome verified that the dating 
 Full local backend regression completed: 375 tests / 7,473 assertions. The optimized build passed. Browser acceptance is in progress: synthetic quality record 2 is a separate pending passing fixture for the dating journey; prior reviewed failed record 1 remains retained. No BUD proposal has been saved yet.
 
 BUD Chrome acceptance completed October 4: separate users retained passing synthetic quality replacement 2 while preserving failed record 1, rejected a proposed date beyond its supplied limit without losing evidence, corrected and saved dating proposal 1, denied author self-review, independently reviewed it as user 3, and verified reviewed history after reload. Database comparison preserved 58 prior pharmacy tables excluding quality records and appended compounding events; original failed quality record 1 was byte-for-byte unchanged. Dating review did not change stock or execution. Publication and hosted BUD checks remain outstanding.
+
+## Finished-output packaging — local acceptance complete, unpublished
+
+The packaging workflow records identifiable containers against the latest independently reviewed quality and beyond-use evidence. Fixed decimal quantities must reconcile container contents plus explicit unpackaged remainder to current held output; previously disposed output cannot be packaged again. Unit conversion, duplicate identifiers, missing quantities, excess precision and absent evidence are rejected.
+
+Migration 044 retains proposals and organization-scoped container identities. Identifiers stay bound to the original preparation even after rejection. Exact retries return the original proposal; replacements preserve history. Independent review rechecks source freshness, active site assignments, contributor independence, evidence integrity and identifier ownership. Audit failure rolls back the transaction. Packaging creates no stock, release authority or dispensing permission.
+
+Five protected API routes provide prerequisites, paginated history, curated detail, creation and review/rejection. Internal source snapshots and request hashes are not returned. The batch-detail screen retains form input on validation failure, freezes source evidence and proposal ancestry, and offers review only to independent pharmacists. Server checks remain authoritative.
+
+Validation as of October 4:
+- Focused packaging/context/API checks: 7 tests / 112 assertions.
+- Route inventory: 150 protected pharmacy routes / 393 total declarations.
+- TypeScript and optimized admin build passed (120 pages).
+- Synthetic pilot migration ran after backup; all 124 prior data tables were unchanged.
+- Chrome: excess quantity rejected without losing input; 4 packaged + 2 unpackaged = 6 held saved; self-review unavailable; independent review retained and visible after reload.
+- Database read-back: all 60 prior pharmacy data tables except appended compounding events unchanged, including execution and inventory.
+- Full direct PHPUnit regression: 382 tests / 7,585 assertions, clean. The earlier Artisan wrapper reported optional missing local .env warnings; the CI-equivalent command passed.
+
+Publication and hosted packaging checks remain pending. Finished-container custody movements, labels and final release integration remain unfinished. Production is unchanged, and operational acceptance and provider dependencies remain outstanding.

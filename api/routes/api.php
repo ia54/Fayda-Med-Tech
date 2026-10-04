@@ -106,6 +106,12 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('/executions/{executionId}/yield-corrections', [$yieldCorrection, 'store']);
         Route::post('/yield-corrections/{proposalId}/decision', [$yieldCorrection, 'decide']);
         $consumptionCorrection = \App\Http\Controllers\API\PharmacyConsumptionCorrectionController::class;
+        $packaging = \App\Http\Controllers\API\PharmacyPackagingController::class;
+        Route::get('/executions/{executionId}/packaging-context', [$packaging, 'context']);
+        Route::get('/executions/{executionId}/packaging-proposals', [$packaging, 'history']);
+        Route::post('/executions/{executionId}/packaging-proposals', [$packaging, 'store']);
+        Route::get('/packaging-proposals/{id}', [$packaging, 'show']);
+        Route::post('/packaging-proposals/{id}/decision', [$packaging, 'decide']);
         $beyondUse = \App\Http\Controllers\API\PharmacyBeyondUseController::class;
         Route::get('/executions/{executionId}/beyond-use-context', [$beyondUse, 'context']);
         Route::get('/executions/{executionId}/beyond-use-proposals', [$beyondUse, 'history']);
