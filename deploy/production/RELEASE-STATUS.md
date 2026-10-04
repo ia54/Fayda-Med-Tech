@@ -10,13 +10,11 @@ An isolated synthetic pilot database preserves the original pharmacy fixture. Fr
 
 ## Latest verified baseline and active candidate
 
-Published **21e04c568c14b6372077934a9693dec8824d6b6b** adds current-label checks across every nonempty finished container and complete audit hashes for retained output/comparison evidence. Local full regression passed **427 tests / 8,525 assertions**, TypeScript and the optimized **120-page** frontend build passed. Chrome verified the documentary result after reload, with unpackaged units explicitly excluded and quarantined. Database comparison confirmed all prior pharmacy rows were preserved.
+Published **bc9e323d88908ea46ee97440a468a5e57d76c94d** includes aggregate current-container label checks, complete print/comparison audit bindings and active portal-patient role/status revalidation. All hosted workflows passed: admin **37218401008**, backend **37218400942**, Linux **37218400919**. The preceding aggregate-check increment passed local full regression **427 tests / 8,525 assertions**; the patient-link correction passed focused **3 tests / 167 assertions** and the hosted full regression. TypeScript and the prior optimized **120-page** frontend build passed.
 
-Exact source archive verified: **1,174 files / 133 migrations**, SHA256 `d3637a457b36c0887d8fd2e5a4c6931d1b3fe214d5855d2f6978508c3eea1a28`. Hosted admin **37218257136** passed; backend **37218257126** and Linux **37218257125** were running at the latest observation. Matching Linux artifact verification is pending.
+Chrome verified the aggregate documentary result after reload, with unpackaged units explicitly excluded and quarantined. Database comparison confirmed all prior pharmacy rows were preserved. Source archive verified: **1,174 files / 133 migrations**, SHA256 `9a3cbb9f4f768475890f2e4d30cfacd106a7825b8ccd66ede6519c98d2df547c`. Matching Linux artifact **11309346216** verified: **3,039 files**, archive SHA256 `090846e0100d3c1bcf12050e34fb391eb09738d4ca60568b500e046474b0b0e0`. Runtime was not extracted or deployed.
 
-Previous **9479057cb02acd47c5f4b0ddc6c377e53c37b3b7** passed all three hosted checks and matching Linux archive verification: **3,039 files**, SHA256 `33aa7b495e7badbb67e9bf876f86541926c6f2153798b32628f74acbca290a1a`. It includes internal barcodes and retained manual/scanner-reported comparisons, but excludes the aggregate-check increment. No runtime extraction or deployment occurred.
-
-A subsequent focused correction requires portal-linked label patients to remain active client-role accounts, consistent with prescription-transfer checks. Changed roles/status block current label context, document viewing and new print evidence; original retained history remains unchanged. Its focused regression passed **1 test / 86 assertions**; this is not a full-suite claim for that correction.
+The active local frontend correction forces a fresh label check when its panel is reopened and identifies the completed-check time. TypeScript and optimized 120-page build passed. Chrome reopening showed the fetching state and a new completion timestamp, verifying a fresh request. It does not change release authority.
 
 Earlier release evidence remains in the per-increment audit records. The full platform and pharmacy mission remains open; readiness gates are not a percentage of code completion.
 
