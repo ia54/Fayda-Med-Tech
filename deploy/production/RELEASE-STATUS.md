@@ -16,7 +16,7 @@ It includes dispatch loss/recovery, separate patient-return custody, an isolated
 
 The current release-tooling increment extends the existing archive verifier to compare the recorded tree and both dependency lockfiles against pinned Git objects, and requires that check before web-artifact upload. Its exact-head hosted result is recorded in the draft PR and workspace tracker after publication; do not apply the preceding application's CI result to a newer head.
 
-Downloaded-artifact verification exists for earlier candidate `053d3fa` (3,039 entries); it does not verify a newer artifact. Chrome became reachable, but no new synthetic application acceptance was performed. The current in-app login tab could not be accessed through the browser tool. New browser/physical-device acceptance, production deployment and clinical/provider acceptance remain pending. See [BUILD-COMPLETION.md](../../docs/BUILD-COMPLETION.md) for remaining workflows. The launch tracker counts accepted gates, not code completion.
+Downloaded-artifact verification exists for earlier candidate `053d3fa` (3,039 entries); it does not verify a newer artifact. Candidate `6d3ef7aa77fbcebf6624be6d1ef4f243bdb33b96` subsequently passed hosted backend, admin and web checks, including source-bound web archive verification. A fresh local 120-page admin build and copied-database migration passed. Chrome verified pharmacist MFA, recall pagination/filter/location scope, unreadable-transfer cancellation, and patient-return receipt, independent disposition/recount and older-fill discovery. Dispatch loss and the first later recovery passed independent Chrome review; a second recovery is retained pending review, not complete. See [PHARMACY-ACCEPTANCE-20261018.md](../../docs/PHARMACY-ACCEPTANCE-20261018.md) for exact evidence boundaries. Remaining browser/physical-device acceptance, production deployment and clinical/provider acceptance remain pending. See [BUILD-COMPLETION.md](../../docs/BUILD-COMPLETION.md) for remaining workflows. The launch tracker counts accepted gates, not code completion.
 
 ## Historical October 4 baseline (superseded as current build evidence)
 
@@ -52,7 +52,7 @@ Not deployed. The public website and existing production application are separat
 
 ## Implemented pharmacy foundation
 
-Latest fully verified published candidate: `914ae750db9f5c56e3fa3768d59fa1ebd697a601`. Admin, web and backend CI passed; PHP 300 tests / 5,753 assertions; MySQL8 and MariaDB10.11 each passed 217 workflow tests and a 108-table synthetic restore with byte-identical private files. Matching source and Linux web archives are verified in `release-artifacts/candidate-914ae750db9f5c56e3fa3768d59fa1ebd697a601.json`. Production-ready and deployed remain false.
+Historical published candidate (superseded by current evidence above): `914ae750db9f5c56e3fa3768d59fa1ebd697a601`. Admin, web and backend CI passed; PHP 300 tests / 5,753 assertions; MySQL8 and MariaDB10.11 each passed 217 workflow tests and a 108-table synthetic restore with byte-identical private files. Matching source and Linux web archives are verified in `release-artifacts/candidate-914ae750db9f5c56e3fa3768d59fa1ebd697a601.json`. Production-ready and deployed remain false.
 
 This candidate includes internal ordinary prescription transfers, retained manual source transcriptions and the pure extraction response contract. Chrome accepted synthetic source transcription/correction/reload and responsive layout checks. No OCR or model provider is connected.
 
