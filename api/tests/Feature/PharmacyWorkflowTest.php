@@ -2860,7 +2860,7 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('ready', $f['fulfillment_status']);
         $this->assertEquals(50, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
         $this->assertEquals(10, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
-        $this->getJson('/api/pharmacy/prescriptions?attention=dispatch_custody')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/pharmacy/prescriptions?attention=dispatch_custody')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.dispatch_status', 'in_transit');
         $this->act($rx, $f, 'dispatch', ['transport' => $this->dispatchEvidence($f)], 409);
         $this->act($rx, $f, 'cancel', ['cancellation' => $this->preparedCancellationEvidence($f)], 422);
         $this->postJson($url, $this->handoverBody($f))->assertUnprocessable();
