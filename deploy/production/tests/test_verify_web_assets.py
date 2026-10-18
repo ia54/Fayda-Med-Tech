@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import subprocess
 from pathlib import Path
 import tarfile
 import tempfile
@@ -48,8 +49,8 @@ class WebVerificationTest(unittest.TestCase):
                 extra(tar)
         return hashlib.sha256(self.archive.read_bytes()).hexdigest()
 
-    def check(self, sha=None, commit=None):
-        return verifier.verify(self.archive, sha or hashlib.sha256(self.archive.read_bytes()).hexdigest(), commit or self.commit)
+    def check(self, sha=None, commit=None, repository=None):
+        return verifier.verify(self.archive, sha or hashlib.sha256(self.archive.read_bytes()).hexdigest(), commit or self.commit, repository)
 
     def test_valid_candidate_is_read_only_and_not_launch_acceptance(self):
         self.build()
@@ -57,9 +58,65 @@ class WebVerificationTest(unittest.TestCase):
         result = self.check()
         self.assertEqual(3, result['files_verified'])
         self.assertFalse(result['production_ready'])
+        self.assertFalse(result['source_binding_verified'])
         self.assertFalse(result['extracted_runtime'])
         self.assertEqual(before, self.archive.read_bytes())
         self.assertEqual([self.archive], list(self.archive.parent.iterdir()))
+
+    def source_fixture(self):
+        repo = Path(self.temp.name) / 'source'
+        repo.mkdir()
+        def git(*args):
+            return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.DEVNULL).decode().strip()
+        git('init', '-q'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid')
+        git('config', 'gc.auto', '0'); git('config', 'maintenance.auto', 'false')
+        locks = {}
+        for name in ('admin-panel/pnpm-lock.yaml', 'frontend/package-lock.json'):
+            target = repo / name; target.parent.mkdir(parents=True)
+            target.write_bytes(b'synthetic pinned lockfile')
+            locks[name] = hashlib.sha256(target.read_bytes()).hexdigest()
+        git('add', '.'); git('commit', '-qm', 'Synthetic source')
+        self.commit = git('rev-parse', 'HEAD')
+        self.manifest.update(commit=self.commit, tree=git('rev-parse', 'HEAD^{tree}'), lockfiles=locks)
+        return repo, git
+
+    def test_source_binding_reads_pinned_objects_even_when_working_files_change(self):
+        repo, git = self.source_fixture(); self.build()
+        (repo / 'admin-panel/pnpm-lock.yaml').write_text('uncommitted change')
+        before = git('status', '--porcelain')
+        result = self.check(repository=repo)
+        self.assertTrue(result['source_binding_verified'])
+        self.assertEqual(before, git('status', '--porcelain'))
+        self.assertEqual('uncommitted change', (repo / 'admin-panel/pnpm-lock.yaml').read_text())
+
+    def test_source_binding_rejects_wrong_tree_missing_extra_or_changed_lockfiles(self):
+        repo, git = self.source_fixture()
+        original = json.loads(json.dumps(self.manifest))
+        mutations = [lambda m: m.update(tree='c' * 40),
+                     lambda m: m.pop('lockfiles'),
+                     lambda m: m['lockfiles'].pop('frontend/package-lock.json'),
+                     lambda m: m['lockfiles'].update(extra='a' * 64),
+                     lambda m: m['lockfiles'].update({'frontend/package-lock.json': '0' * 64}),
+                     lambda m: m['lockfiles'].update({'frontend/package-lock.json': 123})]
+        for mutation in mutations:
+            self.manifest = json.loads(json.dumps(original)); self.build(mutation)
+            with self.assertRaises(verifier.VerificationError): self.check(repository=repo)
+
+    def test_source_binding_refuses_a_tree_object_presented_as_a_commit(self):
+        repo, git = self.source_fixture()
+        self.commit = git('rev-parse', 'HEAD^{tree}')
+        self.manifest['commit'] = self.commit
+        self.build()
+        with self.assertRaises(verifier.VerificationError): self.check(repository=repo)
+
+    def test_source_binding_refuses_unavailable_repository_and_missing_pinned_blob(self):
+        repo, git = self.source_fixture(); self.build()
+        with self.assertRaises(verifier.VerificationError): self.check(repository=repo / 'missing')
+        git('rm', '-q', 'frontend/package-lock.json'); git('commit', '-qm', 'Missing dependency lock')
+        self.commit = git('rev-parse', 'HEAD')
+        self.manifest.update(commit=self.commit, tree=git('rev-parse', 'HEAD^{tree}'))
+        self.build()
+        with self.assertRaises(verifier.VerificationError): self.check(repository=repo)
 
     def test_wrong_digest_commit_or_target_refused(self):
         self.build()

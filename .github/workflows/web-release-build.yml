@@ -48,6 +48,17 @@ jobs:
         run: |
           node deploy/production/web_asset_package.mjs "$GITHUB_WORKSPACE" "$RUNNER_TEMP/fayda-web-candidate"
           printf 'directory=%s\n' "$RUNNER_TEMP/fayda-web-candidate" >> "$GITHUB_OUTPUT"
+      - name: Verify packaged archive against pinned source objects
+        run: |
+          python3 - "$RUNNER_TEMP/fayda-web-candidate" "$GITHUB_WORKSPACE" <<'PY'
+          import json, subprocess, sys
+          from pathlib import Path
+          output, repo = map(Path, sys.argv[1:])
+          record = json.loads((output / 'BUILD-RECORD.json').read_text())
+          subprocess.run(['python3', str(repo / 'deploy/production/verify_web_assets.py'),
+                          str(output / record['archive']), '--sha256', record['sha256'],
+                          '--commit', record['commit'], '--repository', str(repo)], check=True)
+          PY
       - name: Retain verified candidate files
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

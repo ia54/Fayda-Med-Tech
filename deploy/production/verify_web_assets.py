@@ -4,7 +4,9 @@ import argparse
 import gzip
 import hashlib
 import json
-from pathlib import PurePosixPath
+import os
+import subprocess
+from pathlib import Path, PurePosixPath
 import posixpath
 import re
 import sys
@@ -43,7 +45,30 @@ def clean_path(name):
     return name
 
 
-def verify(archive, expected_sha256, expected_commit):
+def verify_source(manifest, expected_commit, repository):
+    """Compare against existing Git objects; never fetch, checkout, or run package code."""
+    environment = dict(os.environ, GIT_NO_REPLACE_OBJECTS='1', GIT_OPTIONAL_LOCKS='0')
+    def git(*arguments):
+        try:
+            return subprocess.check_output(['git', '-c', 'safe.directory=' + str(Path(repository).resolve()), '-C', str(repository), *arguments],
+                                           env=environment, stderr=subprocess.PIPE, timeout=30)
+        except (subprocess.SubprocessError, OSError) as error:
+            raise VerificationError('Pinned source objects are unavailable in the supplied repository') from error
+    require(git('cat-file', '-t', expected_commit).strip() == b'commit', 'Pinned source identity is not a commit')
+    tree = git('rev-parse', '--verify', expected_commit + '^{tree}').decode().strip()
+    require(manifest.get('tree') == tree, 'Source tree differs from pinned Git commit')
+    locks = manifest.get('lockfiles')
+    paths = {'admin-panel/pnpm-lock.yaml', 'frontend/package-lock.json'}
+    require(isinstance(locks, dict) and set(locks) == paths, 'Expected both pinned dependency lockfiles')
+    for path in sorted(paths):
+        require(isinstance(locks[path], str) and bool(re.fullmatch('[a-f0-9]{64}', locks[path])),
+                'Invalid dependency lockfile digest')
+        source = git('cat-file', 'blob', expected_commit + ':' + path)
+        require(hashlib.sha256(source).hexdigest() == locks[path], 'Dependency lockfile differs from pinned Git commit')
+    return tree
+
+
+def verify(archive, expected_sha256, expected_commit, repository=None):
     require(bool(re.fullmatch('[a-f0-9]{64}', expected_sha256)), 'Expected a trusted SHA-256')
     require(bool(re.fullmatch('[a-f0-9]{40}', expected_commit)), 'Expected a full pinned commit')
     with open(archive, 'rb') as raw:
@@ -129,7 +154,10 @@ def verify(archive, expected_sha256, expected_commit):
     for name, row in rows.items():
         if row['type'] == 'symlink':
             resolve(name, set())
-    return {'verified': True, 'commit': expected_commit, 'sha256': expected_sha256,
+    if repository is not None:
+        verify_source(manifest, expected_commit, repository)
+    return {'source_binding_verified': repository is not None, 'tree': manifest['tree'],
+            'verified': True, 'commit': expected_commit, 'sha256': expected_sha256,
             'files_verified': len(rows), 'runtime': runtime, 'extracted_runtime': False,
             'production_ready': False}
 
@@ -139,9 +167,10 @@ if __name__ == '__main__':
     parser.add_argument('archive')
     parser.add_argument('--sha256', required=True, help='Digest from the trusted release record, not the archive itself')
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--repository', help='Existing source checkout containing the pinned commit; verifies tree and both lockfiles without fetching')
     args = parser.parse_args()
     try:
-        print(json.dumps(verify(args.archive, args.sha256, args.commit), sort_keys=True))
+        print(json.dumps(verify(args.archive, args.sha256, args.commit, args.repository), sort_keys=True))
     except (VerificationError, OSError, EOFError, tarfile.TarError, ValueError, TypeError, KeyError, RecursionError) as error:
         print('Verification refused: ' + str(error), file=sys.stderr)
         sys.exit(1)

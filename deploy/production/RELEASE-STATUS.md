@@ -10,13 +10,13 @@ An isolated synthetic pilot database preserves the original pharmacy fixture. Fr
 
 ## Current build-first development evidence
 
-Published candidate `b397ee029a0173adfd1133731c3a463c64d37fd8` passed PHP regression **449 tests / 9,132 assertions**, MySQL 8 and MariaDB 10.11 schema/workflow/recovery, source packaging, admin TypeScript/session checks and the production-origin web build. Runs: backend `39156031128`, admin `39156031105`, web `39156031201`.
+The latest application candidate verified before the release-tooling increment is `3c9e365833ff1a1e525cc71a1d2a6839ea9379df`: **452 PHP tests / 9,234 assertions**, MySQL 8 and MariaDB 10.11 schema/workflow/recovery, source packaging, admin checks and production-origin web build all passed. Runs: backend `39162734640`, admin `39162734766`, web `39162734739`. Ten rendered pharmacy UI tests passed locally.
 
-The branch now includes ordinary dispatch loss/recovery, separate patient-return custody with independently reviewed recount/disposition, worklist links to older affected fills, and an isolated compounded handover rehearsal connecting current reviewed container/label evidence. The rehearsal changes no real stock reservation, fill, bill or medication-release permission. Controlled and compounded dispensing remain disabled.
+It includes dispatch loss/recovery, separate patient-return custody, an isolated compounded handover rehearsal, unusable-evidence recovery, prescription-transfer cancellation/rejection recovery and the assigned-location recall overview across pages and filters. Controlled and compounded dispensing remain disabled. These are development checks, not operational acceptance.
 
-A following UI increment exposes independent rejection of unusable pending evidence from fresh history metadata. Four rendered UI checks passed locally; its current-head hosted validation is recorded in the draft PR and workspace evidence tracker after publication. Do not apply the preceding commit's test result to a newer head without its own check evidence.
+The current release-tooling increment extends the existing archive verifier to compare the recorded tree and both dependency lockfiles against pinned Git objects, and requires that check before web-artifact upload. Its exact-head hosted result is recorded in the draft PR and workspace tracker after publication; do not apply the preceding application's CI result to a newer head.
 
-No new Chrome acceptance was obtained: the browser connection timed out. New physical-device acceptance, downloaded-runtime verification, production access/deployment and clinical/provider acceptance remain pending. The latest software sequence is in [BUILD-COMPLETION.md](../../docs/BUILD-COMPLETION.md). The workspace launch tracker separates accepted gates from implemented code; no code-completion percentage is inferred.
+Downloaded-artifact verification exists for earlier candidate `053d3fa` (3,039 entries); it does not verify a newer artifact. Chrome became reachable, but no new synthetic application acceptance was performed. The current in-app login tab could not be accessed through the browser tool. New browser/physical-device acceptance, production deployment and clinical/provider acceptance remain pending. See [BUILD-COMPLETION.md](../../docs/BUILD-COMPLETION.md) for remaining workflows. The launch tracker counts accepted gates, not code completion.
 
 ## Historical October 4 baseline (superseded as current build evidence)
 

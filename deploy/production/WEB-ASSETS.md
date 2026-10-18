@@ -20,7 +20,7 @@ Before extraction, run the read-only verifier with Python 3.9 or newer. Substitu
 
 ```sh
 python3 deploy/production/verify_web_assets.py /approved/path/web-assets-COMMIT.tar.gz \
-  --commit FULL_COMMIT --sha256 TRUSTED_ARCHIVE_SHA256
+  --commit FULL_COMMIT --sha256 TRUSTED_ARCHIVE_SHA256 --repository /approved/source/checkout
 ```
 
 The verifier requires the recorded digest and commit, approved origins and host/port boundary, matching file hashes/modes/sizes, required web entrypoints and contained resolvable relative links. It refuses duplicate/traversal paths, hard links, special file types, nested link/file paths, inventory mismatches and unlisted members appended after a tar end marker, including a concatenated gzip stream. It reads the archive without extracting files, starting a process or writing to application folders. Directory metadata is not a deployment ownership specification; apply the verified host's service ownership during release preparation. Seven regression tests cover these refusal paths and a valid read-only candidate; the existing backend release job discovers them automatically.
@@ -28,3 +28,8 @@ The verifier requires the recorded digest and commit, approved origins and host/
 Use a trusted digest retained separately from the downloaded archive. A digest calculated from an unknown archive, or a manifest inside that archive, does not establish its provenance. `verified: true` reports artifact integrity and boundaries only; `production_ready` remains false and host/runtime/HTTPS acceptance still applies.
 
 The workflow checks build contents; it does not prove the app can reach the production API or that the backend, external providers or pharmacy operating requirements are ready. Pharmacy endpoints remain synthetic-only, and controlled/compounded dispensing remains blocked.
+
+
+The `--repository` option verifies the manifest tree and the exact hashes of both `admin-panel/pnpm-lock.yaml` and `frontend/package-lock.json` against existing objects at the pinned commit. It does not fetch, checkout, install dependencies or read the current working copies of those lockfiles. Missing objects, omitted/extra lockfile entries or mismatched hashes cause refusal. Git replacement objects are disabled for this comparison. `source_binding_verified: true` records this additional check; omitting the option explicitly returns false. Neither mode proves artifact provenance from an unknown checksum or establishes runtime/clinical acceptance.
+
+The web build now invokes this source-bound archive verifier after assembly and before upload. Eleven archive-verifier regressions include dirty-working-tree preservation and missing/mismatched source-object cases. This extends the existing verifier; it does not replace the approved deployment procedure.
