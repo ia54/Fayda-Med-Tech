@@ -227,6 +227,7 @@ class PharmacyPrescriptionTransferController extends Controller
         abort_unless($rx && (int) $rx->pending_transfer_id === $id, 409, 'The source transfer hold is inconsistent. Investigate before deciding.');
         $receiptId = null;
         if ($d['decision'] === 'accept') {
+            abort_unless($this->readableSnapshot($t), 409, 'The retained transfer evidence is unreadable. Reject or cancel and reassess.');
             $sender = User::where('organization_id', $t->organization_id)->where('id', $t->sent_by)->where('role', 'pharmacist')->where('status', 'active')->first();
             abort_unless($sender, 422, 'The sending pharmacist no longer has active authority.');
             $access->requireLocation($sender, $t->source_location_id);
