@@ -20,7 +20,7 @@ This path deliberately rejects dispatched, missing or patient-returned medicatio
 
 Three new API regression cases cover invalid custody/quantities, stock and financial invariants, replay protection, role/site/organization access, recall preservation and audit rollback. Existing successful prepared-cancellation fixtures now supply explicit custody evidence, and the product-correction journey explicitly reviews quarantined stock before reuse. PHP syntax and UI syntax/render/payload checks passed. The published candidate passed the hosted checks listed above after local validation stalled in file reads. Browser acceptance remains outstanding.
 
-### Dispatch and undelivered return custody — current increment
+### Dispatch and undelivered return custody — verified baseline
 
 Prepared ordinary fills now have a distinct dispatch record. Dispatch retains stock and allowance reservations; actual delivery requires matching dispatch method/date and the existing recipient/counseling/label checks. Pickup and ordinary cancellation are blocked after dispatch. Failed, damaged or missing deliveries remain held for investigation.
 
@@ -28,7 +28,15 @@ A complete undelivered return requires original package-label identification, qu
 
 No courier booking, patient communication, billing or provider transmission is performed. Partial/missing returns and patient-returned medication remain unresolved rather than being written off or restored to usable stock. Controlled and compounded dispensing remain disabled. No historical dispatch evidence is inferred.
 
-Focused synthetic cases cover dispatch validation, confirmed delivery, failed-delivery holds, independent returns, rejection/stale-source history, permanent reuse restrictions, disposition lineage, access boundaries and atomic audit rollback. Syntax checks passed; execution and build checks for this increment are pending. This increment is not deployed.
+Focused synthetic cases cover dispatch validation, confirmed delivery, failed-delivery holds, independent returns, rejection/stale-source history, permanent reuse restrictions, disposition lineage, access boundaries and atomic audit rollback. Candidate `8ef2b6f` passed 435 PHP tests / 8,748 assertions, MySQL/MariaDB schema/workflow/recovery, admin TypeScript/session checks and the production-origin web build. Chrome and physical acceptance remain outstanding. It is not deployed.
+
+### Confirmed dispatch losses and later recovery — current increment
+
+A retained delivery exception can now proceed to documented loss reconciliation for ordinary unfulfilled medication. Returned plus confirmed-lost quantities must equal the entire dispatch. Evidence must identify the completed investigation, exact loss and nonreceipt by the patient or representative. Independent review deducts only the lost units from total inventory; any returned units enter permanently segregated quarantine. A wholly lost dispatch creates no fictitious returned-stock receipt. No charge, report transmission or automatic replacement is created.
+
+Medication found later has a separate recovery proposal and independent review. Total accepted recovery cannot exceed the original documented loss. Recovered units enter separate non-releasable quarantine receipts, retaining original stock/recall lineage for disposition. The original loss, cancelled fill, invoice state and allowance history are preserved. Rejection, stale evidence, unauthorized authors and audit failures cannot create stock. Pending recovery reviews appear in the dispatch worklist.
+
+Synthetic regression and build verification for this increment are pending. Patient-returned medication and compounded output remain separate workstreams; no production functionality is enabled.
 
 | Workstream | Work to establish before calling it complete | Acceptance journey |
 | --- | --- | --- |

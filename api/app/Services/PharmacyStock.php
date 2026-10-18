@@ -52,7 +52,7 @@ class PharmacyStock
         $seen = [];
         $organization = (int) $lot->organization_id;
         while (true) {
-            if (($lot->dispatch_return_id ?? null) !== null) { $this->fail('Undelivered returned medication is segregated for reviewed disposition and cannot be released, dispensed or transferred.'); }
+            if (($lot->dispatch_return_id ?? null) !== null || ($lot->dispatch_recovery_id ?? null) !== null) { $this->fail('Undelivered returned medication is segregated for reviewed disposition and cannot be released, dispensed or transferred.'); }
             if (app(PharmacyRecall::class)->held($lot)) { $this->fail('This product and lot are covered by an organization recall notice. Review the recall register before any release or use.'); }
             if (isset($seen[$lot->id]) || (int) $lot->organization_id !== $organization || $lot->recall_reference !== null || $lot->status === 'recalled') {
                 $this->fail('Stock custody or recall history requires reconciliation before release or use.');

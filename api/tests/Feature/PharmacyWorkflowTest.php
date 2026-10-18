@@ -2996,6 +2996,168 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('pending', DB::table('pharmacy_dispatch_returns')->value('status'));
     }
 
+    private function dispatchLossBody(array $fill, array $overrides = []): array
+    {
+        return array_replace($this->dispatchReturnEvidence($fill), ['quantity' => '4.000', 'lost_quantity' => '6.000',
+            'investigation_reference' => 'SYNTHETIC completed ordinary-medication investigation', 'loss_evidence' => 'SYNTHETIC confirmed six-unit loss',
+            'nonreceipt_evidence' => 'SYNTHETIC recipient and courier records establish no patient receipt'], $overrides);
+    }
+
+    private function dispatchException(array $fill, int $rx): array
+    {
+        return $this->act($rx, $fill, 'delivery_exception', ['transport' => ['occurred_on' => now()->toDateString(), 'reason' => 'missing_package',
+            'evidence' => 'SYNTHETIC documented shortage', 'custodian_reference' => 'SYNTHETIC custodian investigation', 'confirmed' => true]]);
+    }
+
+    private function resolvedLossFixture(): array
+    {
+        [$rx, $lot, $f] = $this->dispatchedFixture(); $f = $this->dispatchException($f, $rx);
+        $f = $this->act($rx, $f, 'resolve_dispatch_loss', ['transport' => $this->dispatchLossBody($f)]);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $f = $this->act($rx, $f, 'review_dispatch_return', ['transport' => ['return_id' => $f['dispatch']['latest_return']['id'],
+            'decision' => 'apply', 'evidence' => 'SYNTHETIC independent investigation and quantity verification', 'confirmed' => true]]);
+        $this->actingAs($this->actor, 'api');
+        return [$rx, $lot, $f];
+    }
+
+    public function test_dispatch_loss_requires_completed_investigation_and_balanced_nonreceipt_quantities(): void
+    {
+        Http::preventStrayRequests();
+        [$rx, $lot, $f] = $this->dispatchedFixture();
+        $this->act($rx, $f, 'resolve_dispatch_loss', ['transport' => $this->dispatchLossBody($f)], 422);
+        $f = $this->dispatchException($f, $rx);
+        foreach ([['lost_quantity' => '0'], ['quantity' => '4.001'], ['quantity' => '3.999'], ['loss_evidence' => null],
+            ['nonreceipt_evidence' => null], ['investigation_reference' => null], ['never_received_by_patient' => false],
+            ['label_code' => 'WRONG'], ['segregation_reference' => null]] as $bad) {
+            $this->act($rx, $f, 'resolve_dispatch_loss', ['transport' => $this->dispatchLossBody($f, $bad)], 422);
+        }
+        $f = $this->act($rx, $f, 'resolve_dispatch_loss', ['transport' => $this->dispatchLossBody($f)]);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->sum('on_hand'));
+        $this->assertEquals(10, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $review = ['transport' => ['return_id' => $f['dispatch']['latest_return']['id'], 'decision' => 'apply', 'evidence' => 'SYNTHETIC review', 'confirmed' => true]];
+        $this->act($rx, $f, 'review_dispatch_return', $review, 422);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $before = $f; $f = $this->act($rx, $f, 'review_dispatch_return', $review);
+        $this->act($rx, $before, 'review_dispatch_return', $review, 409);
+        $this->assertSame('loss_resolved', $f['dispatch']['status']); $this->assertSame('cancelled', $f['fulfillment_status']);
+        $this->assertSame('6.000', $f['dispatch']['remaining_loss_quantity']);
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->assertEquals(44, DB::table('pharmacy_stock_lots')->sum('on_hand'));
+        $this->assertEquals(-6, DB::table('pharmacy_stock_events')->where('action', 'dispatch_loss_confirmed')->sum('quantity'));
+        $this->assertEquals(-6, DB::table('pharmacy_stock_events')->whereIn('action', ['undelivered_return_segregated', 'undelivered_return_received', 'dispatch_loss_confirmed'])->sum('quantity'));
+        $receipt = $f['dispatch']['latest_return']['returned_lot_id'];
+        $this->putJson("/api/pharmacy/stock/$receipt/status", ['version' => 1, 'status' => 'available', 'note' => 'SYNTHETIC'])->assertUnprocessable();
+        $this->postJson("/api/pharmacy/stock/$receipt/product", $this->productBody())->assertCreated();
+        $source = app(\App\Services\PharmacyDisposition::class)->source(DB::table('pharmacy_stock_lots')->find($receipt));
+        $this->assertSame([$receipt, $lot], array_column($source['chain'], 'id'));
+        $this->assertSame(0, DB::table('invoices')->count()); Http::assertNothingSent();
+    }
+
+    public function test_dispatch_whole_loss_creates_no_fictitious_return_receipt_and_rejects_restricted_scope(): void
+    {
+        [$rx, $lot, $f] = $this->dispatchedFixture(); $f = $this->dispatchException($f, $rx);
+        $body = $this->dispatchLossBody($f, ['quantity' => '0.000', 'lost_quantity' => '10.000', 'label_code' => null, 'package_condition' => null, 'segregation_reference' => null]);
+        $this->act($rx, $f, 'resolve_dispatch_loss', ['transport' => array_replace($body, ['label_code' => 'fabricated return'])], 422);
+        $f = $this->act($rx, $f, 'resolve_dispatch_loss', ['transport' => $body]);
+        $this->actingAs($this->independentReviewer(), 'api');
+        $review = ['transport' => ['return_id' => $f['dispatch']['latest_return']['id'], 'decision' => 'apply', 'evidence' => 'SYNTHETIC independent review', 'confirmed' => true]];
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['controlled' => true]);
+        $this->act($rx, $f, 'review_dispatch_return', $review, 422);
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['controlled' => false]);
+        $f = $this->act($rx, $f, 'review_dispatch_return', $review);
+        $this->assertNull($f['dispatch']['latest_return']['returned_lot_id']);
+        $this->assertSame(1, DB::table('pharmacy_stock_lots')->count());
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->sum('on_hand'));
+        $this->assertSame(0, DB::table('pharmacy_stock_events')->where('action', 'undelivered_return_received')->count());
+        $this->assertSame('10.000', $f['dispatch']['remaining_loss_quantity']);
+    }
+
+    public function test_dispatch_loss_recovery_is_independent_capped_quarantined_and_preserves_original_loss(): void
+    {
+        [$rx, $lot, $f] = $this->resolvedLossFixture();
+        $lossId = $f['dispatch']['latest_return']['id']; $originalLoss = (array) DB::table('pharmacy_dispatch_returns')->find($lossId);
+        $originalFill = DB::table('pharmacy_fills')->where('id', $f['id'])->value('fulfillment');
+        $body = $this->dispatchReturnEvidence($f, ['quantity' => '2.125']);
+        $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => array_replace($body, ['quantity' => '6.001'])], 422);
+        $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => array_replace($body, ['label_code' => 'WRONG'])], 422);
+        $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => array_replace($body, ['never_received_by_patient' => false])], 422);
+        $f = $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => $body]);
+        $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => $body], 409);
+        $this->assertEquals(44, DB::table('pharmacy_stock_lots')->sum('on_hand'));
+        $this->getJson('/api/pharmacy/prescriptions?attention=dispatch_custody')->assertOk()->assertJsonPath('data.total', 1);
+        $review = ['transport' => ['recovery_id' => $f['dispatch']['latest_recovery']['id'], 'decision' => 'apply', 'evidence' => 'SYNTHETIC independent recovered-quantity check', 'confirmed' => true]];
+        $this->act($rx, $f, 'review_dispatch_recovery', $review, 422);
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $old = $f; $f = $this->act($rx, $f, 'review_dispatch_recovery', $review);
+        $this->act($rx, $old, 'review_dispatch_recovery', $review, 409);
+        $receipt = $f['dispatch']['latest_recovery']['returned_lot_id'];
+        $this->assertSame('3.875', $f['dispatch']['remaining_loss_quantity']);
+        $this->assertEquals(46.125, DB::table('pharmacy_stock_lots')->sum('on_hand'));
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertSame('quarantined', DB::table('pharmacy_stock_lots')->where('id', $receipt)->value('status'));
+        $this->putJson("/api/pharmacy/stock/$receipt/status", ['version' => 1, 'status' => 'available', 'note' => 'SYNTHETIC'])->assertUnprocessable();
+        $this->postJson("/api/pharmacy/stock/$receipt/product", $this->productBody())->assertCreated();
+        $source = app(\App\Services\PharmacyDisposition::class)->source(DB::table('pharmacy_stock_lots')->find($receipt));
+        $this->assertSame([$receipt, $lot], array_column($source['chain'], 'id'));
+        $this->assertSame($lossId, $source['chain'][0]['dispatch_recovery']['loss_return_id']);
+        $this->actingAs($this->actor, 'api');
+        $f = $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => $this->dispatchReturnEvidence($f, ['quantity' => '3.875'])]);
+        $this->actingAs($reviewer, 'api'); $review['transport']['recovery_id'] = $f['dispatch']['latest_recovery']['id'];
+        $f = $this->act($rx, $f, 'review_dispatch_recovery', $review);
+        $this->assertSame('0.000', $f['dispatch']['remaining_loss_quantity']);
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->sum('on_hand'));
+        $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => $this->dispatchReturnEvidence($f, ['quantity' => '0.001'])], 422);
+        $this->assertSame($originalLoss, (array) DB::table('pharmacy_dispatch_returns')->find($lossId));
+        $this->assertSame($originalFill, DB::table('pharmacy_fills')->where('id', $f['id'])->value('fulfillment'));
+        $this->assertSame('cancelled', $f['fulfillment_status']); $this->assertSame(0, DB::table('invoices')->count());
+        $this->getJson('/api/pharmacy/prescriptions?attention=dispatch_custody')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/dispatch")->assertOk()->assertJsonPath('data.recoveries.total', 2);
+    }
+
+    public function test_dispatch_recovery_rejection_preserves_evidence_and_access_and_revalidates_author(): void
+    {
+        [$rx, $lot, $f] = $this->resolvedLossFixture();
+        $f = $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => $this->dispatchReturnEvidence($f, ['quantity' => '1'])]);
+        $review = ['transport' => ['recovery_id' => $f['dispatch']['latest_recovery']['id'], 'decision' => 'apply', 'evidence' => 'SYNTHETIC review', 'confirmed' => true]];
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        DB::table('pharmacy_dispatch_recoveries')->where('id', $review['transport']['recovery_id'])->update(['quantity' => '2']);
+        $this->act($rx, $f, 'review_dispatch_recovery', $review, 409);
+        $review['transport']['decision'] = 'reject'; $f = $this->act($rx, $f, 'review_dispatch_recovery', $review);
+        $this->assertSame('6.000', $f['dispatch']['remaining_loss_quantity']);
+        $this->actingAs($this->actor, 'api'); $body = ['transport' => $this->dispatchReturnEvidence($f, ['quantity' => '1'])];
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save(); $this->act($rx, $f, 'recover_dispatch_loss', $body, 403);
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        $f = $this->act($rx, $f, 'recover_dispatch_loss', $body);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $this->actingAs($reviewer, 'api'); $review['transport']['recovery_id'] = $f['dispatch']['latest_recovery']['id']; $review['transport']['decision'] = 'apply';
+        $this->act($rx, $f, 'review_dispatch_recovery', $review, 404);
+        $reviewer->organization_id = 2; $reviewer->save();
+        $this->getJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/dispatch")->assertNotFound();
+        $this->assertEquals(44, DB::table('pharmacy_stock_lots')->sum('on_hand'));
+        $this->assertSame(2, DB::table('pharmacy_dispatch_recoveries')->count());
+    }
+
+    public function test_dispatch_recovery_audit_failure_rolls_back_stock_and_independent_review(): void
+    {
+        [$rx, $lot, $f] = $this->resolvedLossFixture();
+        $f = $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => $this->dispatchReturnEvidence($f, ['quantity' => '1'])]);
+        $saved = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $events = DB::table('pharmacy_stock_events')->count(); $this->actingAs($this->independentReviewer(), 'api');
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) { throw new \RuntimeException('SYNTHETIC recovery audit failure'); }
+        });
+        $this->act($rx, $f, 'review_dispatch_recovery', ['transport' => ['recovery_id' => $f['dispatch']['latest_recovery']['id'],
+            'decision' => 'apply', 'evidence' => 'SYNTHETIC independent review', 'confirmed' => true]], 500);
+        $this->assertSame($saved, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $this->assertEquals(44, DB::table('pharmacy_stock_lots')->sum('on_hand'));
+        $this->assertSame(2, DB::table('pharmacy_stock_lots')->count());
+        $this->assertSame($events, DB::table('pharmacy_stock_events')->count());
+        $this->assertSame('pending', DB::table('pharmacy_dispatch_recoveries')->value('status'));
+    }
+
     private function handoverEvidence(string $action = 'collected', array $overrides = []): array
     {
         return array_replace(['recipient_type' => 'patient', 'recipient_name' => 'Synthetic Patient',

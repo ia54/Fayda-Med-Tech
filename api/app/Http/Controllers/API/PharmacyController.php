@@ -208,7 +208,11 @@ class PharmacyController extends Controller
             $this->allow($r, ['pharmacist', 'pharmacy_technician']);
             $q->whereExists(function ($sub) {
                 $sub->selectRaw('1')->from('pharmacy_fill_dispatches as d')->join('pharmacy_fills as df', 'df.id', '=', 'd.fill_id')
-                    ->whereColumn('df.prescription_id', 'rx.id')->whereIn('d.status', ['in_transit', 'exception', 'return_pending']);
+                    ->whereColumn('df.prescription_id', 'rx.id')->where(function ($q) {
+                        $q->whereIn('d.status', ['in_transit', 'exception', 'return_pending'])->orWhereExists(function ($pending) {
+                            $pending->selectRaw('1')->from('pharmacy_dispatch_recoveries as recovery')->whereColumn('recovery.dispatch_id', 'd.id')->where('recovery.status', 'pending');
+                        });
+                    });
             });
         }
         $latest = DB::table('pharmacy_fills')->selectRaw('prescription_id, MAX(id) AS latest_fill_id')->groupBy('prescription_id');
@@ -550,7 +554,7 @@ class PharmacyController extends Controller
 
     public function fillAction(Request $r, $id, $fillId)
     {
-        $d = $r->validate(['version' => 'required|integer|min:1', 'action' => 'required|in:approve,hold,cancel,ready,collected,delivered,dispatch,delivery_exception,return_from_dispatch,review_dispatch_return,prepare_claim,record_submission,record_denial,record_maps', 'note' => 'required|string|max:2000', 'product_id' => 'nullable|integer|min:1', 'label_id' => 'nullable|integer|min:1', 'checks' => 'sometimes|array:identity,prescriber,therapy,product,label', 'checks.identity' => 'sometimes|accepted', 'checks.prescriber' => 'sometimes|accepted', 'checks.therapy' => 'sometimes|accepted', 'checks.product' => 'sometimes|accepted', 'checks.label' => 'sometimes|accepted', 'occurred_on' => 'nullable|date_format:Y-m-d|before_or_equal:today', 'reference' => 'nullable|string|max:255', 'amount' => 'nullable|numeric|min:0.01|max:99999999.99|decimal:0,2', 'counseling' => 'nullable|in:provided,declined,documented_remote', 'handover' => 'nullable|array', 'cancellation' => 'nullable|array', 'transport' => 'nullable|array', 'scan' => 'nullable|array', 'maps_status' => 'nullable|in:not_applicable,pending,submitted', 'maps_reference' => 'nullable|string|max:255', 'denial_type' => 'nullable|in:coverage,coding,medical_necessity,cost,no_response', 'determination_on' => 'nullable|date_format:Y-m-d|before_or_equal:today']);
+        $d = $r->validate(['version' => 'required|integer|min:1', 'action' => 'required|in:approve,hold,cancel,ready,collected,delivered,dispatch,delivery_exception,return_from_dispatch,resolve_dispatch_loss,recover_dispatch_loss,review_dispatch_recovery,review_dispatch_return,prepare_claim,record_submission,record_denial,record_maps', 'note' => 'required|string|max:2000', 'product_id' => 'nullable|integer|min:1', 'label_id' => 'nullable|integer|min:1', 'checks' => 'sometimes|array:identity,prescriber,therapy,product,label', 'checks.identity' => 'sometimes|accepted', 'checks.prescriber' => 'sometimes|accepted', 'checks.therapy' => 'sometimes|accepted', 'checks.product' => 'sometimes|accepted', 'checks.label' => 'sometimes|accepted', 'occurred_on' => 'nullable|date_format:Y-m-d|before_or_equal:today', 'reference' => 'nullable|string|max:255', 'amount' => 'nullable|numeric|min:0.01|max:99999999.99|decimal:0,2', 'counseling' => 'nullable|in:provided,declined,documented_remote', 'handover' => 'nullable|array', 'cancellation' => 'nullable|array', 'transport' => 'nullable|array', 'scan' => 'nullable|array', 'maps_status' => 'nullable|in:not_applicable,pending,submitted', 'maps_reference' => 'nullable|string|max:255', 'denial_type' => 'nullable|in:coverage,coding,medical_necessity,cost,no_response', 'determination_on' => 'nullable|date_format:Y-m-d|before_or_equal:today']);
         DB::transaction(function () use ($r, $id, $fillId, $d) {
             $rx = $this->rx($r, $id, true);
             $f = DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->where('id', $fillId)->lockForUpdate()->first();
@@ -562,7 +566,7 @@ class PharmacyController extends Controller
             abort_if($rx->discontinued_at && in_array($a, ['approve', 'ready', 'collected', 'delivered', 'dispatch'], true), 422, 'This prescription is discontinued. Cancel the open fill to release its stock reservation.');
             $update = [];
             $ep = DB::table('pharmacy_episodes')->where('id', $rx->episode_id)->lockForUpdate()->first();
-            if (in_array($a, ['delivery_exception', 'return_from_dispatch', 'review_dispatch_return'], true)) {
+            if (in_array($a, ['delivery_exception', 'return_from_dispatch', 'resolve_dispatch_loss', 'recover_dispatch_loss', 'review_dispatch_recovery', 'review_dispatch_return'], true)) {
                 $this->allow($r, ['pharmacist']);
                 $update = $dispatchService->custody($r->user(), $rx, $f, $a, $d['transport'] ?? []);
             } elseif ($a === 'record_maps') {
@@ -742,7 +746,8 @@ class PharmacyController extends Controller
         $service = app(\App\Services\PharmacyDispatch::class);
         $dispatch = $service->summary((int) $fillId);
         return response()->json(['data' => ['dispatch' => $dispatch,
-            'returns' => $service->returnRows($dispatch['id'] ?? 0)->orderByDesc('id')->paginate(20)]]);
+            'returns' => $service->returnRows($dispatch['id'] ?? 0)->orderByDesc('id')->paginate(20),
+            'recoveries' => $service->recoveryRows($dispatch['id'] ?? 0)->orderByDesc('id')->paginate(20)]]);
     }
 
     public function assistant(Request $r, $id)
