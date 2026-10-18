@@ -12,7 +12,7 @@
     "test:recovery": "node --test tests/password-recovery.test.mjs",
     "test:documents": "node --test tests/protected-document.test.mjs",
     "test:reports": "node --test tests/report-export.test.mjs",
-    "test:pharmacy": "node --test tests/pharmacy-evidence-recovery.test.mjs"
+    "test:pharmacy": "node --test tests/pharmacy-evidence-recovery.test.mjs tests/pharmacy-transfer-recovery.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

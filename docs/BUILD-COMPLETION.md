@@ -75,3 +75,11 @@ Added three focused request-level regression scenarios for replay, independent a
 ### Unusable-evidence recovery
 
 Pending quality, dating, packaging and suitability proposals, and draft protocols, now expose a rejection-only recovery form when the detail API explicitly reports an integrity conflict. The form requires fresh matching history metadata, an independent pharmacist, investigation evidence and confirmation. Network, authorization and server failures do not expose rejection; review/approval is never offered for unreadable evidence. Original records remain retained. Four rendered UI checks cover confirmation, action restrictions, contributor independence, stale/missing history, refresh disabling and HTML escaping. They are included in admin CI; browser acceptance is still separate.
+
+## Prescription transfer evidence recovery — October 18 follow-up
+
+Unreadable or structurally incomplete retained transfer snapshots now return an explicit unavailable state alongside the scoped transfer metadata. The UI withholds acceptance and file retrieval while allowing an authorized sending pharmacist to cancel, or an independent receiving pharmacist to reject. Original evidence is preserved. These decisions release only the pending transfer hold; they do not create receiving authorization, discontinue the prescription, or alter stock. Retries remain actor/body-bound and audit failures roll back the entire decision.
+
+Two request-level regressions cover malformed evidence, blocked acceptance, rejection/cancellation, replay and audit rollback. Four rendered UI cases cover role/site restrictions, unavailable source content, pending refresh, retained decisions and the intact acceptance journey. Hosted verification must be recorded against the final commit; rendered component checks are not browser or pharmacist acceptance.
+
+Synthetic acceptance journey: open a pending transfer with a deliberately damaged snapshot in an isolated test database; verify the unavailable-evidence notice and absence of acceptance/file retrieval; reject as an independent receiving pharmacist or cancel at the source with investigation evidence; refresh and confirm the decision, unchanged original snapshot, cleared transfer hold, unchanged stock and no receiving prescription/receipt. Never damage production records for this exercise.
