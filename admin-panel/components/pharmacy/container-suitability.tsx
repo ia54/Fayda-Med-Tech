@@ -1,4 +1,5 @@
 "use client"
+import {EvidenceRecovery,type RecoverySummary} from './evidence-recovery'
 import {FormEvent,useRef,useState} from 'react'
 import {Button} from '@/components/ui/button'
 import {useAuth} from '@/hooks/useAuth'
@@ -18,7 +19,7 @@ export function ContainerSuitability({batch}:{batch:CompoundBatch}){
  <div className="flex gap-3 items-center"><Button disabled={busy||page===1} onClick={()=>setPage(page-1)}>Previous suitability records</Button><span>Page {page} / {q.currentData.data.last_page}</span><Button disabled={busy||page>=q.currentData.data.last_page} onClick={()=>setPage(page+1)}>Next suitability records</Button></div>
  {user?.role==='pharmacist'&&(last?.status==='pending'?<p>Review or reject the pending findings before recording a replacement.</p>:<Button disabled={busy} onClick={()=>{setCreating(!creating);setSelected(null)}}>{creating?'Close suitability form':'Record suitability findings'}</Button>)}
  {creating&&last?.status!=='pending'&&<fieldset disabled={busy}><Context execution={id} previous={last?.id??null} onDone={v=>{setCreating(false);setSelected(v);setPage(1)}}/></fieldset>}
- {selected&&<Detail key={selected} id={selected} batch={batch}/>}</section>
+ {selected&&<Detail key={selected} id={selected} batch={batch} summary={q.currentData.data.data.find(p=>p.id===selected)} historyBusy={busy}/>}</section>
 }
 function Context({execution,previous,onDone}:{execution:number;previous:number|null;onDone:(id:number)=>void}){
  const q=useGetSuitabilityContextQuery(execution)
@@ -35,10 +36,10 @@ function Create({context,previous,onDone}:{context:SuitabilityContext;previous:n
  {stale&&<p role="alert">Source evidence changed. Close and reopen this form to compare the current evidence. Your current input is preserved.</p>}
  <fieldset disabled={isLoading||stale} className="space-y-4">{source.containers.map((c,i)=><fieldset key={c.identifier} className="border rounded p-4 space-y-3"><legend>Container {c.identifier}</legend><p>{c.quantity} {source.unit} · {c.container_reference}</p><p>Recorded storage: {c.storage_reference}</p><label className="grid gap-1">{c.identifier}: suitability outcome<select name={`outcome-${i}`} required defaultValue="" className="border rounded p-2 bg-background"><option value="" disabled>Select an assessment</option><option value="suitable">Suitable based on retained evidence</option><option value="unsuitable">Unsuitable; follow-up required</option><option value="not_assessed">Not assessed; follow-up required</option></select></label><Evidence name={`container-${i}`} label={`${c.identifier}: container assessment evidence`}/><Evidence name={`storage-${i}`} label={`${c.identifier}: storage assessment evidence`}/><Evidence name={`dating-${i}`} label={`${c.identifier}: dating scope comparison evidence`}/></fieldset>)}{error&&<p role="alert">{error}</p>}<Button disabled={!source.containers.length}>Retain suitability findings</Button></fieldset></form>
 }
-function Detail({id,batch}:{id:number;batch:CompoundBatch}){
+function Detail({id,batch,summary,historyBusy}:{id:number;batch:CompoundBatch;summary?:RecoverySummary;historyBusy:boolean}){
  const {user}=useAuth();const q=useGetSuitabilityProposalQuery(id);const [save,{isLoading}]=useDecideSuitabilityProposalMutation();const [error,setError]=useState('')
  async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();setError('');const f=new FormData(e.currentTarget);try{await save({id,decision:String(f.get('decision')) as 'reviewed'|'rejected',evidence:String(f.get('evidence'))}).unwrap()}catch(err){setError(errorMessage(err))}}
- if(q.isError)return <p role="alert">Could not load suitability evidence. <Button onClick={()=>q.refetch()}>Retry suitability detail</Button></p>
+ if(q.isError)return <EvidenceRecovery label="Suitability proposal" id={id} summary={summary} role={user?.role||''} userId={Number(user?.id)} excludedAuthors={[batch.execution?.created_by??0,...(batch.execution?.addenda.map(a=>a.created_by)||[])]} busy={historyBusy||q.isFetching||isLoading} requestError={q.error} retry={()=>q.refetch()} reject={evidence=>save({id,decision:'rejected',evidence}).unwrap()}/>
  if(!q.currentData)return <p>Loading suitability detail…</p>
  const p=q.currentData.data;const independent=Number(user?.id)!==p.created_by&&Number(user?.id)!==batch.execution?.created_by&&!batch.execution?.addenda.some(a=>a.created_by===Number(user?.id))
  return <article className="border rounded p-4 space-y-3"><h4 className="font-semibold">Suitability {p.id} · {p.status}</h4><p>Author {p.created_by} · Dating proposal {p.dating_proposal_id}</p>{p.proposal.requires_follow_up&&<p role="alert">Unsuitable or unassessed findings remain unresolved. Documentary review does not clear them.</p>}{p.proposal.containers.map(({container:c,assessment:a})=><div key={c.identifier} className="border-b pb-3"><strong>{c.identifier} · {a.outcome}</strong><p>Retained quantity: {c.quantity}</p><p>Container: {c.container_reference}</p><p>Storage: {c.storage_reference}</p><p>{a.container_evidence}</p><p>{a.storage_evidence}</p><p>{a.dating_scope_evidence}</p></div>)}{p.reviewed_by&&<p>Reviewed by {p.reviewed_by} · {p.reviewed_at} · {p.review_evidence}</p>}

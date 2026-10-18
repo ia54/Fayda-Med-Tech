@@ -28,4 +28,5 @@ jobs:
       - run: corepack pnpm test:recovery
       - run: corepack pnpm test:documents
       - run: corepack pnpm test:reports
+      - run: corepack pnpm test:pharmacy
       - run: corepack pnpm run typecheck

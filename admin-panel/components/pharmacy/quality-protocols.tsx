@@ -1,4 +1,5 @@
 "use client"
+import {EvidenceRecovery,type RecoverySummary} from './evidence-recovery'
 import {FormEvent,useRef,useState} from 'react'
 import {Button} from '@/components/ui/button'
 import {Field,errorMessage} from './fields'
@@ -31,7 +32,7 @@ function ProtocolList({formula,location}:{formula:CompoundFormula;location:numbe
   <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={busy||page===1} onClick={()=>setPage(page-1)}>Previous protocols</Button><span>Page {page} / {q.currentData.data.last_page}</span><Button variant="outline" disabled={busy||page>=q.currentData.data.last_page} onClick={()=>setPage(page+1)}>Next protocols</Button></div>
   {user?.role==='pharmacist'&&formula.status==='reviewed'&&(current?.status==='draft'?<p>Review or reject the latest draft before creating a replacement.</p>:<Button variant="outline" disabled={busy} onClick={()=>{setCreating(!creating);setSelected(null)}}>{creating?'Close protocol form':'Create quality protocol revision'}</Button>)}
   {creating&&<fieldset disabled={busy} aria-busy={busy} className="min-w-0"><ProtocolCreate location={location} formula={formula.id} previous={current?.id??null} onDone={id=>{setCreating(false);setSelected(id);setPage(1)}}/></fieldset>}
-  {selected&&<ProtocolDetail key={selected} id={selected}/>}
+  {selected&&<ProtocolDetail key={selected} id={selected} summary={q.currentData.data.data.find(p=>p.id===selected)} historyBusy={busy}/>}
  </div>
 }
 function ProtocolCreate({location,formula,previous,onDone}:{location:number;formula:number;previous:number|null;onDone:(id:number)=>void}) {
@@ -52,12 +53,12 @@ function ProtocolCreate({location,formula,previous,onDone}:{location:number;form
   {error&&<p role="alert">{error}</p>}<Button type="submit">Save quality protocol draft</Button></fieldset>
  </form>
 }
-function ProtocolDetail({id}:{id:number}) {
+function ProtocolDetail({id,summary,historyBusy}:{id:number;summary?:RecoverySummary;historyBusy:boolean}) {
  const {user}=useAuth();const q=useGetQualityProtocolQuery(id);const [page,setPage]=useState(1);const history=useGetQualityProtocolHistoryQuery({id,page})
  const [save,{isLoading}]=useDecideQualityProtocolMutation();const [error,setError]=useState('');const [success,setSuccess]=useState('')
  async function decide(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!q.currentData)return;setError('');setSuccess('');const f=new FormData(e.currentTarget)
   try {await save({id,version:q.currentData.data.version,decision:String(f.get('decision')) as 'reviewed'|'rejected'|'retired',evidence:String(f.get('evidence'))}).unwrap();setSuccess('Protocol decision retained. No medication release authorized.')}catch(e){setError(errorMessage(e))}}
- if(q.isError)return <p role="alert">Could not load protocol evidence. <Button onClick={()=>q.refetch()}>Retry quality protocol detail</Button></p>
+ if(q.isError)return <EvidenceRecovery label="Quality protocol" id={id} summary={summary} role={user?.role||''} userId={Number(user?.id)} busy={historyBusy||q.isFetching||isLoading||!summary?.version} requestError={q.error} retry={()=>q.refetch()} reject={evidence=>save({id,version:summary!.version!,decision:'rejected',evidence}).unwrap()}/>
  if(!q.currentData)return <p>Loading protocol detail…</p>
  const p=q.currentData.data;const independent=Number(user?.id)!==p.created_by
  return <article className="rounded border p-4 space-y-3"><h4 className="font-semibold">Quality protocol {p.id} · Revision {p.revision_number} · {p.status}</h4><p className="break-words">{p.record.reference} · Source revision {p.record.revision}</p>

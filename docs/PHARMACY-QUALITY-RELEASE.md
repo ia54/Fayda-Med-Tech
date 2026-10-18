@@ -36,7 +36,7 @@ Prior Chrome acceptance covered independent protocol, quality and dating review,
 
 - Container custody, recount and repackaging persistence/reconciliation are implemented in the later sections below. Finished-product label proofs and simulated print evidence are now published; barcode comparison is under local acceptance. Final release authorization, with revalidation through reservation and handover, remains unfinished.
 - Applicable official standards, site capability, sterile/nonsterile scope, provider connections and pharmacist/device acceptance. Software tests do not establish clinical adequacy.
-- Recovery UI for corrupt evidence: history and rejection APIs preserve a recovery path, but detail error screens do not yet expose rejection.
+- Integrity-conflict recovery now exposes rejection-only controls from current history metadata for pending quality, dating, packaging and suitability proposals and draft protocols. Independent authorized pharmacists must supply investigation evidence and explicitly confirm rejection. Network/access/server failures do not expose this control. Backend authorization remains authoritative; original records are retained. Browser acceptance remains outstanding.
 
 The full seven-step workflow above remains in scope. No clinical assurance, operational acceptance or medication release is claimed.
 
