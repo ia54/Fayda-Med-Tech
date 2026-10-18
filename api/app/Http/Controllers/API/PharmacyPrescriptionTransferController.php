@@ -162,13 +162,34 @@ class PharmacyPrescriptionTransferController extends Controller
         return response()->json(['data' => $q->select('t.id', 't.source_prescription_id', 't.source_location_id', 't.destination_location_id', 't.status', 't.sent_by', 't.created_at', 't.reviewed_at')->orderByDesc('t.id')->paginate(20)]);
     }
 
+    /** Unusable evidence stays retained, but must not strand a transfer hold. */
+    private function readableSnapshot(object $transfer): ?array
+    {
+        try {
+            $snapshot = json_decode($transfer->source_snapshot, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            return null;
+        }
+        if (! is_array($snapshot)) return null;
+        $rules = ['identity.patient' => 'required|array', 'identity.case' => 'required|array',
+            'order' => 'required|array', 'allowances' => 'required|array', 'source_documents' => 'required|array',
+            'quantity_unit' => 'required|string', 'identity.patient.first_name' => 'required|string',
+            'identity.patient.last_name' => 'required|string', 'identity.case.case_number' => 'required|string',
+            'identity.patient.date_of_birth' => 'nullable|string',
+            'allowances.*.source_authorization_number' => 'required|integer', 'allowances.*.quantity' => 'required|string',
+            'source_documents.*.id' => 'required|integer', 'source_documents.*.sha256' => 'required|string',
+            'source_documents.*.original_name' => 'required|string', 'source_documents.*.reference' => 'nullable|string'];
+        return validator($snapshot, $rules)->fails() ? null : $snapshot;
+    }
+
     public function show(Request $r, int $id)
     {
         $t = $this->visible($r, $id);
         $record = array_intersect_key((array) $t, array_flip(['id', 'source_prescription_id', 'source_location_id', 'destination_location_id', 'source_token', 'sending_evidence', 'sharing_reference', 'sent_by', 'created_at', 'status', 'receipt_id', 'reviewed_by', 'review_evidence', 'reviewed_at']));
         $record['source_location_name'] = DB::table('pharmacy_locations')->where('organization_id', $t->organization_id)->where('id', $t->source_location_id)->value('name');
         $record['destination_location_name'] = DB::table('pharmacy_locations')->where('organization_id', $t->organization_id)->where('id', $t->destination_location_id)->value('name');
-        $record['source_snapshot'] = json_decode($t->source_snapshot, true, 512, JSON_THROW_ON_ERROR);
+        $record['source_snapshot'] = $this->readableSnapshot($t);
+        $record['source_snapshot_unavailable'] = $record['source_snapshot'] === null;
         $record['destination_prescription_id'] = $t->receipt_id ? DB::table('pharmacy_rx_transfer_receipts')->where('id', $t->receipt_id)->value('destination_prescription_id') : null;
         return response()->json(['data' => $record]);
     }
@@ -176,7 +197,8 @@ class PharmacyPrescriptionTransferController extends Controller
     public function sourceFile(Request $r, int $id, int $sourceId)
     {
         $t = $this->visible($r, $id);
-        $snapshot = json_decode($t->source_snapshot, true, 512, JSON_THROW_ON_ERROR);
+        $snapshot = $this->readableSnapshot($t);
+        abort_unless($snapshot, 409, 'The retained transfer evidence is unreadable. Investigate and reject or cancel this request.');
         $retained = collect($snapshot['source_documents'])->firstWhere('id', $sourceId);
         abort_unless($retained, 404);
         $document = DB::table('pharmacy_source_documents')->where('prescription_id', $t->source_prescription_id)->where('id', $sourceId)->first();

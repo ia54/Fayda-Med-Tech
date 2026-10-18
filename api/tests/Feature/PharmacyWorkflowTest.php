@@ -4088,6 +4088,48 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('pharmacy_rx_transfer_requests')->count());
     }
 
+    public function test_unreadable_transfer_evidence_can_be_rejected_without_creating_authority(): void
+    {
+        [$rx, $request, $reviewer, $body, $lot, $source] = $this->transferRequestFixture();
+        $url = "/api/pharmacy/prescription-transfers/{$request['id']}";
+        $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        foreach (['{broken', 'null', '{"identity":{}}', '{"allowances":"invalid"}'] as $broken) {
+            DB::table('pharmacy_rx_transfer_requests')->where('id', $request['id'])->update(['source_snapshot' => $broken]);
+            $this->getJson($url)->assertOk()->assertJsonPath('data.source_snapshot', null)->assertJsonPath('data.source_snapshot_unavailable', true);
+            $this->getJson($url."/sources/$source/file")->assertConflict();
+            $this->actingAs($reviewer, 'api');
+            $this->postJson($url.'/review', $this->transferDecision($request))->assertConflict();
+            $this->assertEquals($request['id'], DB::table('pharmacy_prescriptions')->find($rx)->pending_transfer_id);
+        }
+        $reject = $this->transferDecision($request, 'reject');
+        $this->postJson($url.'/review', $reject)->assertOk()->assertJsonPath('data.status', 'rejected')->assertJsonPath('data.source_snapshot', null);
+        $this->postJson($url.'/review', $reject)->assertOk();
+        $this->assertNull(DB::table('pharmacy_prescriptions')->find($rx)->pending_transfer_id);
+        $this->assertNull(DB::table('pharmacy_prescriptions')->find($rx)->discontinued_at);
+        $this->assertSame($broken, DB::table('pharmacy_rx_transfer_requests')->find($request['id'])->source_snapshot);
+        $this->assertSame(0, DB::table('pharmacy_rx_transfer_receipts')->count());
+        $this->assertEquals($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+    }
+
+    public function test_unreadable_transfer_cancellation_remains_atomic_and_actor_bound(): void
+    {
+        [$rx, $request] = $this->transferRequestFixture();
+        $url = "/api/pharmacy/prescription-transfers/{$request['id']}";
+        DB::table('pharmacy_rx_transfer_requests')->where('id', $request['id'])->update(['source_snapshot' => '{broken']);
+        $cancel = $this->transferDecision($request, 'cancel'); $fail = true;
+        DB::connection()->beforeExecuting(function ($query) use (&$fail) {
+            if ($fail && str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) throw new \RuntimeException('Synthetic cancellation audit failure');
+        });
+        $this->postJson($url.'/review', $cancel)->assertStatus(500); $fail = false;
+        $this->assertEquals($request['id'], DB::table('pharmacy_prescriptions')->find($rx)->pending_transfer_id);
+        $this->assertSame('pending', DB::table('pharmacy_rx_transfer_requests')->find($request['id'])->status);
+        $this->postJson($url.'/review', $cancel)->assertOk()->assertJsonPath('data.status', 'cancelled');
+        $this->postJson($url.'/review', $cancel)->assertOk();
+        $this->postJson($url.'/review', array_replace($cancel, ['evidence' => 'Changed']))->assertConflict();
+        $this->assertSame('{broken', DB::table('pharmacy_rx_transfer_requests')->find($request['id'])->source_snapshot);
+        $this->assertSame(0, DB::table('pharmacy_rx_transfer_receipts')->count());
+    }
+
     public function test_prescription_transfer_request_audit_failure_and_snapshot_tampering_cannot_create_authority(): void
     {
         [$rx, $request, $reviewer] = $this->transferRequestFixture();
