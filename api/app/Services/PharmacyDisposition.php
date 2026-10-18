@@ -29,6 +29,18 @@ class PharmacyDisposition
                 'lot_number' => $lot->lot_number, 'quantity_unit' => $lot->quantity_unit, 'expires_on' => $lot->expires_on,
                 'recall_reference' => $lot->recall_reference,
                 'notice_ids' => app(PharmacyRecall::class)->notices($lot)->orderBy('n.id')->pluck('n.id')->all()];
+            if (($lot->dispatch_return_id ?? null) !== null) {
+                $return = DB::table('pharmacy_dispatch_returns as r')->join('pharmacy_fill_dispatches as d', 'd.id', '=', 'r.dispatch_id')
+                    ->join('pharmacy_fills as f', 'f.id', '=', 'd.fill_id')->where('r.id', $lot->dispatch_return_id)
+                    ->where('r.status', 'applied')->where('r.returned_lot_id', $lot->id)->where('d.status', 'returned_quarantined')
+                    ->where('f.fulfillment_status', 'cancelled')->first(['r.id', 'd.id as dispatch_id', 'f.stock_lot_id']);
+                abort_unless($return, 422, 'Returned-stock custody is incomplete.');
+                $source['chain'][count($source['chain']) - 1]['dispatch_return'] = ['id' => $return->id, 'dispatch_id' => $return->dispatch_id];
+                $location = $lot->location_id;
+                $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $org)->where('location_id', $location)->where('id', $return->stock_lot_id)->first();
+                abort_unless($lot, 422, 'Original dispatch source is missing.');
+                continue;
+            }
             if ($lot->source_transfer_id === null) { break; }
             $transfer = DB::table('pharmacy_stock_transfers')->where('organization_id', $org)->where('id', $lot->source_transfer_id)->first();
             $valid = $transfer && $transfer->status === 'received' && PharmacyStock::milli($transfer->quantity) === PharmacyStock::milli($transfer->received_quantity);

@@ -57,7 +57,7 @@ class PharmacyInventoryController extends Controller
             $q->where(fn ($q) => $q->where('ndc', 'like', '%'.$d['search'].'%')->orWhere('medication', 'like', '%'.$d['search'].'%')->orWhere('lot_number', 'like', '%'.$d['search'].'%')->orWhere('recall_reference', 'like', '%'.$d['search'].'%'));
         }
 
-        $page = $q->select('id', 'organization_id', 'source_transfer_id', 'location_id', 'ndc', 'medication', 'lot_number', 'quantity_unit', 'expires_on', 'on_hand', 'reserved', 'status', 'version', 'receipt_reference', 'recall_reference')->orderBy('expires_on')->orderBy('id')->paginate(50);
+        $page = $q->select('id', 'organization_id', 'source_transfer_id', 'dispatch_return_id', 'location_id', 'ndc', 'medication', 'lot_number', 'quantity_unit', 'expires_on', 'on_hand', 'reserved', 'status', 'version', 'receipt_reference', 'recall_reference')->orderBy('expires_on')->orderBy('id')->paginate(50);
         $page->getCollection()->transform(function ($lot) { $lot->custody_hold = app(PharmacyStock::class)->custodyHold($lot); unset($lot->organization_id); return $lot; });
         return response()->json(['data' => $page]);
     }
