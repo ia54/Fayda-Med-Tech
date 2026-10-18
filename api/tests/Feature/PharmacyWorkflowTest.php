@@ -1595,10 +1595,38 @@ class PharmacyWorkflowTest extends TestCase
         $before = DB::table('pharmacy_fills')->get()->toJson(); $stock = DB::table('pharmacy_stock_lots')->get()->toJson();
         $this->postJson("$url/events", $this->followUpBody(['action' => 'response', 'method' => 'secure_message']))->assertCreated()->assertJsonPath('data.status', 'open');
         $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=not_started")->assertOk()->assertJsonPath('data.fills.total', 1)->assertJsonPath('data.fills.data.0.id', $other['id']);
-        $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=open")->assertOk()->assertJsonPath('data.fills.total', 1)->assertJsonPath('data.fills.data.0.id', $f['id']);
+        $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=open")->assertOk()->assertJsonPath('data.fills.total', 1)->assertJsonPath('data.fills.data.0.id', $f['id'])->assertJsonPath('data.follow_up_summary.open', 1)->assertJsonPath('data.follow_up_summary.unfinished', 2);
         $this->postJson("$url/events", $this->followUpBody(['version' => 1, 'action' => 'complete']))->assertCreated();
-        $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=completed")->assertOk()->assertJsonPath('data.fills.data.0.follow_up_status', 'completed')->assertJsonPath('data.fills.total', 1);
+        $this->getJson("/api/pharmacy/recall-notices/$notice?follow_up=completed")->assertOk()->assertJsonPath('data.fills.data.0.follow_up_status', 'completed')->assertJsonPath('data.fills.total', 1)->assertJsonPath('data.follow_up_summary.completed', 1)->assertJsonPath('data.follow_up_summary.unfinished', 1)->assertJsonPath('data.follow_up_summary.unresolved_fills', 1);
         $this->assertSame($before, DB::table('pharmacy_fills')->get()->toJson()); $this->assertSame($stock, DB::table('pharmacy_stock_lots')->get()->toJson());
+    }
+
+    public function test_recall_overview_spans_pages_and_filters_but_never_unassigned_locations(): void
+    {
+        $lot = $this->lot(); $rx = $this->rx(); $this->fill($rx, $lot);
+        $seed = (array) DB::table('pharmacy_fills')->first(); unset($seed['id']);
+        for ($i = 2; $i <= 31; $i++) {
+            DB::table('pharmacy_fills')->insert(array_replace($seed, ['fill_number' => $i, 'request_id' => (string) Str::uuid(), 'fulfillment_status' => 'cancelled']));
+        }
+        $otherLot = $this->lot(['location_id' => $this->otherLocation]); $otherRx = $this->rx(['location_id' => $this->otherLocation]);
+        $this->fill($otherRx, $otherLot);
+        // Inconsistent location links and a different tenant must not enter aggregate counts.
+        DB::table('pharmacy_fills')->insert(array_replace($seed, ['prescription_id' => $otherRx, 'request_id' => (string) Str::uuid(), 'fill_number' => 99]));
+        $foreignLot = $this->lot(); $foreignRx = $this->rx(); $this->fill($foreignRx, $foreignLot);
+        DB::table('pharmacy_prescriptions')->where('id', $foreignRx)->update(['organization_id' => 2]);
+        DB::table('pharmacy_stock_lots')->where('id', $foreignLot)->update(['organization_id' => 2]);
+        $notice = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody())->assertCreated()->json('data.id');
+        $url = "/api/pharmacy/recall-notices/$notice";
+        $summary = ['affected_fills' => 32, 'not_started' => 32, 'open' => 0, 'completed' => 0, 'unresolved_fills' => 2, 'unfinished' => 32];
+        $this->getJson($url.'?fill_page=2')->assertOk()->assertJsonPath('data.follow_up_summary', $summary)->assertJsonCount(7, 'data.fills.data');
+        $this->getJson($url.'?follow_up=completed')->assertOk()->assertJsonPath('data.follow_up_summary', $summary)->assertJsonPath('data.fills.total', 0);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->otherLocation)->update(['active' => false]);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.follow_up_summary.affected_fills', 31)->assertJsonPath('data.follow_up_summary.unresolved_fills', 1);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->otherLocation)->update(['active' => true]);
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.follow_up_summary.affected_fills', 1);
+        $empty = $this->postJson('/api/pharmacy/recall-notices', $this->noticeBody(['lot_number' => 'SYN-NO-MATCH']))->assertCreated()->json('data.id');
+        $this->getJson("/api/pharmacy/recall-notices/$empty")->assertOk()->assertJsonPath('data.follow_up_summary', array_fill_keys(array_keys($summary), 0));
     }
 
     public function test_recall_follow_up_scope_validation_and_replay_actor_boundaries(): void

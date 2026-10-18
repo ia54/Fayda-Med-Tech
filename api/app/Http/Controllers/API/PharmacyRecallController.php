@@ -44,6 +44,15 @@ class PharmacyRecallController extends Controller
             ->join('pharmacy_prescriptions as rx', 'rx.id', '=', 'f.prescription_id')->where('rx.organization_id', $n->organization_id)->whereColumn('rx.location_id', 'stock.location_id');
         app(PharmacyRecall::class)->matchNotice($fills, $match); app(PharmacyAccess::class)->scope($fills, $r->user(), 'stock.location_id');
         $fills->leftJoin('pharmacy_recall_follow_ups as follow', function ($join) use ($n) { $join->on('follow.fill_id', '=', 'f.id')->where('follow.notice_id', $n->id); });
+        // Aggregate the same authorized trace before applying pagination or a display filter.
+        $summary = (clone $fills)->selectRaw("COUNT(*) as affected_fills,
+            COALESCE(SUM(CASE WHEN follow.id IS NULL THEN 1 ELSE 0 END), 0) as not_started,
+            COALESCE(SUM(CASE WHEN follow.status = 'open' THEN 1 ELSE 0 END), 0) as open_count,
+            COALESCE(SUM(CASE WHEN follow.status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+            COALESCE(SUM(CASE WHEN f.fulfillment_status NOT IN ('cancelled', 'collected', 'delivered') THEN 1 ELSE 0 END), 0) as unresolved_fills")->first();
+        $n->follow_up_summary = ['affected_fills' => (int) $summary->affected_fills, 'not_started' => (int) $summary->not_started,
+            'open' => (int) $summary->open_count, 'completed' => (int) $summary->completed, 'unresolved_fills' => (int) $summary->unresolved_fills];
+        $n->follow_up_summary['unfinished'] = $n->follow_up_summary['affected_fills'] - $n->follow_up_summary['completed'];
         if ($r->input('follow_up') === 'not_started') { $fills->whereNull('follow.id'); }
         elseif ($r->filled('follow_up')) { $fills->where('follow.status', $r->input('follow_up')); }
         $n->fills = $fills->selectRaw("COALESCE(follow.status, 'not_started') as follow_up_status")->addSelect('f.id', 'f.prescription_id', 'rx.rx_number', 'stock.id as stock_lot_id', 'stock.location_id', 'f.fill_number', 'f.quantity', 'stock.quantity_unit', 'f.fulfillment_status', 'f.created_at')->orderByDesc('f.id')->paginate(25, ['*'], 'fill_page');

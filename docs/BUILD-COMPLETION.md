@@ -83,3 +83,8 @@ Unreadable or structurally incomplete retained transfer snapshots now return an 
 Two request-level regressions cover malformed evidence, blocked acceptance, rejection/cancellation, replay and audit rollback. Four rendered UI cases cover role/site restrictions, unavailable source content, pending refresh, retained decisions and the intact acceptance journey. Hosted verification must be recorded against the final commit; rendered component checks are not browser or pharmacist acceptance.
 
 Synthetic acceptance journey: open a pending transfer with a deliberately damaged snapshot in an isolated test database; verify the unavailable-evidence notice and absence of acceptance/file retrieval; reject as an independent receiving pharmacist or cancel at the source with investigation evidence; refresh and confirm the decision, unchanged original snapshot, cleared transfer hold, unchanged stock and no receiving prescription/receipt. Never damage production records for this exercise.
+
+
+## Recall follow-up overview
+
+Recall detail now summarizes all affected fills at the requesting staff member's current assigned locations, before display filtering or pagination. It separates unfinished follow-up from unresolved fulfillment and provides filters for not-started, open and completed follow-up. It does not count other locations/tenants or imply recall termination, patient communication or stock release. Read-only aggregate regressions cover pagination, status filters, assignment revocation, inconsistent location links, foreign-tenant rows, zero matches and follow-up transitions. Rendered UI checks cover scope language, counts and refresh-disabled controls. Browser and operational acceptance remain separate.
