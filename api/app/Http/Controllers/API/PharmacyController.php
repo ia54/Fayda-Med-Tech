@@ -226,6 +226,14 @@ class PharmacyController extends Controller
                     });
             });
         }
+        $patientReturns = DB::table('pharmacy_patient_returns as pr')->join('pharmacy_fills as pf', 'pf.id', '=', 'pr.fill_id')
+            ->where(function ($pending) {
+                $pending->where('pr.custody_quantity', '>', 0)->orWhereExists(function ($review) {
+                    $review->selectRaw('1')->from('pharmacy_patient_return_proposals as pp')->whereColumn('pp.patient_return_id', 'pr.id')->where('pp.status', 'pending');
+                });
+            })->whereRaw(in_array($r->user()->role, ['pharmacist', 'pharmacy_technician'], true) ? '1=1' : '1=0')
+            ->selectRaw('pf.prescription_id, COUNT(*) AS patient_return_count, MIN(pf.id) AS patient_return_fill_id')->groupBy('pf.prescription_id');
+        $q->leftJoinSub($patientReturns, 'patient_return_work', fn ($join) => $join->on('patient_return_work.prescription_id', '=', 'rx.id'));
         $latest = DB::table('pharmacy_fills')->selectRaw('prescription_id, MAX(id) AS latest_fill_id')->groupBy('prescription_id');
         $q->leftJoinSub($latest, 'latest_fill', fn ($join) => $join->on('latest_fill.prescription_id', '=', 'rx.id'))->leftJoin('pharmacy_fills as fill', 'fill.id', '=', 'latest_fill.latest_fill_id')
             ->leftJoin('pharmacy_fill_dispatches as dispatch', 'dispatch.fill_id', '=', 'fill.id');
@@ -285,11 +293,11 @@ class PharmacyController extends Controller
             $q->where(fn ($q) => $q->where('rx.rx_number', 'like', '%'.$v['search'].'%')->orWhere('rx.medication', 'like', '%'.$v['search'].'%'));
         }
 
-        $rows = $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status', 'dispatch.status as dispatch_status')->selectRaw('COALESCE(handover_work.pending_handover_count, 0) AS pending_handover_count, handover_work.pending_handover_fill_id')->selectRaw('COALESCE(handover_work.reviewable_handover_count, 0) AS reviewable_handover_count, handover_work.reviewable_handover_fill_id')->selectRaw('COALESCE(pending_corrections.pending_correction_count, 0) AS pending_correction_count')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20);
+        $rows = $q->select('rx.id', 'rx.discontinued_at', 'rx.rx_number', 'rx.medication', 'rx.strength', 'rx.location_id', 'rx.controlled', 'rx.compounded', 'rx.compound_type', 'ep.coverage_status', 'cases.case_number', 'fill.review_status', 'fill.claim_status', 'dispatch.status as dispatch_status')->selectRaw('COALESCE(patient_return_work.patient_return_count, 0) AS patient_return_count, patient_return_work.patient_return_fill_id')->selectRaw('COALESCE(handover_work.pending_handover_count, 0) AS pending_handover_count, handover_work.pending_handover_fill_id')->selectRaw('COALESCE(handover_work.reviewable_handover_count, 0) AS reviewable_handover_count, handover_work.reviewable_handover_fill_id')->selectRaw('COALESCE(pending_corrections.pending_correction_count, 0) AS pending_correction_count')->selectRaw('COALESCE(open_fills.open_fill_count, 0) AS open_fill_count, COALESCE(reserved_batches.reserved_batch_count, 0) AS reserved_batch_count')->selectRaw('COALESCE(chart.first_name, patient.first_name) AS first_name, COALESCE(chart.last_name, patient.last_name) AS last_name')->selectRaw("COALESCE(fill.fulfillment_status, 'intake') AS stage")->orderByDesc('rx.id')->paginate(20);
         foreach ($rows as $row) {
             // PDO aggregate types differ across SQLite, MySQL and MariaDB.
-            foreach (['pending_handover_count', 'reviewable_handover_count'] as $field) { $row->$field = (int) $row->$field; }
-            foreach (['pending_handover_fill_id', 'reviewable_handover_fill_id'] as $field) {
+            foreach (['patient_return_count', 'pending_handover_count', 'reviewable_handover_count'] as $field) { $row->$field = (int) $row->$field; }
+            foreach (['patient_return_fill_id', 'pending_handover_fill_id', 'reviewable_handover_fill_id'] as $field) {
                 $row->$field = $row->$field === null ? null : (int) $row->$field;
             }
         }

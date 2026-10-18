@@ -98,6 +98,10 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         $containerLabels = \App\Http\Controllers\API\PharmacyFinishedContainerLabelController::class;
         Route::get('/executions/{executionId}/container-label-context', [$containerLabels, 'context']);
         Route::get('/executions/{executionId}/container-label-check', [$containerLabels, 'check']);
+        Route::get('/executions/{executionId}/handover-rehearsal-context', [\App\Http\Controllers\API\PharmacyHandoverRehearsalController::class, 'context']);
+        Route::get('/executions/{executionId}/handover-rehearsals', [\App\Http\Controllers\API\PharmacyHandoverRehearsalController::class, 'index']);
+        Route::post('/executions/{executionId}/handover-rehearsals', [\App\Http\Controllers\API\PharmacyHandoverRehearsalController::class, 'store']);
+        Route::post('/executions/{executionId}/handover-rehearsals/{rehearsalId}/finish', [\App\Http\Controllers\API\PharmacyHandoverRehearsalController::class, 'finish']);
         Route::get('/executions/{executionId}/container-labels', [$containerLabels, 'history']);
         Route::post('/executions/{executionId}/container-labels', [$containerLabels, 'store']);
         Route::get('/container-labels/{id}/document', [$containerLabels, 'document']);

@@ -3176,6 +3176,11 @@ class PharmacyWorkflowTest extends TestCase
     public function test_patient_returns_preserve_fill_finance_and_dispensing_stock_with_actor_bound_replay(): void
     {
         Http::preventStrayRequests(); $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $this->actor->role = 'medical_biller'; $this->actor->save();
+        $this->putJson("/api/pharmacy/prescriptions/$rx/coverage", ['version' => 1, 'status' => 'verified', 'payer' => 'Synthetic payer', 'claim_number' => 'SYN-PIP', 'coordination' => 'Synthetic coordination', 'evidence' => 'Synthetic verification', 'verified_on' => now()->toDateString()])->assertOk();
+        $f = $this->act($rx, $f, 'prepare_claim', ['amount' => '123.45', 'reference' => 'Synthetic pricing basis']);
+        $financial = DB::table('invoices')->get()->toJson();
+        $this->actor->role = 'pharmacist'; $this->actor->save();
         $stock = DB::table('pharmacy_stock_lots')->get()->toJson(); $fill = (array) DB::table('pharmacy_fills')->find($f['id']);
         $events = DB::table('pharmacy_stock_events')->count(); $invoices = DB::table('invoices')->count();
         $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/patient-returns"; $body = $this->patientReturnBody();
@@ -3189,6 +3194,7 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('pharmacy_patient_returns')->count());
         $this->assertSame($stock, DB::table('pharmacy_stock_lots')->get()->toJson()); $this->assertSame($fill, (array) DB::table('pharmacy_fills')->find($f['id']));
         $this->assertSame($events, DB::table('pharmacy_stock_events')->count()); $this->assertSame($invoices, DB::table('invoices')->count());
+        $this->assertSame($financial, DB::table('invoices')->get()->toJson());
     }
 
     public function test_patient_return_scope_identity_access_and_completed_handover_are_required(): void
@@ -3264,8 +3270,9 @@ class PharmacyWorkflowTest extends TestCase
     {
         $rx = $this->rx(); $f = $this->complete($rx, $this->fill($rx, $this->lot())); $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/patient-returns";
         $id = $this->postJson($url, $this->patientReturnBody())->assertCreated()->json('data.returns.data.0.id'); $path = "/api/pharmacy/patient-returns/$id";
+        $this->fill($rx, $this->lot()); // Later pending fill must not hide the earlier completed return.
         DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['discontinued_at' => now()]);
-        $this->getJson('/api/pharmacy/prescriptions?attention=patient_return_custody')->assertOk()->assertJsonPath('data.total', 1);
+        $this->getJson('/api/pharmacy/prescriptions?attention=patient_return_custody')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.data.0.patient_return_fill_id', $f['id']);
         $proposal = $this->postJson("$path/proposals", $this->patientCustodyBody(1, ['quantity' => '4.125']))->assertCreated()->json('data.proposals.data.0.id');
         $this->actingAs($this->independentReviewer(), 'api');
         $this->postJson("$path/proposals/$proposal/review", ['request_id' => (string) Str::uuid(), 'decision' => 'apply', 'evidence' => 'SYNTHETIC review', 'confirmed' => true])->assertOk();
@@ -6113,6 +6120,94 @@ class PharmacyWorkflowTest extends TestCase
         catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { $this->assertSame(409, $e->getStatusCode()); }
         $this->assertSame($stock, (array) DB::table('pharmacy_ingredient_lots')->find($lot));
         $this->assertSame((array) $execution, (array) DB::table('pharmacy_batch_executions')->find($execution->id));
+    }
+
+    private function compoundRehearsalFixture(): array
+    {
+        [$execution, $lot, $reviewer] = $this->containerCustodyFixture();
+        $source = app(\App\Services\PharmacyCurrentContainerReviewContext::class)->inspect($this->actor, $execution->id);
+        $digest = app(\App\Services\PharmacyCompoundingIncident::class); $suitability = app(\App\Services\PharmacyContainerSuitabilityLedger::class);
+        $id = $suitability->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'previous_id' => null, 'source_hash' => $digest->digest($source),
+            'proposal' => [['identifier' => 'SYN-CONTAINER-1', 'outcome' => 'suitable', 'container_evidence' => 'SYNTHETIC', 'storage_evidence' => 'SYNTHETIC', 'dating_scope_evidence' => 'SYNTHETIC']]]);
+        $suitability->decide($reviewer, $id, 'reviewed', 'SYNTHETIC independent review');
+        $source = app(\App\Services\PharmacyFinishedContainerLabelContext::class)->inspect($this->actor, $execution->id, 'SYN-CONTAINER-1');
+        $id = app(\App\Services\PharmacyFinishedContainerLabelLedger::class)->retain($this->actor, $execution->id, ['request_id' => (string) Str::uuid(), 'identifier' => 'SYN-CONTAINER-1', 'previous_id' => null, 'source_hash' => $digest->digest($source)]);
+        $proof = DB::table('pharmacy_container_label_proofs')->find($id);
+        $print = app(\App\Services\PharmacyContainerLabelPrintLedger::class)->retain($this->actor, $id, ['request_id' => (string) Str::uuid(), 'document_hash' => $proof->document_hash,
+            'copies' => 1, 'occurred_on' => now()->toDateString(), 'reason' => 'SYNTHETIC', 'reference' => 'SYNTHETIC no printer', 'confirmed' => true]);
+        app(\App\Services\PharmacyContainerLabelComparisonLedger::class)->retain($this->actor, $id, ['request_id' => (string) Str::uuid(), 'print_id' => $print,
+            'label_code' => $proof->barcode_code, 'container_identifier' => 'SYN-CONTAINER-1', 'document_hash' => $proof->document_hash,
+            'input_method' => 'manual', 'manual_reason' => 'SYNTHETIC no scanner', 'evidence' => 'SYNTHETIC comparison', 'confirmed' => true]);
+        $this->actingAs($this->actor, 'api');
+        return [$execution, $lot, $reviewer, $proof];
+    }
+
+    public function test_compound_handover_rehearsal_is_independent_replay_safe_and_never_releases_output(): void
+    {
+        Http::preventStrayRequests(); [$e, $lot, $reviewer, $proof] = $this->compoundRehearsalFixture();
+        $stock = DB::table('pharmacy_ingredient_lots')->get()->toJson(); $fills = DB::table('pharmacy_fills')->get()->toJson(); $invoices = DB::table('invoices')->get()->toJson();
+        $base = "/api/pharmacy/executions/{$e->id}"; $url = "$base/handover-rehearsals";
+        $source = $this->getJson("$base/handover-rehearsal-context")->assertOk()->assertJsonPath('release_enabled', false)->json('data.source_hash');
+        $body = ['request_id' => (string) Str::uuid(), 'source_hash' => $source, 'evidence' => 'SYNTHETIC reservation exercise', 'synthetic_confirmed' => true];
+        $id = $this->postJson($url, $body)->assertCreated()->assertJsonPath('release_enabled', false)->json('data.id');
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.id', $id);
+        $this->postJson($url, array_replace($body, ['request_id' => (string) Str::uuid()]))->assertStatus(409);
+        $finish = ['request_id' => (string) Str::uuid(), 'version' => 1, 'action' => 'hand_over', 'evidence' => 'SYNTHETIC independent exercise', 'synthetic_confirmed' => true,
+            'recipient_reference' => 'SYNTHETIC recipient', 'identity_reference' => 'SYNTHETIC comparison', 'counseling_reference' => 'SYNTHETIC exercise',
+            'comparisons' => [['identifier' => 'SYN-CONTAINER-1', 'label_code' => $proof->barcode_code]]];
+        $this->postJson("$url/$id/finish", $finish)->assertUnprocessable();
+        $this->actingAs($reviewer, 'api');
+        $this->postJson($url, $body)->assertStatus(409);
+        $bad = $finish; $bad['comparisons'][0]['label_code'] = 'FMTCL-'.str_repeat('Z', 20);
+        $this->postJson("$url/$id/finish", $bad)->assertUnprocessable();
+        $bad = $finish; $bad['comparisons'][] = $bad['comparisons'][0]; $this->postJson("$url/$id/finish", $bad)->assertUnprocessable();
+        $this->postJson("$url/$id/finish", $finish)->assertOk()->assertJsonPath('data.data.0.status', 'handed_over')->assertJsonPath('can_start', false)->assertJsonPath('release_enabled', false);
+        $this->postJson("$url/$id/finish", $finish)->assertOk();
+        $this->postJson("$url/$id/finish", array_replace($finish, ['evidence' => 'changed']))->assertStatus(409);
+        $this->postJson($url, array_replace($body, ['request_id' => (string) Str::uuid()]))->assertStatus(409);
+        $this->assertSame($stock, DB::table('pharmacy_ingredient_lots')->get()->toJson()); $this->assertSame($fills, DB::table('pharmacy_fills')->get()->toJson());
+        $this->assertSame($invoices, DB::table('invoices')->get()->toJson()); $this->assertSame((array) $e, (array) DB::table('pharmacy_batch_executions')->find($e->id));
+        Http::assertNothingSent();
+    }
+
+    public function test_compound_rehearsal_stale_sources_allow_documented_cancellation_but_not_handover(): void
+    {
+        [$e, $lot, $reviewer, $proof] = $this->compoundRehearsalFixture(); $base = "/api/pharmacy/executions/{$e->id}"; $url = "$base/handover-rehearsals";
+        $body = ['request_id' => (string) Str::uuid(), 'source_hash' => $this->getJson("$base/handover-rehearsal-context")->assertOk()->json('data.source_hash'), 'evidence' => 'SYNTHETIC', 'synthetic_confirmed' => true];
+        $id = $this->postJson($url, $body)->assertCreated()->json('data.id');
+        $finish = ['request_id' => (string) Str::uuid(), 'version' => 1, 'action' => 'hand_over', 'evidence' => 'SYNTHETIC', 'synthetic_confirmed' => true,
+            'recipient_reference' => 'SYNTHETIC', 'identity_reference' => 'SYNTHETIC', 'counseling_reference' => 'SYNTHETIC', 'comparisons' => [['identifier' => 'SYN-CONTAINER-1', 'label_code' => $proof->barcode_code]]];
+        $this->actingAs($reviewer, 'api'); $this->patient->first_name = 'Changed synthetic identity'; $this->patient->save();
+        $this->postJson("$url/$id/finish", $finish)->assertStatus(409);
+        $cancel = ['request_id' => (string) Str::uuid(), 'version' => 1, 'action' => 'cancel', 'evidence' => 'SYNTHETIC reconcile changed source', 'synthetic_confirmed' => true];
+        $this->postJson("$url/$id/finish", $cancel)->assertOk()->assertJsonPath('data.data.0.status', 'cancelled')->assertJsonPath('can_start', true);
+        $this->postJson("$url/$id/finish", $cancel)->assertOk();
+        $this->postJson($url, array_replace($body, ['request_id' => (string) Str::uuid()]))->assertStatus(409);
+        $this->patient->first_name = 'Synthetic'; $this->patient->save();
+        $this->actingAs($this->actor, 'api');
+        $new = $this->postJson($url, array_replace($body, ['request_id' => (string) Str::uuid()]))->assertCreated()->json('data.id');
+        $this->assertNotSame($id, $new);
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save(); $this->getJson($url)->assertOk();
+        $this->postJson("$url/$new/finish", $cancel)->assertForbidden(); $this->getJson("$base/handover-rehearsal-context")->assertForbidden();
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]); $this->getJson($url)->assertNotFound();
+        $this->actingAs($reviewer, 'api'); $this->postJson("$url/$new/finish", $finish)->assertNotFound();
+        $reviewer->organization_id = 2; $this->getJson($url)->assertNotFound(); $reviewer->organization_id = 1;
+        $this->app->instance('env', 'production'); $this->getJson($url)->assertStatus(503); $this->postJson($url, $body)->assertStatus(503); $this->postJson("$url/$new/finish", $cancel)->assertStatus(503);
+    }
+
+    public function test_compound_rehearsal_rejects_unaudited_or_modified_records_and_rolls_back_failed_audit(): void
+    {
+        [$e, $lot, $reviewer] = $this->compoundRehearsalFixture(); $base = "/api/pharmacy/executions/{$e->id}"; $url = "$base/handover-rehearsals";
+        $body = ['request_id' => (string) Str::uuid(), 'source_hash' => $this->getJson("$base/handover-rehearsal-context")->assertOk()->json('data.source_hash'), 'evidence' => 'SYNTHETIC', 'synthetic_confirmed' => true];
+        $id = $this->postJson($url, $body)->assertCreated()->json('data.id'); $row = DB::table('pharmacy_handover_rehearsals')->find($id);
+        $cancel = ['request_id' => (string) Str::uuid(), 'version' => 1, 'action' => 'cancel', 'evidence' => 'SYNTHETIC cancellation', 'synthetic_confirmed' => true];
+        DB::table('pharmacy_handover_rehearsals')->where('id', $id)->update(['reservation_evidence' => 'changed']);
+        $this->postJson("$url/$id/finish", $cancel)->assertStatus(409);
+        DB::table('pharmacy_handover_rehearsals')->where('id', $id)->update(['reservation_evidence' => $row->reservation_evidence]);
+        DB::connection()->beforeExecuting(function ($query) { if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_compounding_events')) { throw new \RuntimeException('SYNTHETIC rehearsal audit failure'); } });
+        $this->postJson("$url/$id/finish", $cancel)->assertStatus(500);
+        $this->assertSame((array) $row, (array) DB::table('pharmacy_handover_rehearsals')->find($id));
     }
 
     private function containerCustodyFixture(?string $yieldQuantity = null): array

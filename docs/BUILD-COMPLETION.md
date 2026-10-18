@@ -2,7 +2,7 @@
 
 Updated October 18, 2026. The owner has directed build work to proceed while server access is deferred. This is a software worklist, not a launch approval or a percentage-complete claim.
 
-## Current increment
+## Workflow navigation baseline
 
 The compounding worksheet now presents worksheet review, ingredient allocation/preparation, quality/dating, container custody, suitability/labels and history in workflow order. Navigation preserves mounted forms and existing container deep links. Discontinuation and ingredient incident holds remain visible above the sections. Opening a detail record skips unrelated formulation/worksheet list requests; returning to the lists refreshes them. Worksheet retrieval has an explicit retry and refresh path.
 
@@ -16,7 +16,7 @@ The preceding published candidate, `09fd6ae`, passed hosted PHP regression (430 
 
 Prepared-fill cancellation now requires the pharmacist to account for the entire quantity, confirm continuous pharmacy custody, and retain a segregation reference. The original preparation/label record remains intact. Cancellation removes the reservation without deducting on-hand quantity or creating a bill; an available source receipt becomes quarantined. Existing quarantine and recall states are preserved. The whole receipt is held because prepared units currently share its stock balance; a later stock review is a separate action.
 
-This path deliberately rejects dispatched, missing or patient-returned medication. Actual loss and patient-return resolution remain unfinished; these must not be represented as completed cancellation functionality. Pending, unprepared fills retain their existing cancellation behavior. Historical cancelled fills receive no inferred custody evidence.
+This path deliberately rejects dispatched, missing or patient-returned medication. Loss and patient-return handling use the separate workflows documented below; they must not be represented as ordinary cancellation. Pending, unprepared fills retain their existing cancellation behavior. Historical cancelled fills receive no inferred custody evidence.
 
 Three new API regression cases cover invalid custody/quantities, stock and financial invariants, replay protection, role/site/organization access, recall preservation and audit rollback. Existing successful prepared-cancellation fixtures now supply explicit custody evidence, and the product-correction journey explicitly reviews quarantined stock before reuse. PHP syntax and UI syntax/render/payload checks passed. The published candidate passed the hosted checks listed above after local validation stalled in file reads. Browser acceptance remains outstanding.
 
@@ -26,17 +26,17 @@ Prepared ordinary fills now have a distinct dispatch record. Dispatch retains st
 
 A complete undelivered return requires original package-label identification, quantity, custody/condition/segregation evidence and confirmation that no medication reached the patient or representative. A different currently assigned pharmacist reviews it. Application cancels the unfulfilled fill and atomically moves the exact units from its source balance into a separate quarantined receipt. That receipt cannot be released, dispensed or transferred; reviewed disposition follows the original source and recall history. Rejections remain in paginated history. The prescription worklist can filter unresolved dispatches.
 
-No courier booking, patient communication, billing or provider transmission is performed. Partial/missing returns and patient-returned medication remain unresolved rather than being written off or restored to usable stock. Controlled and compounded dispensing remain disabled. No historical dispatch evidence is inferred.
+No courier booking, patient communication, billing or provider transmission is performed. Partial/missing returns and patient-returned medication use the separate loss and patient-custody ledgers below. Controlled and compounded dispensing remain disabled. No historical dispatch evidence is inferred.
 
 Focused synthetic cases cover dispatch validation, confirmed delivery, failed-delivery holds, independent returns, rejection/stale-source history, permanent reuse restrictions, disposition lineage, access boundaries and atomic audit rollback. Candidate `8ef2b6f` passed 435 PHP tests / 8,748 assertions, MySQL/MariaDB schema/workflow/recovery, admin TypeScript/session checks and the production-origin web build. Chrome and physical acceptance remain outstanding. It is not deployed.
 
-### Confirmed dispatch losses and later recovery — current increment
+### Confirmed dispatch losses and later recovery
 
 A retained delivery exception can now proceed to documented loss reconciliation for ordinary unfulfilled medication. Returned plus confirmed-lost quantities must equal the entire dispatch. Evidence must identify the completed investigation, exact loss and nonreceipt by the patient or representative. Independent review deducts only the lost units from total inventory; any returned units enter permanently segregated quarantine. A wholly lost dispatch creates no fictitious returned-stock receipt. No charge, report transmission or automatic replacement is created.
 
 Medication found later has a separate recovery proposal and independent review. Total accepted recovery cannot exceed the original documented loss. Recovered units enter separate non-releasable quarantine receipts, retaining original stock/recall lineage for disposition. The original loss, cancelled fill, invoice state and allowance history are preserved. Rejection, stale evidence, unauthorized authors and audit failures cannot create stock. Pending recovery reviews appear in the dispatch worklist.
 
-Synthetic regression and build verification for this increment are pending. Patient-returned medication and compounded output remain separate workstreams; no production functionality is enabled.
+Published candidate a6001a7 passed hosted PHP, MySQL and MariaDB regression. Patient-returned medication and compounded output remain separate workstreams; no production functionality is enabled.
 
 | Workstream | Work to establish before calling it complete | Acceptance journey |
 | --- | --- | --- |
@@ -63,3 +63,11 @@ Ordinary recall and dispensing-error patient receipts now have a separate custod
 Current Michigan R 338.503 provides the patient-return boundary: https://ars.apps.lara.state.mi.us/AdminCode/DownloadAdminCodeFile?FileName=R+338.471+to+R+338.592.pdf&ReturnHTML=True . The product keeps these receipts entirely separate from active inventory; it does not infer authorization from a checkbox or perform physical disposition.
 
 Local PHP syntax, protected-route declarations and TypeScript transpilation passed. Six request-level regression scenarios added; exact candidate CI and browser acceptance remain to be verified. Previous dispatch loss/recovery candidate a6001a7 passed backend PHP, MySQL and MariaDB CI. No deployment or operational acceptance is implied.
+
+### Compounded handover rehearsal (current development increment)
+
+The existing reviewed quality, dating, packaging, suitability and container-label chain now feeds a separate synthetic reservation and handover exercise. Every held unit must be packaged with current labels and retained comparison evidence. A second currently assigned pharmacist must compare each exact container/code and document synthetic recipient, identity and counseling evidence. Source changes block simulated handover; documented cancellation remains possible with retained original history. Duplicate active/completed exercises cannot silently reserve the same output twice.
+
+The rehearsal never writes real inventory reservations, fills, prescription allowances, payments or release status. Production endpoints remain disabled. No physical handover, printer/scanner acceptance, controlled-substance authority or clinical compounding acceptance is implied. Real compounded release requires a separate operationally approved lifecycle; this exercise establishes the connected documentary path only.
+
+Added three focused request-level regression scenarios for replay, independent authorization, source changes, cancellation, role/site/tenant and production gates, audit binding and rollback. The current candidate requires hosted checks and browser acceptance. Patient-return worklist badges now link directly to the earliest affected fill, including older completed fills; additional regression verifies existing invoice preservation.
