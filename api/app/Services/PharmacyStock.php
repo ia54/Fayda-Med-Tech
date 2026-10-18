@@ -98,7 +98,7 @@ class PharmacyStock
         return $lot;
     }
 
-    public function transition(User $actor, $rx, $fill, string $action): void
+    public function transition(User $actor, $rx, $fill, string $action, array $cancellation = []): void
     {
         $lot = DB::table('pharmacy_stock_lots')->where('organization_id', $actor->organization_id)
             ->where('location_id', $rx->location_id)->where('id', $fill->stock_lot_id)->lockForUpdate()->first();
@@ -112,15 +112,28 @@ class PharmacyStock
         $quantity = self::milli($fill->quantity);
         $reserved = self::milli($lot->reserved);
         $onHand = self::milli($lot->on_hand);
+        $preparedCancellation = $action === 'cancel' && $fill->fulfillment_status === 'ready';
+        if ($preparedCancellation && (! $cancellation || ($cancellation['custody'] ?? null) !== 'never_left_pharmacy'
+            || self::milli($cancellation['quantity'] ?? '0') !== $quantity)) {
+            $this->fail('Prepared cancellation requires complete retained-custody evidence.');
+        }
         if ($reserved < $quantity || $onHand < $quantity) {
             $this->fail('Stock reconciliation is required before this action.');
         }
-        DB::table('pharmacy_stock_lots')->where('id', $lot->id)->update([
+        $update = [
             'reserved' => self::decimal($reserved - $quantity),
             'on_hand' => self::decimal($onHand - ($action === 'cancel' ? 0 : $quantity)),
             'version' => $lot->version + 1, 'updated_at' => now(),
-        ]);
-        $this->event($actor, $lot, $action === 'cancel' ? 'reservation_released' : 'dispensed', $fill->quantity, [], $fill->id);
+        ];
+        // Retained prepared units share this receipt's balance. Hold the receipt
+        // rather than silently making those units available for another fill.
+        if ($preparedCancellation && $lot->status === 'available') {
+            $update['status'] = 'quarantined';
+        }
+        DB::table('pharmacy_stock_lots')->where('id', $lot->id)->update($update);
+        $this->event($actor, $lot, $action === 'cancel' ? 'reservation_released' : 'dispensed', $fill->quantity,
+            $preparedCancellation ? ['prepared_cancellation' => $cancellation, 'previous_status' => $lot->status,
+                'resulting_status' => $update['status'] ?? $lot->status] : [], $fill->id);
     }
 
     public function event(User $actor, $lot, string $action, $quantity, array $details, ?int $fillId = null): void

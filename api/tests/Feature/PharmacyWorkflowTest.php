@@ -2396,6 +2396,8 @@ class PharmacyWorkflowTest extends TestCase
         $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic handover', 'counseling' => 'provided'], 422);
         $this->act($rx, $f, 'approve', $this->checks(), 422);
         $this->act($rx, $f, 'cancel');
+        $stockVersion = DB::table('pharmacy_stock_lots')->where('id', $lot)->value('version');
+        $this->putJson("/api/pharmacy/stock/$lot/status", ['version' => $stockVersion, 'status' => 'available', 'note' => 'SYNTHETIC separate retained-stock review after cancellation'])->assertOk();
         $newFill = collect($this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertOk()->json('data.fills'))->last();
         $f = $this->complete($rx, $newFill);
         $this->assertSame(3, $f['reviewed_product']['revision']);
@@ -2433,6 +2435,9 @@ class PharmacyWorkflowTest extends TestCase
         }
         if (in_array($a, ['collected', 'delivered'], true)) {
             $extra += ['handover' => $this->handoverEvidence($a)];
+        }
+        if ($a === 'cancel' && $f['fulfillment_status'] === 'ready' && $status === 200) {
+            $extra += ['cancellation' => $this->preparedCancellationEvidence($f)];
         }
         $result = $this->postJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions", array_replace(['version' => $f['version'], 'product_id' => $f['current_product']['id'] ?? null, 'action' => $a, 'note' => 'Synthetic evidence'], $extra))->assertStatus($status);
 
@@ -3963,6 +3968,90 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(1, DB::table('pharmacy_fills')->where('prescription_id', $rx)->count());
         $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
         $this->getJson("/api/pharmacy/prescriptions/$rx")->assertOk()->assertJsonPath('data.quantity_balance.available_quantity', '6.000');
+    }
+
+    private function preparedCancellationEvidence(array $fill): array
+    {
+        return ['custody' => 'never_left_pharmacy', 'quantity' => $fill['quantity'],
+            'evidence' => 'SYNTHETIC all units continuously retained at pharmacy',
+            'segregation_reference' => 'SYNTHETIC segregated preparation bin', 'confirmed' => true];
+    }
+
+    public function test_prepared_cancellation_requires_full_custody_and_quarantines_without_billing(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions";
+        $body = ['version' => $f['version'], 'action' => 'cancel', 'note' => 'SYNTHETIC cancelled pickup'];
+        $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        $saved = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $this->postJson($url, $body)->assertStatus(422);
+        foreach ([['quantity' => '9.000'], ['quantity' => '11.000'], ['custody' => 'dispatched'], ['custody' => 'patient_return'], ['confirmed' => false], ['evidence' => ''], ['segregation_reference' => '']] as $bad) {
+            $this->postJson($url, $body + ['cancellation' => array_replace($this->preparedCancellationEvidence($f), $bad)])->assertStatus(422);
+        }
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $this->assertSame($saved, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $body['cancellation'] = $this->preparedCancellationEvidence($f);
+        $result = $this->postJson($url, $body)->assertOk();
+        $cancelled = collect($result->json('data.fills'))->firstWhere('id', $f['id']);
+        $this->assertSame('cancelled', $cancelled['fulfillment_status']);
+        $this->assertSame($f['fulfillment']['prepared_label_id'], $cancelled['fulfillment']['prepared_label_id']);
+        $this->assertSame('10.000', $cancelled['fulfillment']['prepared_cancellation']['quantity']);
+        $this->assertFalse($cancelled['fulfillment']['prepared_cancellation']['stock_release_authorized']);
+        $this->assertSame('quarantined', DB::table('pharmacy_stock_lots')->where('id', $lot)->value('status'));
+        $this->assertEquals(50, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+        $this->assertEquals(0, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->assertSame(0, DB::table('invoices')->count());
+        $event = DB::table('pharmacy_stock_events')->where('fill_id', $f['id'])->where('action', 'reservation_released')->first();
+        $this->assertSame('quarantined', json_decode($event->details, true)['resulting_status']);
+        $this->postJson($url, $body)->assertStatus(409);
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('fill_id', $f['id'])->where('action', 'reservation_released')->count());
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($lot))->assertStatus(422);
+        $otherLot = $this->lot();
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills", $this->fillBody($otherLot))->assertOk();
+    }
+
+    public function test_prepared_cancellation_preserves_recall_and_rejects_unauthorized_staff(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions";
+        $body = ['version' => $f['version'], 'action' => 'cancel', 'note' => 'SYNTHETIC', 'cancellation' => $this->preparedCancellationEvidence($f)];
+        foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
+            $this->actor->role = $role; $this->actor->save(); $this->postJson($url, $body)->assertForbidden();
+        }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->postJson($url, $body)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save(); $this->postJson($url, $body)->assertNotFound();
+        $this->actor->organization_id = 1; $this->actor->save();
+        DB::table('pharmacy_stock_lots')->where('id', $lot)->update(['status' => 'recalled', 'recall_reference' => 'SYNTHETIC recall']);
+        $this->postJson($url, $body)->assertOk();
+        $this->assertSame('recalled', DB::table('pharmacy_stock_lots')->where('id', $lot)->value('status'));
+        $this->assertSame('SYNTHETIC recall', DB::table('pharmacy_stock_lots')->where('id', $lot)->value('recall_reference'));
+    }
+
+    public function test_prepared_cancellation_rolls_back_custody_and_quarantine_on_audit_failure(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot();
+        $f = $this->act($rx, $this->fill($rx, $lot), 'approve', $this->checks());
+        $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
+        $stock = (array) DB::table('pharmacy_stock_lots')->find($lot);
+        $saved = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $eventCount = DB::table('pharmacy_stock_events')->count();
+        DB::connection()->beforeExecuting(function ($query) {
+            if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) {
+                throw new \RuntimeException('SYNTHETIC cancellation audit failure');
+            }
+        });
+        $this->postJson("/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/actions", ['version' => $f['version'], 'action' => 'cancel',
+            'note' => 'SYNTHETIC', 'cancellation' => $this->preparedCancellationEvidence($f)])->assertStatus(500);
+        $this->assertSame($stock, (array) DB::table('pharmacy_stock_lots')->find($lot));
+        $this->assertSame($saved, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $this->assertSame($eventCount, DB::table('pharmacy_stock_events')->count());
     }
 
     public function test_retries_refills_stale_updates_and_cancel_release_stock(): void

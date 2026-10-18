@@ -541,7 +541,7 @@ class PharmacyController extends Controller
 
     public function fillAction(Request $r, $id, $fillId)
     {
-        $d = $r->validate(['version' => 'required|integer|min:1', 'action' => 'required|in:approve,hold,cancel,ready,collected,delivered,prepare_claim,record_submission,record_denial,record_maps', 'note' => 'required|string|max:2000', 'product_id' => 'nullable|integer|min:1', 'label_id' => 'nullable|integer|min:1', 'checks' => 'sometimes|array:identity,prescriber,therapy,product,label', 'checks.identity' => 'sometimes|accepted', 'checks.prescriber' => 'sometimes|accepted', 'checks.therapy' => 'sometimes|accepted', 'checks.product' => 'sometimes|accepted', 'checks.label' => 'sometimes|accepted', 'occurred_on' => 'nullable|date_format:Y-m-d|before_or_equal:today', 'reference' => 'nullable|string|max:255', 'amount' => 'nullable|numeric|min:0.01|max:99999999.99|decimal:0,2', 'counseling' => 'nullable|in:provided,declined,documented_remote', 'handover' => 'nullable|array', 'scan' => 'nullable|array', 'maps_status' => 'nullable|in:not_applicable,pending,submitted', 'maps_reference' => 'nullable|string|max:255', 'denial_type' => 'nullable|in:coverage,coding,medical_necessity,cost,no_response', 'determination_on' => 'nullable|date_format:Y-m-d|before_or_equal:today']);
+        $d = $r->validate(['version' => 'required|integer|min:1', 'action' => 'required|in:approve,hold,cancel,ready,collected,delivered,prepare_claim,record_submission,record_denial,record_maps', 'note' => 'required|string|max:2000', 'product_id' => 'nullable|integer|min:1', 'label_id' => 'nullable|integer|min:1', 'checks' => 'sometimes|array:identity,prescriber,therapy,product,label', 'checks.identity' => 'sometimes|accepted', 'checks.prescriber' => 'sometimes|accepted', 'checks.therapy' => 'sometimes|accepted', 'checks.product' => 'sometimes|accepted', 'checks.label' => 'sometimes|accepted', 'occurred_on' => 'nullable|date_format:Y-m-d|before_or_equal:today', 'reference' => 'nullable|string|max:255', 'amount' => 'nullable|numeric|min:0.01|max:99999999.99|decimal:0,2', 'counseling' => 'nullable|in:provided,declined,documented_remote', 'handover' => 'nullable|array', 'cancellation' => 'nullable|array', 'scan' => 'nullable|array', 'maps_status' => 'nullable|in:not_applicable,pending,submitted', 'maps_reference' => 'nullable|string|max:255', 'denial_type' => 'nullable|in:coverage,coding,medical_necessity,cost,no_response', 'determination_on' => 'nullable|date_format:Y-m-d|before_or_equal:today']);
         DB::transaction(function () use ($r, $id, $fillId, $d) {
             $rx = $this->rx($r, $id, true);
             $f = DB::table('pharmacy_fills')->where('prescription_id', $rx->id)->where('id', $fillId)->lockForUpdate()->first();
@@ -596,6 +596,10 @@ class PharmacyController extends Controller
                     $update = ['review_status' => $a === 'approve' ? 'approved' : 'held', 'review' => json_encode(['actor_id' => $r->user()->id, 'at' => now()->toIso8601String(), 'note' => $d['note'], 'checks' => $d['checks'] ?? [], 'product_id' => $product->id ?? null, 'patient_version' => $chart->version ?? null, 'source_last_id' => DB::table('pharmacy_source_documents')->where('prescription_id', $rx->id)->max('id') ?? 0])];
                 } elseif ($a === 'cancel') {
                     $update = ['fulfillment_status' => 'cancelled'];
+                    if ($f->fulfillment_status === 'ready') {
+                        $cancellation = app(\App\Services\PharmacyPreparedCancellation::class)->evidence($d['cancellation'] ?? [], $f, (int) $r->user()->id);
+                        $update['fulfillment'] = json_encode(array_replace($this->json($f->fulfillment), ['prepared_cancellation' => $cancellation]), JSON_THROW_ON_ERROR);
+                    }
                 } else {
                     if ($rx->controlled || $rx->compounded) {
                         $this->fail('Controlled and compounded dispensing is not enabled.');
@@ -684,7 +688,7 @@ class PharmacyController extends Controller
                 }
             }
             if (in_array($a, ['ready', 'collected', 'delivered', 'cancel'], true)) {
-                app(PharmacyStock::class)->transition($r->user(), $rx, $f, $a);
+                app(PharmacyStock::class)->transition($r->user(), $rx, $f, $a, $cancellation ?? []);
             }
             if (in_array($a, ['ready', 'collected', 'delivered'], true)) {
                 $priorFulfillment = $this->json($f->fulfillment);
