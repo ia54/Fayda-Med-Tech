@@ -264,6 +264,11 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::post('prescriptions/{id}/allowance-corrections/{correctionId}/review', [$controller, 'reviewAllowanceCorrection']);
         Route::post('prescriptions/{id}/fills', [$controller, 'createFill']);
         Route::get('prescriptions/{id}/fills/{fillId}/dispatch', [$controller, 'dispatchHistory']);
+        Route::get('prescriptions/{id}/fills/{fillId}/patient-returns', [\App\Http\Controllers\API\PharmacyPatientReturnController::class, 'index']);
+        Route::post('prescriptions/{id}/fills/{fillId}/patient-returns', [\App\Http\Controllers\API\PharmacyPatientReturnController::class, 'store']);
+        Route::get('patient-returns/{returnId}', [\App\Http\Controllers\API\PharmacyPatientReturnController::class, 'show']);
+        Route::post('patient-returns/{returnId}/proposals', [\App\Http\Controllers\API\PharmacyPatientReturnController::class, 'propose']);
+        Route::post('patient-returns/{returnId}/proposals/{proposalId}/review', [\App\Http\Controllers\API\PharmacyPatientReturnController::class, 'review']);
         Route::post('prescriptions/{id}/fills/{fillId}/actions', [$controller, 'fillAction']);
         Route::get('prescriptions/{id}/assistant', [$controller, 'assistant']);
     });

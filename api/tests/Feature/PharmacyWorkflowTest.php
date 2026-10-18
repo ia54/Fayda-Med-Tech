@@ -3158,6 +3158,134 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('pending', DB::table('pharmacy_dispatch_recoveries')->value('status'));
     }
 
+    private function patientReturnBody(array $overrides = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'quantity' => '4.125', 'reason' => 'recall',
+            'occurred_on' => now()->toDateString(), 'returned_product' => 'SYNTHETIC ordinary medication', 'identity_evidence' => 'SYNTHETIC match',
+            'authority_reference' => 'SYNTHETIC approved procedure', 'condition' => 'SYNTHETIC intact', 'segregation_reference' => 'SYNTHETIC separate custody',
+            'evidence' => 'SYNTHETIC verified receipt', 'scope_confirmed' => true, 'confirmed' => true], $overrides);
+    }
+
+    private function patientCustodyBody(int $version = 1, array $overrides = []): array
+    {
+        return array_replace(['request_id' => (string) Str::uuid(), 'version' => $version, 'kind' => 'disposition', 'quantity' => '1.125',
+            'occurred_on' => now()->toDateString(), 'reason' => 'SYNTHETIC completed disposal', 'evidence' => 'SYNTHETIC count and custody',
+            'authority_reference' => 'SYNTHETIC procedure', 'destination' => 'SYNTHETIC authorized destination', 'completion_reference' => 'SYNTHETIC receipt', 'confirmed' => true], $overrides);
+    }
+
+    public function test_patient_returns_preserve_fill_finance_and_dispensing_stock_with_actor_bound_replay(): void
+    {
+        Http::preventStrayRequests(); $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot));
+        $stock = DB::table('pharmacy_stock_lots')->get()->toJson(); $fill = (array) DB::table('pharmacy_fills')->find($f['id']);
+        $events = DB::table('pharmacy_stock_events')->count(); $invoices = DB::table('invoices')->count();
+        $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/patient-returns"; $body = $this->patientReturnBody();
+        $id = $this->postJson($url, $body)->assertCreated()->json('data.returns.data.0.id');
+        $this->postJson($url, $body)->assertOk()->assertJsonPath('data.returns.data.0.id', $id);
+        $this->postJson($url, array_replace($body, ['quantity' => '4.126']))->assertStatus(409);
+        $this->actingAs($this->independentReviewer(), 'api'); $this->postJson($url, $body)->assertStatus(409);
+        $this->actingAs($this->actor, 'api');
+        $this->postJson($url, $this->patientReturnBody(['quantity' => '5.876']))->assertUnprocessable();
+        $this->postJson($url, $this->patientReturnBody(['quantity' => '5.875']))->assertCreated()->assertJsonPath('data.remaining_quantity', '0.000');
+        $this->assertSame(2, DB::table('pharmacy_patient_returns')->count());
+        $this->assertSame($stock, DB::table('pharmacy_stock_lots')->get()->toJson()); $this->assertSame($fill, (array) DB::table('pharmacy_fills')->find($f['id']));
+        $this->assertSame($events, DB::table('pharmacy_stock_events')->count()); $this->assertSame($invoices, DB::table('invoices')->count());
+    }
+
+    public function test_patient_return_scope_identity_access_and_completed_handover_are_required(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->fill($rx, $lot); $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/patient-returns";
+        $this->postJson($url, $this->patientReturnBody())->assertUnprocessable(); $f = $this->complete($rx, $f);
+        foreach ([['quantity' => 0], ['scope_confirmed' => false], ['confirmed' => false], ['reason' => 'donation'], ['evidence' => ' '], ['occurred_on' => now()->subDay()->toDateString()], ['occurred_on' => now()->addDay()->toDateString()]] as $invalid) {
+            $this->postJson($url, $this->patientReturnBody($invalid))->assertUnprocessable();
+        }
+        foreach (['controlled', 'compounded'] as $flag) {
+            DB::table('pharmacy_prescriptions')->where('id', $rx)->update([$flag => true]); $this->postJson($url, $this->patientReturnBody())->assertUnprocessable();
+            DB::table('pharmacy_prescriptions')->where('id', $rx)->update([$flag => false]);
+        }
+        $id = $this->postJson($url, $this->patientReturnBody())->assertCreated()->json('data.returns.data.0.id');
+        $detail = "/api/pharmacy/patient-returns/$id";
+        $this->actor->role = 'pharmacy_technician'; $this->actor->save();
+        $this->getJson($url)->assertOk(); $this->getJson($detail)->assertOk(); $this->postJson($url, $this->patientReturnBody())->assertForbidden();
+        $this->postJson("$detail/proposals", $this->patientCustodyBody())->assertForbidden();
+        foreach (['admin', 'medical_biller'] as $role) { $this->actor->role = $role; $this->actor->save(); $this->getJson($url)->assertForbidden(); $this->getJson($detail)->assertForbidden(); }
+        $this->actor->role = 'pharmacist'; $this->actor->save();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
+        $this->getJson($detail)->assertNotFound(); $this->postJson("$detail/proposals", $this->patientCustodyBody())->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => true]);
+        $this->actor->organization_id = 2; $this->actor->save(); $this->getJson($url)->assertNotFound(); $this->getJson($detail)->assertNotFound();
+    }
+
+    public function test_patient_return_disposition_and_recounts_require_independent_review_and_preserve_history(): void
+    {
+        $rx = $this->rx(); $lot = $this->lot(); $f = $this->complete($rx, $this->fill($rx, $lot)); $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/patient-returns";
+        $id = $this->postJson($url, $this->patientReturnBody())->assertCreated()->json('data.returns.data.0.id'); $path = "/api/pharmacy/patient-returns/$id";
+        $original = DB::table('pharmacy_patient_returns')->find($id)->record; $body = $this->patientCustodyBody();
+        $proposal = $this->postJson("$path/proposals", $body)->assertCreated()->json('data.proposals.data.0.id');
+        $this->postJson("$path/proposals", $body)->assertOk(); $this->postJson("$path/proposals", $this->patientCustodyBody(2))->assertStatus(409);
+        $review = ['request_id' => (string) Str::uuid(), 'decision' => 'apply', 'evidence' => 'SYNTHETIC independent review', 'confirmed' => true];
+        $this->postJson("$path/proposals/$proposal/review", $review)->assertUnprocessable();
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api');
+        $this->postJson("$path/proposals/$proposal/review", $review)->assertOk()->assertJsonPath('data.receipt.custody_quantity', '3.000')->assertJsonPath('data.receipt.disposed_quantity', '1.125');
+        $this->postJson("$path/proposals/$proposal/review", $review)->assertOk();
+        $this->postJson("$path/proposals/$proposal/review", array_replace($review, ['decision' => 'reject']))->assertStatus(409);
+        $this->actingAs($this->actor, 'api'); $recount = $this->patientCustodyBody(3, ['kind' => 'recount', 'quantity' => '2.875']); unset($recount['destination'], $recount['completion_reference']);
+        $proposal = $this->postJson("$path/proposals", $recount)->assertCreated()->json('data.proposals.data.0.id');
+        $this->actingAs($reviewer, 'api'); $review['request_id'] = (string) Str::uuid();
+        $this->postJson("$path/proposals/$proposal/review", $review)->assertOk()->assertJsonPath('data.receipt.custody_quantity', '2.875')->assertJsonPath('data.receipt.disposed_quantity', '1.125');
+        $this->assertSame($original, DB::table('pharmacy_patient_returns')->find($id)->record);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.recorded_quantity', '4.000')->assertJsonPath('data.remaining_quantity', '6.000');
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
+    }
+
+    public function test_patient_return_reviews_reject_changed_evidence_author_access_and_cross_receipt_overcount(): void
+    {
+        $rx = $this->rx(); $f = $this->complete($rx, $this->fill($rx, $this->lot())); $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/patient-returns";
+        $id = $this->postJson($url, $this->patientReturnBody())->assertCreated()->json('data.returns.data.0.id'); $path = "/api/pharmacy/patient-returns/$id";
+        $body = $this->patientCustodyBody(1, ['kind' => 'recount', 'quantity' => '8']); unset($body['destination'], $body['completion_reference']);
+        $proposal = $this->postJson("$path/proposals", $body)->assertCreated()->json('data.proposals.data.0.id');
+        $this->postJson($url, $this->patientReturnBody(['quantity' => '3']))->assertCreated();
+        $reviewer = $this->independentReviewer(); $this->actingAs($reviewer, 'api'); $review = ['request_id' => (string) Str::uuid(), 'decision' => 'apply', 'evidence' => 'SYNTHETIC review', 'confirmed' => true];
+        $this->postJson("$path/proposals/$proposal/review", $review)->assertStatus(409);
+        $this->postJson("$path/proposals/$proposal/review", array_replace($review, ['decision' => 'reject']))->assertOk();
+        $this->actingAs($this->actor, 'api'); $proposal = $this->postJson("$path/proposals", $this->patientCustodyBody(3))->assertCreated()->json('data.proposals.data.0.id');
+        $this->actingAs($reviewer, 'api'); $review['request_id'] = (string) Str::uuid();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => false]);
+        $this->postJson("$path/proposals/$proposal/review", $review)->assertNotFound();
+        DB::table('pharmacy_staff_assignments')->where('user_id', $this->actor->id)->update(['active' => true]);
+        DB::table('pharmacy_patient_return_proposals')->where('id', $proposal)->update(['kind' => 'recount']);
+        $this->postJson("$path/proposals/$proposal/review", $review)->assertStatus(409);
+        $this->postJson("$path/proposals/$proposal/review", array_replace($review, ['decision' => 'reject']))->assertOk();
+        $this->assertEquals(4.125, DB::table('pharmacy_patient_returns')->find($id)->custody_quantity);
+        DB::table('pharmacy_patient_returns')->where('id', $id)->update(['custody_quantity' => '9']);
+        $this->postJson($url, $this->patientReturnBody(['quantity' => '0.001']))->assertStatus(409);
+    }
+
+    public function test_patient_return_worklist_retains_completed_older_fills_until_custody_is_resolved(): void
+    {
+        $rx = $this->rx(); $f = $this->complete($rx, $this->fill($rx, $this->lot())); $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/patient-returns";
+        $id = $this->postJson($url, $this->patientReturnBody())->assertCreated()->json('data.returns.data.0.id'); $path = "/api/pharmacy/patient-returns/$id";
+        DB::table('pharmacy_prescriptions')->where('id', $rx)->update(['discontinued_at' => now()]);
+        $this->getJson('/api/pharmacy/prescriptions?attention=patient_return_custody')->assertOk()->assertJsonPath('data.total', 1);
+        $proposal = $this->postJson("$path/proposals", $this->patientCustodyBody(1, ['quantity' => '4.125']))->assertCreated()->json('data.proposals.data.0.id');
+        $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("$path/proposals/$proposal/review", ['request_id' => (string) Str::uuid(), 'decision' => 'apply', 'evidence' => 'SYNTHETIC review', 'confirmed' => true])->assertOk();
+        $this->getJson('/api/pharmacy/prescriptions?attention=patient_return_custody')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson($path)->assertOk()->assertJsonPath('data.proposals.total', 1);
+        $this->postJson($url, $this->patientReturnBody(['quantity' => '5.876']))->assertUnprocessable(); // disposed units still count against this fill
+    }
+
+    public function test_patient_return_receipt_and_review_roll_back_when_audit_fails(): void
+    {
+        $rx = $this->rx(); $f = $this->complete($rx, $this->fill($rx, $this->lot())); $url = "/api/pharmacy/prescriptions/$rx/fills/{$f['id']}/patient-returns";
+        $id = $this->postJson($url, $this->patientReturnBody())->assertCreated()->json('data.returns.data.0.id'); $path = "/api/pharmacy/patient-returns/$id";
+        $proposal = $this->postJson("$path/proposals", $this->patientCustodyBody())->assertCreated()->json('data.proposals.data.0.id');
+        $before = DB::table('pharmacy_patient_returns')->get()->toJson(); $proposals = DB::table('pharmacy_patient_return_proposals')->get()->toJson();
+        DB::connection()->beforeExecuting(function ($query) { if (str_starts_with(strtolower($query), 'insert into') && str_contains($query, 'pharmacy_events')) { throw new \RuntimeException('SYNTHETIC patient return audit failure'); } });
+        $this->postJson($url, $this->patientReturnBody())->assertStatus(500); $this->actingAs($this->independentReviewer(), 'api');
+        $this->postJson("$path/proposals/$proposal/review", ['request_id' => (string) Str::uuid(), 'decision' => 'apply', 'evidence' => 'SYNTHETIC review', 'confirmed' => true])->assertStatus(500);
+        $this->assertSame($before, DB::table('pharmacy_patient_returns')->get()->toJson()); $this->assertSame($proposals, DB::table('pharmacy_patient_return_proposals')->get()->toJson());
+    }
+
     private function handoverEvidence(string $action = 'collected', array $overrides = []): array
     {
         return array_replace(['recipient_type' => 'patient', 'recipient_name' => 'Synthetic Patient',

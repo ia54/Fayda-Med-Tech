@@ -55,3 +55,11 @@ Synthetic regression and build verification for this increment are pending. Pati
 - Production access, inventory, backup/restore, deployment and HTTPS acceptance. No server connections are part of this build-first work.
 
 Use current source and test results to reconcile this list. Older release notes contain implemented items mixed with operating-acceptance requirements; do not reimplement a workflow solely because an old note lists it as outstanding.
+
+### Patient-return custody (2026-10-18 development candidate)
+
+Ordinary recall and dispensing-error patient receipts now have a separate custody ledger, independent recount/disposition review, retained evidence and worklist attention across completed fills. No dispensing-stock, invoice, payment or refill balance is changed. Actor-bound replay, fixed-point quantity caps, current site assignment, source integrity and audit transaction rollback are enforced. Controlled/compounded returns and general take-back or donation programs are not enabled. Actual receipt eligibility and disposal procedure require pharmacy operational approval.
+
+Current Michigan R 338.503 provides the patient-return boundary: https://ars.apps.lara.state.mi.us/AdminCode/DownloadAdminCodeFile?FileName=R+338.471+to+R+338.592.pdf&ReturnHTML=True . The product keeps these receipts entirely separate from active inventory; it does not infer authorization from a checkbox or perform physical disposition.
+
+Local PHP syntax, protected-route declarations and TypeScript transpilation passed. Six request-level regression scenarios added; exact candidate CI and browser acceptance remain to be verified. Previous dispatch loss/recovery candidate a6001a7 passed backend PHP, MySQL and MariaDB CI. No deployment or operational acceptance is implied.

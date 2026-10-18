@@ -1,4 +1,5 @@
 "use client"
+import {PatientReturns} from '@/components/pharmacy/patient-returns'
 import {DispatchFields,DispatchRecord,transportActions,transportInput} from '@/components/pharmacy/fill-dispatch'
 import {PreparedCancellationFields,PreparedCancellationRecord,cancellationInput,type PreparedCancellationEvidence} from '@/components/pharmacy/prepared-cancellation'
 import {HandoverAddenda} from '@/components/pharmacy/handover-addenda'
@@ -69,6 +70,7 @@ function FillCard({rxId,fill:f,unit,stopped,role,controlled,restricted,disabled,
  {f.stock_custody_hold&&!f.stock_recall_reference&&<div className="border border-destructive rounded p-3 space-y-2"><p className="font-semibold">Stock custody hold</p><p>{f.stock_custody_hold}</p>{['pharmacist','pharmacy_technician'].includes(role)&&<Link className="underline" href={`/dashboard/pharmacy/stock/${f.stock_lot_id}`}>Investigate stock custody</Link>}</div>}
  {f.stock_status==='quarantined'&&!f.stock_recall_reference&&<div className="border rounded p-3 space-y-2"><p className="font-semibold">Stock receipt quarantined</p><p>Preparation and handover are blocked while this receipt is quarantined. Review the receipt and resolve any pending count discrepancy before releasing stock.</p>{['pharmacist','pharmacy_technician'].includes(role)&&<Link className="underline" href={`/dashboard/pharmacy/stock/${f.stock_lot_id}`}>Review stock quarantine and counts</Link>}</div>}
  {f.stock_recall_reference&&<div className="border border-destructive rounded p-3 space-y-2 break-words"><p className="font-semibold">Stock recall hold: {f.stock_recall_reference}</p><p>This receipt cannot be prepared or handed over. Resolve open reservations through cancellation or dispatch return review; completed history is retained for follow-up.</p>{['pharmacist','pharmacy_technician'].includes(role)&&<Link className="underline" href={`/dashboard/pharmacy/stock/${f.stock_lot_id}`}>Review stock recall and trace</Link>}</div>}
+ {['collected','delivered'].includes(f.fulfillment_status)&&['pharmacist','pharmacy_technician'].includes(role)&&<PatientReturns rxId={rxId} fillId={f.id} role={role} restricted={restricted}/>}
  {['collected','delivered'].includes(f.fulfillment_status)&&<HandoverRecord fulfillment={f.fulfillment}/>}
  {['collected','delivered'].includes(f.fulfillment_status)&&['pharmacist','pharmacy_technician'].includes(role)&&<HandoverAddenda rxId={rxId} fillId={f.id}/>}
  {['ready','collected','delivered'].includes(f.fulfillment_status)&&<RetainedCodeChecks fulfillment={f.fulfillment}/>}

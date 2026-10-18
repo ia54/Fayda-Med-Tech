@@ -201,9 +201,20 @@ class PharmacyController extends Controller
 
     public function index(Request $r)
     {
-        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'attention' => 'nullable|in:discontinued_work,allowance_correction,handover_addenda,handover_review,dispatch_custody', 'search' => 'nullable|string|max:100']);
+        $v = $r->validate(['page' => 'nullable|integer|min:1', 'location_id' => 'nullable|integer', 'stage' => 'nullable|in:intake,pending,ready,collected,delivered,cancelled', 'status' => 'nullable|in:active,discontinued', 'replacement_for' => 'nullable|integer', 'attention' => 'nullable|in:discontinued_work,allowance_correction,handover_addenda,handover_review,dispatch_custody,patient_return_custody', 'search' => 'nullable|string|max:100']);
         $q = DB::table('pharmacy_prescriptions as rx')->join('pharmacy_episodes as ep', 'ep.id', '=', 'rx.episode_id')->leftJoin('users as patient', 'patient.id', '=', 'ep.patient_id')->leftJoin('pharmacy_patients as chart', 'chart.id', '=', 'ep.pharmacy_patient_id')->join('cases', 'cases.id', '=', 'ep.case_id')->where('rx.organization_id', $this->org($r));
         app(PharmacyAccess::class)->scope($q, $r->user(), 'rx.location_id');
+        if (($v['attention'] ?? null) === 'patient_return_custody') {
+            $this->allow($r, ['pharmacist', 'pharmacy_technician']);
+            $q->whereExists(function ($sub) {
+                $sub->selectRaw('1')->from('pharmacy_patient_returns as pr')->join('pharmacy_fills as pf', 'pf.id', '=', 'pr.fill_id')
+                    ->whereColumn('pf.prescription_id', 'rx.id')->where(function ($pending) {
+                        $pending->where('pr.custody_quantity', '>', 0)->orWhereExists(function ($review) {
+                            $review->selectRaw('1')->from('pharmacy_patient_return_proposals as pp')->whereColumn('pp.patient_return_id', 'pr.id')->where('pp.status', 'pending');
+                        });
+                    });
+            });
+        }
         if (($v['attention'] ?? null) === 'dispatch_custody') {
             $this->allow($r, ['pharmacist', 'pharmacy_technician']);
             $q->whereExists(function ($sub) {
