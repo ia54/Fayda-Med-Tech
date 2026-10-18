@@ -1,4 +1,4 @@
-# Current release status — October 4, 2026
+# Current release status — October 18, 2026
 
 This is the current launch checklist. `OUTSTANDING.md` retains the historical evidence and older increments; older counts and statements there are not current acceptance claims.
 
@@ -8,7 +8,17 @@ The owner authorized a narrower synthetic shared-platform client pilot while the
 
 An isolated synthetic pilot database preserves the original pharmacy fixture. Fresh real-HTTP checks cover six-role password/MFA, case retrieval and logout revocation; patient/attorney unassigned-case denial is verified. Fresh Chrome evidence covers provider draft/submission, biller review/receipt/reversal/duplicate prevention and patient paid-balance/correction visibility. Attorney and firm-admin settlement/correction/report journeys are verified in Chrome; private document HTTP retrieval and browser fallback are verified. Super Admin password/MFA and dashboard totals match the pilot database. EOB manual entry/review/filter/rejection/error-retry and saved appeal generation/view/search/status filtering are verified in Chrome. Missing organization dates exposed a display defect; its corrected list display now passes rebuilt Chrome acceptance. Workspace evidence: `audit-evidence/client-pilot-20260930/acceptance.md`.
 
-## Latest verified baseline and active candidate
+## Current build-first development evidence
+
+Published candidate `b397ee029a0173adfd1133731c3a463c64d37fd8` passed PHP regression **449 tests / 9,132 assertions**, MySQL 8 and MariaDB 10.11 schema/workflow/recovery, source packaging, admin TypeScript/session checks and the production-origin web build. Runs: backend `39156031128`, admin `39156031105`, web `39156031201`.
+
+The branch now includes ordinary dispatch loss/recovery, separate patient-return custody with independently reviewed recount/disposition, worklist links to older affected fills, and an isolated compounded handover rehearsal connecting current reviewed container/label evidence. The rehearsal changes no real stock reservation, fill, bill or medication-release permission. Controlled and compounded dispensing remain disabled.
+
+A following UI increment exposes independent rejection of unusable pending evidence from fresh history metadata. Four rendered UI checks passed locally; its current-head hosted validation is recorded in the draft PR and workspace evidence tracker after publication. Do not apply the preceding commit's test result to a newer head without its own check evidence.
+
+No new Chrome acceptance was obtained: the browser connection timed out. New physical-device acceptance, downloaded-runtime verification, production access/deployment and clinical/provider acceptance remain pending. The latest software sequence is in [BUILD-COMPLETION.md](../../docs/BUILD-COMPLETION.md). The workspace launch tracker separates accepted gates from implemented code; no code-completion percentage is inferred.
+
+## Historical October 4 baseline (superseded as current build evidence)
 
 Published **bc9e323d88908ea46ee97440a468a5e57d76c94d** includes aggregate current-container label checks, complete print/comparison audit bindings and active portal-patient role/status revalidation. All hosted workflows passed: admin **37218401008**, backend **37218400942**, Linux **37218400919**. The preceding aggregate-check increment passed local full regression **427 tests / 8,525 assertions**; the patient-link correction passed focused **3 tests / 167 assertions** and the hosted full regression. TypeScript and the prior optimized **120-page** frontend build passed.
 

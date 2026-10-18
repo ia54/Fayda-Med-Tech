@@ -70,7 +70,7 @@ The existing reviewed quality, dating, packaging, suitability and container-labe
 
 The rehearsal never writes real inventory reservations, fills, prescription allowances, payments or release status. Production endpoints remain disabled. No physical handover, printer/scanner acceptance, controlled-substance authority or clinical compounding acceptance is implied. Real compounded release requires a separate operationally approved lifecycle; this exercise establishes the connected documentary path only.
 
-Added three focused request-level regression scenarios for replay, independent authorization, source changes, cancellation, role/site/tenant and production gates, audit binding and rollback. The current candidate requires hosted checks and browser acceptance. Patient-return worklist badges now link directly to the earliest affected fill, including older completed fills; additional regression verifies existing invoice preservation.
+Added three focused request-level regression scenarios for replay, independent authorization, source changes, cancellation, role/site/tenant and production gates, audit binding and rollback. Published b397ee0 passed 449 PHP tests / 9,132 assertions and all hosted MySQL, MariaDB, admin and web-build checks. Browser acceptance remains pending. Patient-return worklist badges now link directly to the earliest affected fill, including older completed fills; additional regression verifies existing invoice preservation.
 
 ### Unusable-evidence recovery
 
