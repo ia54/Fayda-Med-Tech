@@ -41,6 +41,7 @@ try {
  await biller.goto('http://127.0.0.1:3000/dashboard/billing/eobs');
  await biller.getByRole('button',{name:'Next',exact:true}).click();await biller.getByText('Page 2',{exact:true}).waitFor();
  await biller.getByLabel('Filter EOB status').selectOption('rejected');await biller.getByText('Page 1',{exact:true}).waitFor();await biller.waitForFunction(()=>document.querySelectorAll('tbody tr').length===1);await biller.getByLabel('Filter EOB status').selectOption('');
+ await biller.context().route('**/api/eobs?*',route=>route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({status:false,message:'Synthetic list failure'})}),{times:1});await biller.reload();await biller.getByRole('alert').filter({hasText:'EOB records could not be loaded.'}).waitFor();await biller.getByRole('button',{name:'Retry',exact:true}).click();await biller.getByText('SYN-PAGING-25',{exact:true}).waitFor();
  await biller.getByRole('button',{name:'Add EOB record',exact:true}).click();
  for(const [id,value]of Object.entries({patient:'SYNTHETIC cloud pilot',payer:'SYNTHETIC payer',provider:'SYNTHETIC provider',billed:'10.25',paid:'5.10'}))await biller.locator(`#${id}`).fill(value);
  const eobResponse=await wait(biller,'/api/eobs','POST',()=>biller.getByRole('button',{name:'Save EOB',exact:true}).click());
