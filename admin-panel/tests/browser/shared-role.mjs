@@ -122,7 +122,7 @@ try{
  assert.equal(Number(report.body.data.result_summary.total_net_to_client),805);
  await p.platform_admin.goto(base+'/dashboard/admin');
  await p.platform_admin.getByRole('heading',{name:'Admin Dashboard',exact:true}).waitFor();
- for(const [label,table] of [['Total Cases','cases'],['Total Users','users'],['Organizations','organizations']]){const count=db.prepare(`SELECT count(*) n FROM ${table}`).get().n;await p.platform_admin.getByText(label,{exact:true}).first().locator('../..').getByText(String(count),{exact:true}).waitFor();}
+ for(const [label,table] of [['Total Cases','cases'],['Total Users','users'],['Organizations','organizations']]){const count=db.prepare(`SELECT count(*) n FROM ${table}`).get().n;await p.platform_admin.locator('[data-slot=card]').filter({has:p.platform_admin.locator('[data-slot=card-title]').getByText(label,{exact:true})}).getByText(String(count),{exact:true}).waitFor();}
  const admin=await probe('platform_admin','/api/invoices');assert.equal(admin.status,200);assert.equal(admin.body.data.total,3);
  const payments=db.prepare('SELECT id,amount,reversal_of_id,transaction_id FROM payments ORDER BY id').all();
  assert.equal(payments.length,3);assert.equal(Number(payments[1].amount),-40.1);assert.equal(payments[1].reversal_of_id,first.id);
