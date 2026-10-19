@@ -15,7 +15,8 @@ try{
  const states=await Promise.all([page,tab].map(p=>p.evaluate(()=>JSON.parse(JSON.parse(localStorage.getItem('persist:root')).auth))));
  assert.ok(states.every(s=>s.token?.access_token),'Both tabs must retain the rotated authenticated session');
  for(const p of [page,tab]){assert.ok(!new URL(p.url()).pathname.startsWith('/auth/'));const status=await p.evaluate(async token=>(await fetch('http://127.0.0.1:8000/api/client/invoices',{headers:{Accept:'application/json',Authorization:`Bearer ${token}`}})).status,states[0].token.access_token);assert.equal(status,200);}
+ const automaticRefreshAttempts=attempts;assert.equal(automaticRefreshAttempts,1,'Tabs must share exactly one automatic refresh');
  const replay=await page.evaluate(async token=>(await fetch('http://127.0.0.1:8000/api/refresh-token',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({refresh_token:token})})).status,original.token.refresh_token);assert.equal(replay,401);
  assert.deepEqual(snapshot(db,protectedTables),baseline);
- await c.result('session-tabs',{seeded_authentication:false,password_login_verified:true,concurrent_tabs_rotated_session_retained:true,refresh_attempts:attempts,old_refresh_replay_denied:true,protected_tables_unchanged:true});
+ await c.result('session-tabs',{seeded_authentication:false,password_login_verified:true,concurrent_tabs_rotated_session_retained:true,automatic_refresh_attempts:automaticRefreshAttempts,old_refresh_replay_denied:true,protected_tables_unchanged:true});
 }catch(error){await page.locator('input').evaluateAll(els=>els.forEach(el=>{el.value='';el.setAttribute('value','');})).catch(()=>{});if(tab)await tab.screenshot({path:`${c.directory}/session-tabs-second-tab-failure.png`}).catch(()=>{});await c.failure('session-tabs');throw error;}finally{await c.close();}
