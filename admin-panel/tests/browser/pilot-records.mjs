@@ -65,7 +65,7 @@ try {
  await client.getByLabel('Preview SYNTHETIC cloud pilot document',{exact:true}).click();
  const preview=client.locator('[data-document-preview="true"]');await preview.locator('iframe').waitFor();
  await client.waitForLoadState('networkidle');await client.screenshot({path:`${c.directory}/private-pdf-preview.png`,fullPage:true});
- const downloading=client.waitForEvent('download');await preview.getByRole('link',{name:'Download original document',exact:true}).click();const download=await downloading;assert.equal(await download.failure(),null);assert.equal(sha256(readFileSync(await download.path())),sha256(bytes));
+ const downloading=client.waitForEvent('download');await preview.getByRole('link',{name:'Download original document',exact:true}).click();const download=await downloading;assert.equal(await download.failure(),null);await download.saveAs(`${c.directory}/downloaded-SYN-cloud-pilot.pdf`);assert.equal(sha256(readFileSync(`${c.directory}/downloaded-SYN-cloud-pilot.pdf`)),sha256(bytes));
  const doc=db.prepare("SELECT * FROM documents WHERE title='SYNTHETIC cloud pilot document'").get();assert.ok(doc);
  const probe=async(role)=>pages[role].evaluate(async({token,id})=>{const r=await fetch(`http://127.0.0.1:8000/api/documents/${id}/preview`,{headers:token?{Authorization:`Bearer ${token}`}:{}});return r.status;},{token:fixture.sessions[role].token.access_token,id:doc.id});
  await pages.foreign_client.goto('http://127.0.0.1:3000/dashboard/client/invoices');assert.equal(await probe('foreign_client'),404);
@@ -83,7 +83,7 @@ try {
  await client.getByRole('button',{name:'Upload Document',exact:true}).click();await client.getByText('Choose a PDF, JPG, PNG, DOC or DOCX file.',{exact:true}).waitFor();assert.equal(db.prepare('SELECT COUNT(*) n FROM documents').get().n,documentCount);
  await client.goto('http://127.0.0.1:3000/dashboard/client/documents');await client.reload();await client.getByLabel('Preview SYNTHETIC legacy text',{exact:true}).click();
  await client.locator('[data-document-preview="true"]').getByText('Preview is unavailable for this file type. Download it to view.',{exact:true}).waitFor();
- const textDownloading=client.waitForEvent('download');await client.locator('[data-document-preview="true"]').getByRole('link',{name:'Download original document',exact:true}).click();const textDownload=await textDownloading;assert.equal(sha256(readFileSync(await textDownload.path())),sha256(text));
+ const textDownloading=client.waitForEvent('download');await client.locator('[data-document-preview="true"]').getByRole('link',{name:'Download original document',exact:true}).click();const textDownload=await textDownloading;await textDownload.saveAs(`${c.directory}/downloaded-SYN-legacy.txt`);assert.equal(sha256(readFileSync(`${c.directory}/downloaded-SYN-legacy.txt`)),sha256(text));
  const mobile=[];
  for(const [role,path] of [['biller','billing/analytics'],['biller','billing/appeals'],['biller','billing/eobs'],['firm_admin','legal/billing'],['client','client/documents']]){
   const p=pages[role];await p.setViewportSize({width:390,height:844});await p.goto(`http://127.0.0.1:3000/dashboard/${path}`);await p.waitForLoadState('networkidle');
