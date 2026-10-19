@@ -56,7 +56,7 @@ try {
  const reviewed=await wait(biller,`/api/eobs/${eob.id}`,'PUT',()=>biller.getByRole('button',{name:'Mark reviewed',exact:true}).click());assert.equal(reviewed.status(),200);console.log('EOB paging, list retry and retained review retry passed');
  await biller.getByRole('dialog').waitFor({state:'hidden'});assert.equal(db.prepare('SELECT status FROM eobs WHERE id=?').get(eob.id).status,'processed');
  console.log('Preparing private document browser lifecycle');
- const pdf=await PDFDocument.create();pdf.addPage().drawText('SYNTHETIC CLOUD PILOT - NO PHI');const bytes=Buffer.from(await pdf.save());
+ const pdf=await PDFDocument.create();pdf.addPage().drawText('SYNTHETIC CLOUD PILOT - NO PHI',{x:40,y:700,size:16});const bytes=Buffer.from(await pdf.save());
  await client.goto('http://127.0.0.1:3000/dashboard/client/documents/upload');
  await client.getByLabel('Choose document').setInputFiles({name:'SYN-cloud-pilot.pdf',mimeType:'application/pdf',buffer:bytes});
  await client.locator('#title').fill('SYNTHETIC cloud pilot document');await client.locator('#upload-case').click();await client.getByRole('option',{name:/SYN-CLOUD-OWN/}).click();
@@ -77,10 +77,13 @@ try {
  try {assert.equal(await probe('attorney'),404);} finally {const keys=Object.keys(party);db.prepare(`INSERT INTO case_parties (${keys.join(',')}) VALUES (${keys.map(()=>'?').join(',')})`).run(...Object.values(party));}
  assert.equal(await probe('client'),200);
  await client.keyboard.press('Escape');await client.goto('http://127.0.0.1:3000/dashboard/client/documents/upload');
- const text=Buffer.from('SYNTHETIC private text preview - NO PHI');
- await client.getByLabel('Choose document').setInputFiles({name:'SYN-cloud-pilot.txt',mimeType:'text/plain',buffer:text});await client.locator('#title').fill('SYNTHETIC private text');
- const textUpload=await wait(client,'/api/documents','POST',()=>client.getByRole('button',{name:'Upload Document',exact:true}).click());assert.equal(textUpload.status(),201);
- await client.goto('http://127.0.0.1:3000/dashboard/client/documents');await client.reload();await client.getByLabel('Preview SYNTHETIC private text',{exact:true}).click();await client.locator('[data-document-preview="true"]').getByText(text.toString(),{exact:true}).waitFor();
+ const text=Buffer.from('SYNTHETIC private text fallback - NO PHI');
+ await client.getByLabel('Choose document').setInputFiles({name:'SYN-cloud-pilot.txt',mimeType:'text/plain',buffer:text});await client.locator('#title').fill('SYNTHETIC unsupported text upload');
+ const documentCount=db.prepare('SELECT COUNT(*) n FROM documents').get().n;
+ await client.getByRole('button',{name:'Upload Document',exact:true}).click();await client.getByText('Choose a PDF, JPG, PNG, DOC or DOCX file.',{exact:true}).waitFor();assert.equal(db.prepare('SELECT COUNT(*) n FROM documents').get().n,documentCount);
+ await client.goto('http://127.0.0.1:3000/dashboard/client/documents');await client.reload();await client.getByLabel('Preview SYNTHETIC legacy text',{exact:true}).click();
+ await client.locator('[data-document-preview="true"]').getByText('Preview is unavailable for this file type. Download it to view.',{exact:true}).waitFor();
+ const textDownloading=client.waitForEvent('download');await client.locator('[data-document-preview="true"]').getByRole('link',{name:'Download original document',exact:true}).click();const textDownload=await textDownloading;assert.equal(sha256(readFileSync(await textDownload.path())),sha256(text));
  const mobile=[];
  for(const [role,path] of [['biller','billing/analytics'],['biller','billing/appeals'],['biller','billing/eobs'],['firm_admin','legal/billing'],['client','client/documents']]){
   const p=pages[role];await p.setViewportSize({width:390,height:844});await p.goto(`http://127.0.0.1:3000/dashboard/${path}`);await p.waitForLoadState('networkidle');
@@ -89,5 +92,5 @@ try {
   await p.screenshot({path:`${c.directory}/mobile-${path.replaceAll('/','-')}.png`,fullPage:true});mobile.push(path);
  }
  assert.deepEqual(snapshot(db,Object.keys(baseline)),baseline);
- await c.result('pilot-records',{mobile_390_keyboard_smoke:mobile,analytics_recorded_basis:true,plan_no_invented_financials:true,appeals_pagination_filter_retry_draft:true,eob_review_failure_retained_retry:true,document_upload_pdf_download_sha256:sha256(bytes),document_assignment_revocation:true,document_foreign_and_anonymous_denied:true,private_text_preview_reload:true,client_analytics_denied_in_browser:true,payments_stock_fills_unchanged:true,release_authorized:false});
+ await c.result('pilot-records',{mobile_390_keyboard_smoke:mobile,analytics_recorded_basis:true,plan_no_invented_financials:true,appeals_pagination_filter_retry_draft:true,eob_review_failure_retained_retry:true,document_upload_pdf_download_sha256:sha256(bytes),document_assignment_revocation:true,document_foreign_and_anonymous_denied:true,legacy_text_fallback_download_and_reload:true,unsupported_text_upload_denied:true,client_analytics_denied_in_browser:true,payments_stock_fills_unchanged:true,release_authorized:false});
 } catch(error){await c.failure('pilot-records');throw error;}finally{await c.close();}
