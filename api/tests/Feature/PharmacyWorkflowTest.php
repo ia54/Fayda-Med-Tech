@@ -5313,18 +5313,23 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('pharmacy_batch_quality_records')->count());
     }
 
+    protected function beyondUseFixtureClock(): \DateTimeInterface
+    {
+        return now()->startOfDay()->addHours(12);
+    }
+
     private function beyondUseFixture(?string $yieldQuantity = null): array
     {
-        $this->travelTo(now()->startOfDay()->addHours(12));
-        // The dating fixture moves time forward; authenticate its synthetic
-        // actor at that time rather than expiring the morning setup token.
+        $this->travelTo($this->beyondUseFixtureClock());
+        // Authenticate the synthetic actor at the chosen fixture time so the
+        // deterministic dating clock cannot expire its setup token.
         $this->actor->withAccessToken(new Token(['expires_at' => now()->addHour()]));
         [$execution, $lot, $protocol, $reviewer, $body, $quality] = $this->batchQualityFixture($yieldQuantity);
         $body['results'][0]['outcome'] = 'pass';
         $id = $quality->retain($this->actor, $execution->id, $protocol, $body);
         $quality->decide($reviewer, $id, 'reviewed', 'SYNTHETIC documentary review');
         $source = app(\App\Services\PharmacyReviewedQualityContext::class)->inspect($this->actor, $execution->id);
-        $proposal = ['prepared_at' => now()->subHour()->format('Y-m-d\TH:i:sP'), 'proposed_bud_at' => now()->addDay()->format('Y-m-d\TH:i:sP'),
+        $proposal = ['prepared_at' => now()->subHour()->max(now()->startOfDay())->format('Y-m-d\TH:i:sP'), 'proposed_bud_at' => now()->addDay()->format('Y-m-d\TH:i:sP'),
             'timezone' => now()->timezoneName, 'preparation_time_reference' => 'SYNTHETIC exact timestamp',
             'container_reference' => 'SYNTHETIC container', 'storage_conditions' => 'SYNTHETIC storage',
             'basis_reference' => 'SYNTHETIC supplied limit', 'rationale' => 'SYNTHETIC no clinical date selected',
