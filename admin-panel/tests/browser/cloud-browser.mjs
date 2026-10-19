@@ -26,6 +26,7 @@ export async function cloudBrowser(database){
   pages[role].on('response',r=>{if(r.url().startsWith('http://127.0.0.1:8000/'))responses.push({role,path:new URL(r.url()).pathname,method:r.request().method(),status:r.status()});});
  }
  const db=new DatabaseSync(`${directory}/${database}`);
+ db.exec('PRAGMA busy_timeout=5000');
  return {directory,fixture,browser,pages,db,responses,blocked,
   async result(name,details){
    const sourceHashes={...fixture.source_hashes};
