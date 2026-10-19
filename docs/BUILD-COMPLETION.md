@@ -1,5 +1,9 @@
 # Build completion worklist
 
+## October 19 synthetic pilot verification update
+
+The [current closeout](SYNTHETIC-PILOT-CLOSEOUT-20261019.md) supersedes earlier pilot evidence gaps and the original audit work status. Billing access/data-truth fixes, EOB pagination, cross-tab refresh repair and five source-bound browser replays pass. Full SQLite: **458 tests / 9,339 assertions**. Dependency disposition, exact hosted checks, owner pilot acceptance and cloud publication/restoration remain open. Full product and clinical release are not approved.
+
 Updated October 18, 2026. The owner has directed build work to proceed while server access is deferred. This is a software worklist, not a launch approval or a percentage-complete claim.
 
 ## October 19 audit and agreed delivery order

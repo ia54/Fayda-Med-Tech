@@ -2,11 +2,13 @@
 
 This records current dependency evidence, not approval to deploy or process patient data. Re-run audits for the selected release and verify the actual host platform before cutover.
 
-## October 19 audit update
+## October 19 scoped remediation update
 
-Fresh `pnpm audit --json` reports **3 high, 2 moderate and 3 low** admin advisory findings; `npm audit --json` reports **1 high** public-site finding (source-map-js, also present in admin). Composer's locked audit was blocked by the runtime's Packagist network restriction, so current API advisory status is unknown. See the [source-bound audit evidence](../../docs/evidence/BUILD-AUDIT-20261019.json) for packages, affected paths, reported patches and limits, and P07 in the [finish backlog](../../docs/BUILD-FINISH-BACKLOG-20261019.json) for remediation. Lockfiles were unchanged by the audit. Earlier findings below are historical and must not be described as current advisory clearance. No runtime exploitability or package upgrade is asserted by registry severity alone.
+Available patches are installed and locked: Next/eslint-config-next 15.5.27, DOMPurify 3.4.16, source-map-js 1.2.2 in both clients, and sharp 0.35.5. Admin findings dropped from 3 high / 2 moderate / 3 low to **1 high / 1 low**; the public client reports **zero**. Locked installs, optimized builds, rich-text tests and browser replays pass. No advisory ignore was added.
 
-## Locked dependency findings
+Residual braces 3.0.3 is high severity in the development lint chain. Its advertised >=3.0.4 patch is not available from the registry, which reports latest 3.0.3; the attempted unavailable override was removed. Quill 2.0.3 remains low, with no published patch; covered HTML sinks retain the tested DOMPurify policy. Composer advisory status remains unknown because the current runtime denies its Packagist security destination. Residual disposition and a current Composer check remain external acceptance actions. See the [current closeout](../../docs/SYNTHETIC-PILOT-CLOSEOUT-20261019.md) and [retained evidence](../../docs/evidence/SYNTHETIC-PILOT-20261019.json).
+
+## Historical September 27 locked dependency findings
 
 - API: Composer audit of the complete locked tree, including development dependencies, reports no known security advisories. `doctrine/annotations` remains abandoned through the Swagger tooling; this is an unresolved maintenance finding, not a clean-maintenance claim.
 - Public website and API asset tooling: npm audit of both complete lockfiles reports zero known vulnerabilities.

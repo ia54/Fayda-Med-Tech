@@ -1,0 +1,3267 @@
+{
+  "date": "2026-10-19T18:57:31.038306+00:00",
+  "code_candidate": "31f689013f9204766bcd62345911432e624ec80b",
+  "application_source_files": 719,
+  "application_source_manifest_sha256": "bf588ceca606b85d111a2d8281bfd923f9ca855a6aabed1c229b86eb012db475",
+  "application_source_mapping_sha256": "eaad17eeddea29e40af75e7c5a0549ffdfd2be41dbc7b5d57dede078a30a16cd",
+  "all_five_browser_runs_have_identical_application_sources": true,
+  "backend_source_unchanged_since_full_sqlite_run": true,
+  "api_tests": {
+    "full_sqlite": {
+      "tests": 458,
+      "assertions": 9339,
+      "command_log": "pilot-api-full-final.log",
+      "sha256": "62040f9c4fbee7b8ffa7ac56d52bfad9fb1968d42c9cd379303cee52f52b8b22"
+    },
+    "billing_sqlite": {
+      "tests": 6,
+      "assertions": 128,
+      "command_log": "pilot-final-billing-sqlite.log",
+      "sha256": "a032ea66a21a1262132ff1c827b1a55f950d9496da257d1b081ba21b18434a4a"
+    },
+    "billing_mysql": {
+      "tests": 6,
+      "assertions": 128,
+      "command_log": "pilot-billing-mysql-final.log",
+      "sha256": "05de62f1ecd4653f05133d808488ebee3f8e5df0073d23675b1987b067ca87d0"
+    },
+    "billing_mariadb": {
+      "tests": 6,
+      "assertions": 128,
+      "command_log": "pilot-billing-mariadb-final.log",
+      "sha256": "67181aafc57294fb8a179d8291dfae8f5d09587e9d4489939e751a6e9e914070"
+    }
+  },
+  "ui_tests": {
+    "session": {
+      "tests": 5,
+      "sha256": "8437316847974701adc6af14a271795ed3112444cfe6ee992a3cd3c1ef0c6f84"
+    },
+    "recovery": {
+      "tests": 2,
+      "sha256": "030bdd1c6ba3b9fd04d5deea9d8ed15f25234abf4cf87c8d47d503d888fa422d"
+    },
+    "documents": {
+      "tests": 2,
+      "sha256": "e0b0858c670957eed019df81860f3076cfdf60a021095759ba376b8c7caf6065"
+    },
+    "reports": {
+      "tests": 2,
+      "sha256": "30a617e1d4f6058070b1b036dd3862370078f954fd510e8be455c2fe37c122cd"
+    },
+    "pharmacy": {
+      "tests": 13,
+      "sha256": "ad862fb96af92d12deed30204eac636092fe23e70dd12525d0a27c3c18aabc09"
+    },
+    "rich-text": {
+      "tests": 4,
+      "sha256": "b9a577abf512a3d4909dfa9f6516dd160360bb53706d6164d7d2f85e68d05c3b"
+    }
+  },
+  "manual_fixture_seeds": {
+    "session-tabs": {
+      "tests": 1,
+      "assertions": 9
+    },
+    "auth-session": {
+      "tests": 1,
+      "assertions": 9
+    },
+    "pilot-records": {
+      "tests": 1,
+      "assertions": 19
+    },
+    "shared-role": {
+      "tests": 1,
+      "assertions": 16
+    },
+    "compound-handover": {
+      "tests": 2,
+      "assertions": 33
+    }
+  },
+  "browser_runs": {
+    "session-tabs": {
+      "directory": "/workspace/.cloud-tools/pilot-final-tabs",
+      "result_sha256": "8bfd884ef7f71182c6903e666dc858fb07283ee90a5fa053f42727259caea269",
+      "git_head": "8675f4d64e1836cea64b1de591779e4019bb5705",
+      "clean_worktree": true,
+      "seeded_authentication": false,
+      "outcomes": {
+        "browser": "154.0.8037.57",
+        "login_mfa_verified": false,
+        "blocked_external_hosts": [],
+        "password_login_verified": true,
+        "concurrent_tabs_rotated_session_retained": true,
+        "automatic_refresh_attempts": 1,
+        "old_refresh_replay_denied": true,
+        "protected_tables_unchanged": true
+      },
+      "responses": [
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/refresh-token",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/refresh-token",
+          "method": "POST",
+          "status": 401
+        }
+      ]
+    },
+    "auth-session": {
+      "directory": "/workspace/.cloud-tools/pilot-final-auth",
+      "result_sha256": "d17bb5a1878c8990651de954a18cbbf033845dd7bcfa0cb5c7030523ab42000a",
+      "git_head": "8675f4d64e1836cea64b1de591779e4019bb5705",
+      "clean_worktree": true,
+      "seeded_authentication": false,
+      "outcomes": {
+        "browser": "154.0.8037.57",
+        "login_mfa_verified": true,
+        "blocked_external_hosts": [],
+        "steps": [
+          "Unauthenticated protected navigation redirects to login",
+          "Expired synthetic MFA enrollment challenge is rejected in the browser without issuing a token",
+          "Password alone grants no session; MFA setup rejects wrong code and confirms recovery-code retention before dashboard",
+          "UI logout revokes access and refresh credentials",
+          "Recovery code works once; replay fails and a different unused code succeeds",
+          "Server-expired access triggers actual browser refresh and rotates the single-use refresh token",
+          "Expired access plus revoked refresh clears the browser session and returns to login",
+          "A controlled past browser expiry deadline blocks protected rendering and redirects to login",
+          "Fixture-issued reset link changes password, strips URL token, revokes all old credentials, rejects old password and link replay",
+          "A second real browser tab loses protected access after explicit logout in the first tab",
+          "Overlapping protected navigations settle on the final requested client route and logout remains effective"
+        ],
+        "protected_table_hashes": {
+          "invoices": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "payments": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_stock_lots": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_stock_events": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_fills": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "case_settlements": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "external_email_delivery_verified": false,
+        "mobile_evidence": "login layout only at 390x844; no physical-device or full mobile workflow acceptance",
+        "expiry_method": "controlled synthetic database expiry; no one-hour wall-clock claim",
+        "recovery_remaining": 8,
+        "clinical_release": false
+      },
+      "responses": [
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/auth/mfa/setup",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/auth/mfa/setup",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/auth/mfa/verify",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/auth/mfa/verify",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/firm/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/logout",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/auth/mfa/status",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/refresh-token",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/auth/mfa/verify",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/firm/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/logout",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/auth/mfa/verify",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/auth/mfa/verify",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/firm/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/refresh-token",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/refresh-token",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/refresh-token",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/forgot-password",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/forgot-password",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/reset-password",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/refresh-token",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/refresh-token",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 401
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/logout",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/logout",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/reset-password",
+          "method": "POST",
+          "status": 400
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/logout",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/login",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "visitor",
+          "path": "/api/logout",
+          "method": "POST",
+          "status": 200
+        }
+      ]
+    },
+    "pilot-records": {
+      "directory": "/workspace/.cloud-tools/pilot-final-records",
+      "result_sha256": "14c71a13df2a0fb04ce7459a5d4accee9654b2737aa0b0b60fefb1a84320a02b",
+      "git_head": "8675f4d64e1836cea64b1de591779e4019bb5705",
+      "clean_worktree": true,
+      "seeded_authentication": true,
+      "outcomes": {
+        "browser": "154.0.8037.57",
+        "login_mfa_verified": false,
+        "blocked_external_hosts": [],
+        "mobile_390_keyboard_smoke": [
+          "billing/analytics",
+          "billing/appeals",
+          "billing/eobs",
+          "legal/billing",
+          "client/documents"
+        ],
+        "analytics_recorded_basis": true,
+        "plan_no_invented_financials": true,
+        "appeals_pagination_filter_retry_draft": true,
+        "eob_review_failure_retained_retry": true,
+        "eob_rejection_recorded": true,
+        "document_dialog_keyboard_focus": true,
+        "document_upload_pdf_download_sha256": "ea14d59438f05b320be1ad497962db99782ee3f9d1d44edc450cd97970e7dadd",
+        "document_assignment_revocation": true,
+        "document_foreign_and_anonymous_denied": true,
+        "legacy_text_fallback_download_and_reload": true,
+        "unsupported_text_upload_denied": true,
+        "client_analytics_denied_in_browser": true,
+        "payments_stock_fills_unchanged": true,
+        "release_authorized": false
+      },
+      "responses": [
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/analytics",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/firm/organization",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/appeals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/appeals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/appeals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/appeals",
+          "method": "GET",
+          "status": 500
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/appeals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/appeals/generate",
+          "method": "POST",
+          "status": 210
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 500
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/27",
+          "method": "PUT",
+          "status": 500
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/27",
+          "method": "PUT",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/27",
+          "method": "PUT",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/documents",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/documents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/documents/2/preview",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "foreign_client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "foreign_client",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "foreign_client",
+          "path": "/api/documents/2/preview",
+          "method": "GET",
+          "status": 404
+        },
+        {
+          "role": "client",
+          "path": "/api/documents/2/preview",
+          "method": "GET",
+          "status": 401
+        },
+        {
+          "role": "client",
+          "path": "/api/billing/analytics",
+          "method": "GET",
+          "status": 403
+        },
+        {
+          "role": "attorney",
+          "path": "/api/documents/2/preview",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/documents/2/preview",
+          "method": "GET",
+          "status": 404
+        },
+        {
+          "role": "client",
+          "path": "/api/documents/2/preview",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/documents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/documents/1/preview",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/analytics",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/billing/appeals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/eobs/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/firm/organization",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/documents",
+          "method": "GET",
+          "status": 200
+        }
+      ]
+    },
+    "shared-role": {
+      "directory": "/workspace/.cloud-tools/pilot-final-shared-retry",
+      "result_sha256": "d45d735111823ff2f7a497acea77ff80fb31c485d27d935876b8bef28e902cb6",
+      "git_head": "31f689013f9204766bcd62345911432e624ec80b",
+      "clean_worktree": true,
+      "seeded_authentication": true,
+      "outcomes": {
+        "browser": "154.0.8037.57",
+        "login_mfa_verified": false,
+        "blocked_external_hosts": [],
+        "mobile_390_keyboard_smoke": [
+          "provider",
+          "biller",
+          "client",
+          "attorney",
+          "firm_admin",
+          "platform_admin",
+          "pharmacist",
+          "technician"
+        ],
+        "roles": [
+          "client",
+          "pharmacist",
+          "platform_admin",
+          "firm_admin",
+          "attorney",
+          "biller",
+          "provider",
+          "technician"
+        ],
+        "invoice": {
+          "id": 3,
+          "number": "INV-04EE3446",
+          "status": "paid",
+          "amount": "100.25"
+        },
+        "payments": [
+          {
+            "id": 1,
+            "amount": 40.1,
+            "reversal_of_id": null,
+            "transaction_id": "SYN-CLOUD-RECEIPT"
+          },
+          {
+            "id": 2,
+            "amount": -40.1,
+            "reversal_of_id": 1,
+            "transaction_id": "REV-c3ceaf9e-3bd7-4a8e-ae7e-1dac0f484128"
+          },
+          {
+            "id": 3,
+            "amount": 100.25,
+            "reversal_of_id": null,
+            "transaction_id": "SYN-CLOUD-CORRECTED"
+          }
+        ],
+        "settlement": {
+          "original_id": 1,
+          "corrected_id": 2,
+          "net_to_client": "805.00",
+          "original_unchanged": true
+        },
+        "csv_download": {
+          "sha256": "703b43949878ac7b056136f324e0d426a91d3bdb95e0d990e4de1979337f95c3",
+          "filename": "faydamed-report-3.csv",
+          "persisted": true
+        },
+        "pharmacy_hashes": {
+          "pharmacy_ingredient_lots": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_stock_lots": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_stock_events": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_fills": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_prescriptions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_batch_executions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_container_label_proofs": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_container_label_prints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_container_label_comparisons": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "hidden_invoices_unchanged": true,
+        "original_receipt_unchanged": true,
+        "financial_scope": "synthetic previously received ledger entries only; no insurer submission, charge, transfer or refund",
+        "browser_journeys": [
+          "provider draft and review submission",
+          "biller review, partial receipt, duplicate and overpayment rejection, append-only correction, corrected full receipt",
+          "provider read-only correction history",
+          "client own invoice and zero balance",
+          "attorney planning allocation, administrator completion and append-only correction",
+          "attorney assigned/unassigned case boundary",
+          "firm settlement report and browser-to-disk CSV download",
+          "firm and platform ledger scope"
+        ],
+        "api_probes": "browser-initiated API checks are recorded separately from UI actions"
+      },
+      "responses": [
+        {
+          "role": "provider",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/invoices",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "provider",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/provider/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/provider/invoices/3/draft",
+          "method": "PUT",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/provider/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices/3/review",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 409
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 422
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments/1/reverse",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/invoices/3",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/invoices/3",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/invoices/1",
+          "method": "GET",
+          "status": 404
+        },
+        {
+          "role": "client",
+          "path": "/api/client/invoices/2",
+          "method": "GET",
+          "status": 404
+        },
+        {
+          "role": "attorney",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/cases/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/documents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/settlements",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/settlements",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "attorney",
+          "path": "/api/settlements",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/cases/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/settlements",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/settlements/1",
+          "method": "PUT",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/settlements",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/settlements/1/corrections",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/settlements",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/settlements/2",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/settlements/2/corrections",
+          "method": "POST",
+          "status": 403
+        },
+        {
+          "role": "attorney",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/cases/2",
+          "method": "GET",
+          "status": 404
+        },
+        {
+          "role": "attorney",
+          "path": "/api/documents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 403
+        },
+        {
+          "role": "attorney",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 403
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/pharmacy/locations",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/pharmacy/prescriptions",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 403
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 403
+        },
+        {
+          "role": "technician",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/locations",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/prescriptions",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 403
+        },
+        {
+          "role": "technician",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 403
+        },
+        {
+          "role": "client",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 403
+        },
+        {
+          "role": "provider",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 403
+        },
+        {
+          "role": "attorney",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 403
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 403
+        },
+        {
+          "role": "technician",
+          "path": "/api/payments",
+          "method": "POST",
+          "status": 403
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/settlement-summary",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/revenue-by-period",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/history",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/settlement-summary",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/history",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/settlement-summary",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/admin/users",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/organizations",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/admin/audit-logs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "provider",
+          "path": "/api/provider/stats",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/payments",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "biller",
+          "path": "/api/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "client",
+          "path": "/api/client/invoices",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "attorney",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/settlement-summary",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/revenue-by-period",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "firm_admin",
+          "path": "/api/reports/history",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/admin/users",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/organizations",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/cases",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "platform_admin",
+          "path": "/api/admin/audit-logs",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/pharmacy/locations",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "pharmacist",
+          "path": "/api/pharmacy/prescriptions",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/locations",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/prescriptions",
+          "method": "GET",
+          "status": 200
+        }
+      ]
+    },
+    "compound-handover": {
+      "directory": "/workspace/.cloud-tools/pilot-final-compound",
+      "result_sha256": "4f1f636a6507125ace5b0326ef811fa4f4cf2ed25f05f4dae382b38b030397ce",
+      "git_head": "31f689013f9204766bcd62345911432e624ec80b",
+      "clean_worktree": true,
+      "seeded_authentication": true,
+      "outcomes": {
+        "browser": "154.0.8037.57",
+        "login_mfa_verified": false,
+        "blocked_external_hosts": [],
+        "steps": [
+          "Author self-handover disabled; ordinary cancellation retained",
+          "Controlled synthetic identity change blocked handover; independent cancellation preserved snapshot",
+          "Wrong code rejected with evidence retained; corrected independent handover persisted and prevented re-reservation",
+          "Assigned technician viewed retained history without reservation/outcome controls",
+          "Cross-tenant pharmacist could not view worksheet/container evidence"
+        ],
+        "records": [
+          {
+            "id": 1,
+            "status": "cancelled",
+            "created_by": 1,
+            "finished_by": 1
+          },
+          {
+            "id": 2,
+            "status": "cancelled",
+            "created_by": 1,
+            "finished_by": 4
+          },
+          {
+            "id": 3,
+            "status": "handed_over",
+            "created_by": 1,
+            "finished_by": 4
+          }
+        ],
+        "protected_table_hashes": {
+          "pharmacy_ingredient_lots": "cea598dfdbc5ed2ce4dae553b5fa330b800295bf446beb53cfe69182ae4311be",
+          "pharmacy_stock_lots": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_stock_events": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_fills": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "pharmacy_prescriptions": "7e0f95a2438ef3e8c8b471b8305fe724cffd85f0b245663fd2dbf618d411e665",
+          "pharmacy_batch_executions": "0d2d788d1c8092f3e7ad14424b51a9bd9c1cf30cf52059d961b93dff4cb7af8a",
+          "pharmacy_container_label_proofs": "8a2c0415d92dc270b198ec420514055c12fae0c8d5f265f90f97e6e4dfa6dc69",
+          "pharmacy_container_label_prints": "49af1aa9ba66e697cfbec44433df8864a2b96cbb1776e8c0d8d96e7bce4d9453",
+          "pharmacy_container_label_comparisons": "ffeb31f3156d26e6d2bc8fc45bafcf40eac498206e27a9198436d9c9eb59bb63",
+          "invoices": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "payments": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "clinical_release": false
+      },
+      "responses": [
+        {
+          "role": "author",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals/1/finish",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 409
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 409
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals/2/finish",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "POST",
+          "status": 201
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "author",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals/3/finish",
+          "method": "POST",
+          "status": 422
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals/3/finish",
+          "method": "POST",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/container-suitability-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "reviewer",
+          "path": "/api/pharmacy/executions/1/handover-rehearsal-context",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/batch-worksheets/1/incidents",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/yield-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/consumption-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/quality-results",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/beyond-use-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/packaging-proposals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/container-custody",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/container-corrections",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/repackaging",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/container-suitability",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/container-labels",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "technician",
+          "path": "/api/pharmacy/executions/1/handover-rehearsals",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "outsider",
+          "path": "/api/notifications",
+          "method": "GET",
+          "status": 200
+        },
+        {
+          "role": "outsider",
+          "path": "/api/pharmacy/batch-worksheets/1",
+          "method": "GET",
+          "status": 403
+        }
+      ]
+    }
+  },
+  "dependency_findings": {
+    "admin": {
+      "info": 0,
+      "low": 1,
+      "moderate": 0,
+      "high": 1,
+      "critical": 0
+    },
+    "public": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "composer": "unknown; Packagist security destination denied by runtime policy",
+    "advisories": {
+      "1116451": {
+        "findings": [
+          {
+            "version": "2.0.3",
+            "paths": [
+              ".>react-quill-new>quill"
+            ],
+            "dev": false,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1116451,
+        "title": "Quill is vulnerable to XSS via HTML export feature",
+        "module_name": "quill",
+        "vulnerable_versions": "=2.0.3",
+        "severity": "low",
+        "cwe": "CWE-74, CWE-79",
+        "github_advisory_id": "GHSA-v3m3-f69x-jf25",
+        "url": "https://github.com/advisories/GHSA-v3m3-f69x-jf25"
+      },
+      "1240992": {
+        "findings": [
+          {
+            "version": "3.0.3",
+            "paths": [
+              ".>eslint-config-next>@next/eslint-plugin-next>fast-glob>micromatch>braces"
+            ],
+            "dev": true,
+            "optional": false,
+            "bundled": false
+          }
+        ],
+        "id": 1240992,
+        "title": "braces vulnerable to stack-exhaustion denial of service through deeply nested patterns",
+        "module_name": "braces",
+        "vulnerable_versions": "<=3.0.3",
+        "patched_versions": ">=3.0.4",
+        "severity": "high",
+        "cwe": "CWE-674",
+        "github_advisory_id": "GHSA-vfj7-8cjw-p6xm",
+        "url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm"
+      }
+    }
+  },
+  "optimized_admin_build": {
+    "routes": 120,
+    "build_id": "7xvRR9MwUYXvfQ0aEqV8B",
+    "log_sha256": "87670275b7c3c6f748d63109639b2f2cbf3e8d16e35ebea0a76576ac22c7cdb6",
+    "lint": "skipped by existing Next configuration"
+  },
+  "source_archive": {
+    "archive": "/workspace/.cloud-tools/evidence/faydamed-pilot-candidate-31f6890.tar.gz",
+    "commit": "31f689013f9204766bcd62345911432e624ec80b",
+    "files": 1209,
+    "migrations": 137,
+    "production_ready": false,
+    "sha256": "1c260527bfb6c7c27a2abe77bb02f866ad079bcacd5cd2a5bd6e34f10ffa2199",
+    "source_only": true,
+    "tree": "bf67ef7fd8872e6ad1419ad1ab2b89ce5208a948"
+  },
+  "browser_archive": {
+    "path": "/workspace/.cloud-tools/evidence/synthetic-pilot-browser-final-20261019.tar.gz",
+    "sha256": "4a31e879ffd9ced4a8f534cd6d95b1b07e34143e3c1a1556c296945baac8ab28",
+    "sessions_and_signing_keys_excluded": true
+  },
+  "runtime_readiness": {
+    "faqs": {
+      "status": 200,
+      "synthetic_empty_listing": true,
+      "json_path": "faqs.data"
+    },
+    "unauthenticated_pharmacy_status": 401,
+    "admin_login_html_status": 200,
+    "admin_login_form_browser": true
+  },
+  "hosted_ci": "unverified for latest pushed head",
+  "cloud_publication": "unverified; saving is not publication",
+  "fresh_task_restoration": "unverified",
+  "owner_pilot_acceptance": "pending",
+  "production_ready": false,
+  "clinical_release_authorized": false,
+  "commands": {
+    "activate": "source /workspace/.cloud-tools/env.sh",
+    "api_full": "cd api && php vendor/bin/phpunit --colors=never",
+    "api_focused": "cd api && php vendor/bin/phpunit --colors=never tests/Feature/BillingAnalyticsBoundaryTest.php tests/Feature/AppealTemplateTest.php tests/Feature/EobAssociationTest.php",
+    "mysql_focused": "cd api && FAYDA_SYNTHETIC_DB=fayda-cloud-mysql /workspace/.cloud-tools/mysql-bin/php vendor/bin/phpunit -c phpunit.mysql.xml --colors=never tests/Feature/BillingAnalyticsBoundaryTest.php tests/Feature/EobAssociationTest.php tests/Feature/AppealTemplateTest.php",
+    "mariadb_focused": "Same focused command with FAYDA_SYNTHETIC_DB=fayda-cloud-mariadb",
+    "admin_checks": "cd admin-panel; pnpm test:session; pnpm test:recovery; pnpm test:documents; pnpm test:reports; pnpm test:pharmacy; pnpm typecheck",
+    "admin_build": "cd admin-panel && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api pnpm build",
+    "public_checks": "cd frontend; npm run test:security; npm run build",
+    "reusable_install": "/workspace/.cloud-tools/install.sh"
+  }
+}

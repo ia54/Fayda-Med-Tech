@@ -1,0 +1,313 @@
+{
+  "date": "2026-10-19",
+  "code_candidate": "31f689013f9204766bcd62345911432e624ec80b",
+  "baseline": "BUILD-FINISH-BACKLOG-20261019.json",
+  "status_basis": "Exact tests, recorded browser/database evidence; no owner or clinical acceptance inferred",
+  "gate_count": {
+    "met": 10,
+    "not_closed": 2,
+    "unequal_effort_not_product_percentage": true
+  },
+  "pilot_gates": [
+    {
+      "id": "G01",
+      "title": "Pilot scope and explicit exclusions",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G02",
+      "title": "Cloud runtime and locked dependency installation",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G03",
+      "title": "Pinned source and full backend test baseline",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G04",
+      "title": "Actual password/MFA/recovery/logout browser evidence",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G05",
+      "title": "Shared-role financial/settlement access browser baseline",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G06",
+      "title": "Source-backed report and actual CSV download baseline",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G07",
+      "title": "Private document pilot lifecycle",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G08",
+      "title": "Manual EOB and appeal pilot lifecycle",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G09",
+      "title": "Truthful UI and complete pilot access-boundary sweep",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G10",
+      "title": "Current dependency findings disposition",
+      "status": "partial_advisory_disposition_and_composer_visibility",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G11",
+      "title": "Concurrency and responsive/accessibility pilot checks",
+      "status": "met_for_targeted_synthetic_pilot",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    },
+    {
+      "id": "G12",
+      "title": "Final one-candidate replay and owner pilot acceptance",
+      "status": "replay_verified_hosted_checks_and_owner_acceptance_pending",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md"
+    }
+  ],
+  "items": [
+    {
+      "id": "P01",
+      "phase": "pilot",
+      "work": "Close client analytics access leak",
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Client cannot read other case financial aggregates; role/tenant/assignment regression and browser denial pass.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "high",
+      "decision_or_external_dependency": "none",
+      "status": "verified_for_synthetic_pilot",
+      "original_audit_estimate_days": [
+        0.5,
+        1
+      ]
+    },
+    {
+      "id": "P02",
+      "phase": "pilot",
+      "work": "Remove fabricated financial/plan data and inactive controls",
+      "depends_on": [
+        "P01"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Unsupported metrics show unavailable; real aggregates state basis and year; no invented payer figures or subscription receipts.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "high",
+      "decision_or_external_dependency": "none",
+      "status": "verified_for_synthetic_pilot",
+      "original_audit_estimate_days": [
+        0.5,
+        1
+      ]
+    },
+    {
+      "id": "P03",
+      "phase": "pilot",
+      "work": "Refresh protected document lifecycle",
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Synthetic upload, PDF/text preview, actual download/hash, reload, revoked and cross-tenant/client access pass in Chromium.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "none",
+      "status": "verified_for_synthetic_pilot",
+      "original_audit_estimate_days": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "P04",
+      "phase": "pilot",
+      "work": "Refresh manual EOB and appeal branches",
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Create/review/deny/search/page/load-error/retry flows pass; appeal stays a disclosed retained template and financial ledger remains unchanged.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "none",
+      "status": "verified_for_synthetic_pilot",
+      "original_audit_estimate_days": [
+        0.5,
+        1.5
+      ]
+    },
+    {
+      "id": "P05",
+      "phase": "pilot",
+      "work": "Exercise session concurrency and remaining recovery edges",
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Two-tab/reload/rotating-refresh/logout overlap and expired-challenge cases have deterministic evidence; defects repaired without allowing replay.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "none",
+      "status": "verified_for_synthetic_pilot",
+      "original_audit_estimate_days": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "P06",
+      "phase": "pilot",
+      "work": "Target pilot mobile and keyboard/accessibility checks",
+      "depends_on": [
+        "P03",
+        "P04"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Agreed pilot routes fit narrow/wide viewports; keyboard, focus, labels, dialogs and readable tables pass; device limits explicit.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "none",
+      "status": "verified_for_synthetic_pilot",
+      "original_audit_estimate_days": [
+        0.5,
+        1.5
+      ]
+    },
+    {
+      "id": "P07",
+      "phase": "pilot",
+      "work": "Remediate and verify current dependency findings",
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Scoped lockfile patches verified in installs/tests/builds; audits rerun; residual Quill finding and applicability documented; no ignores conceal risk.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "Composer advisory destination must be available; any residual risk acceptance is owner/security decision",
+      "status": "partial_external_advisory_and_risk_disposition",
+      "original_audit_estimate_days": [
+        1,
+        3
+      ]
+    },
+    {
+      "id": "P08",
+      "phase": "pilot",
+      "work": "Replay final pilot roles and pharmacy preview",
+      "depends_on": [
+        "P01",
+        "P02",
+        "P03",
+        "P04",
+        "P05",
+        "P06",
+        "P07"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Eight role boundaries, save/reload/error behavior and clearly synthetic pharmacy preview agree on one final candidate.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "none",
+      "status": "verified_for_synthetic_pilot",
+      "original_audit_estimate_days": [
+        0.5,
+        1
+      ]
+    },
+    {
+      "id": "P09",
+      "phase": "pilot",
+      "work": "Freeze verified builds, CI, archives and fresh security evidence",
+      "depends_on": [
+        "P08"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Exact candidate has applicable hosted checks/builds, trusted archives and issue list; no unresolved pilot blockers.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "GitHub API/runtime network restriction; latest hosted check status requires verified access",
+      "status": "local_checks_archives_verified_hosted_checks_unverified",
+      "original_audit_estimate_days": [
+        0.5,
+        1
+      ]
+    },
+    {
+      "id": "P10",
+      "phase": "pilot",
+      "work": "Verify reusable cloud publication/restoration",
+      "depends_on": [],
+      "accountable": "Owner + engineering",
+      "done_when": "Owner publication completes and independent fresh task restores source/tools and passes synthetic startup checks.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "User-only Publish; active effort only, waiting unquoted; not a blocker for recorded current-runtime pilot",
+      "status": "publication_and_fresh_task_restoration_unverified",
+      "original_audit_estimate_days": [
+        0.25,
+        0.75
+      ]
+    },
+    {
+      "id": "P11",
+      "phase": "pilot",
+      "work": "Prepare demo, resettable fixture and owner acceptance",
+      "depends_on": [
+        "P09"
+      ],
+      "accountable": "Engineering + owner",
+      "done_when": "Synthetic walkthrough, reproducible fixtures and known exclusions delivered; owner feedback disposition and pilot acceptance recorded.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "Owner attendance/feedback; hosted delivery is a separate deployment scope",
+      "status": "fixtures_and_review_package_ready_owner_acceptance_pending",
+      "original_audit_estimate_days": [
+        0.5,
+        1
+      ]
+    },
+    {
+      "id": "P12",
+      "phase": "pilot",
+      "work": "Pilot defect/retest allowance",
+      "depends_on": [
+        "P01",
+        "P02",
+        "P03",
+        "P04",
+        "P05",
+        "P06",
+        "P07"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Pilot-blocking findings are fixed and their focused regressions pass; unused allowance is not mandatory work.",
+      "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "none",
+      "status": "observed_defects_fixed_unused_allowance_not_mandatory",
+      "original_audit_estimate_days": [
+        1,
+        2
+      ]
+    }
+  ],
+  "external_actions": [
+    "Resolve current dependency findings disposition and complete Composer advisory check when destination is available",
+    "Verify hosted checks for exact pushed head",
+    "Owner review/feedback and explicit synthetic pilot acceptance",
+    "User-controlled environment Review/Save and Publish, then independently validate restoration in a new task"
+  ],
+  "full_product_scope_and_baseline_ranges": "Unchanged; synthetic pilot first, then full product; both sterile and nonsterile compounding remain in scope",
+  "production_ready": false,
+  "clinical_release_authorized": false
+}

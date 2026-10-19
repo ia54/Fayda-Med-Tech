@@ -1,5 +1,9 @@
 # Shared-platform client pilot
 
+## October 19 synthetic pilot verification update
+
+The [current closeout](../../docs/SYNTHETIC-PILOT-CLOSEOUT-20261019.md) supersedes earlier pilot evidence gaps and the original audit work status. Billing access/data-truth fixes, EOB pagination, cross-tab refresh repair and five source-bound browser replays pass. Full SQLite: **458 tests / 9,339 assertions**. Dependency disposition, exact hosted checks, owner pilot acceptance and cloud publication/restoration remain open. Full product and clinical release are not approved.
+
 Scope authorized September 30, 2026. Purpose: demonstrate the existing shared PI platform to the owners while full pharmacy development continues. This is a synthetic-data demonstration, not operational dispensing or production acceptance.
 
 ## Demonstration sequence
