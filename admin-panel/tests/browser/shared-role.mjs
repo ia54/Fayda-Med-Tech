@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {cloudBrowser,snapshot,sha256} from './cloud-browser.mjs';
 const c=await cloudBrowser('shared.sqlite'),{pages:p,fixture:f,db}=c;
 const base='http://127.0.0.1:3000';
-const wait=async(page,path,method,action,status)=>{const pending=page.waitForResponse(r=>new URL(r.url()).pathname===path&&r.request().method()===method);await action();const response=await pending;assert.equal(response.status(),status,`${method} ${path}`);return response.json();};
+const wait=async(page,path,method,action,status)=>{const pending=page.waitForResponse(r=>new URL(r.url()).pathname===path&&r.request().method()===method);pending.catch(()=>{});await action();const response=await pending;assert.equal(response.status(),status,`${method} ${path}`);return response.json();};
 const probe=async(role,path,method='GET',body)=>p[role].evaluate(async({path,method,body,token})=>{const r=await fetch('http://127.0.0.1:8000'+path,{method,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};},{path,method,body,token:f.sessions[role].token.access_token});
 const protectedTables=['pharmacy_ingredient_lots','pharmacy_stock_lots','pharmacy_stock_events','pharmacy_fills','pharmacy_prescriptions','pharmacy_batch_executions','pharmacy_container_label_proofs','pharmacy_container_label_prints','pharmacy_container_label_comparisons'];
 try{
@@ -37,6 +37,7 @@ try{
   await dialog.locator('#payment-reference').fill(reference);
   const result=await wait(p.biller,'/api/payments','POST',()=>dialog.getByRole('button',{name:'Record Payment',exact:true}).click(),status);
   if(status!==201){assert.equal(await dialog.locator('#payment-reference').inputValue(),reference);await dialog.getByRole('button',{name:'Cancel',exact:true}).click();}
+  await dialog.waitFor({state:'hidden'});await p.biller.waitForLoadState('networkidle');console.log(`Receipt browser outcome ${status} retained`);
   return result;
  };
  const first=(await receipt('40.10','SYN-CLOUD-RECEIPT',201)).data;
