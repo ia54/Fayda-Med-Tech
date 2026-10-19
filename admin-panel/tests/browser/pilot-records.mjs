@@ -30,12 +30,12 @@ try {
  await biller.keyboard.press('Escape');
  await biller.context().route('**/api/billing/appeals?*',route=>route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({status:false,message:'Synthetic transient failure'})}),{times:1});
  await biller.reload();await biller.getByRole('alert').filter({hasText:'Appeal records could not be loaded'}).waitFor();
- await biller.getByRole('button',{name:'Retry',exact:true}).click();await biller.getByText('SYN-PILOT-00',{exact:true}).waitFor();
+ await biller.getByRole('button',{name:'Retry',exact:true}).click();await biller.getByText('SYN-PILOT-25',{exact:true}).waitFor();console.log('Appeal pagination, filter, retained draft and list retry passed');
  await biller.goto('http://127.0.0.1:3000/dashboard/billing/appeals/create');
  await biller.getByRole('combobox').nth(0).click();await biller.getByRole('option',{name:/SYN-PILOT-DENIED/}).click();
  await biller.getByRole('combobox').nth(1).click();await biller.getByRole('option',{name:'Medical Necessity',exact:true}).click();
  const appealResponse=await wait(biller,'/api/billing/appeals/generate','POST',()=>biller.getByRole('button',{name:'Generate Appeal Letter',exact:true}).click());
- assert.equal(appealResponse.status(),210);
+ assert.equal(appealResponse.status(),210);console.log('Browser generated a local human-review appeal draft');
  await biller.getByText('Generated Letter',{exact:true}).waitFor();
  assert.equal(db.prepare('SELECT COUNT(*) n FROM claim_appeals').get().n,27);
  await biller.goto('http://127.0.0.1:3000/dashboard/billing/eobs');
@@ -53,8 +53,9 @@ try {
  await biller.getByRole('button',{name:'Mark reviewed',exact:true}).click();
  await biller.getByRole('dialog').getByRole('alert').waitFor();
  assert.equal(db.prepare('SELECT status FROM eobs WHERE id=?').get(eob.id).status,'pending');
- const reviewed=await wait(biller,`/api/eobs/${eob.id}`,'PUT',()=>biller.getByRole('button',{name:'Mark reviewed',exact:true}).click());assert.equal(reviewed.status(),200);
+ const reviewed=await wait(biller,`/api/eobs/${eob.id}`,'PUT',()=>biller.getByRole('button',{name:'Mark reviewed',exact:true}).click());assert.equal(reviewed.status(),200);console.log('EOB paging, list retry and retained review retry passed');
  await biller.getByRole('dialog').waitFor({state:'hidden'});assert.equal(db.prepare('SELECT status FROM eobs WHERE id=?').get(eob.id).status,'processed');
+ console.log('Preparing private document browser lifecycle');
  const pdf=await PDFDocument.create();pdf.addPage().drawText('SYNTHETIC CLOUD PILOT - NO PHI');const bytes=Buffer.from(await pdf.save());
  await client.goto('http://127.0.0.1:3000/dashboard/client/documents/upload');
  await client.getByLabel('Choose document').setInputFiles({name:'SYN-cloud-pilot.pdf',mimeType:'application/pdf',buffer:bytes});
