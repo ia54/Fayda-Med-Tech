@@ -32,8 +32,8 @@ try {
  await biller.reload();await biller.getByRole('alert').filter({hasText:'Appeal records could not be loaded'}).waitFor();
  await biller.getByRole('button',{name:'Retry',exact:true}).click();await biller.getByText('SYN-PILOT-25',{exact:true}).waitFor();console.log('Appeal pagination, filter, retained draft and list retry passed');
  await biller.goto('http://127.0.0.1:3000/dashboard/billing/appeals/create');
- await biller.getByRole('combobox').nth(0).click();await biller.getByRole('option',{name:/SYN-PILOT-DENIED/}).click();
- await biller.getByRole('combobox').nth(1).click();await biller.getByRole('option',{name:'Medical Necessity',exact:true}).click();
+ await biller.getByLabel('Select Denied Invoice',{exact:true}).click();await biller.getByRole('option',{name:/SYN-PILOT-DENIED/}).click();
+ await biller.getByLabel('Denial Reason Category',{exact:true}).click();await biller.getByRole('option',{name:'Medical Necessity',exact:true}).click();
  const appealResponse=await wait(biller,'/api/billing/appeals/generate','POST',()=>biller.getByRole('button',{name:'Generate Appeal Letter',exact:true}).click());
  assert.equal(appealResponse.status(),210);console.log('Browser generated a local human-review appeal draft');
  await biller.getByText('Generated Letter',{exact:true}).waitFor();
