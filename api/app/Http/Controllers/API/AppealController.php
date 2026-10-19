@@ -16,8 +16,12 @@ class AppealController extends Controller
      */
     public function index(Request $request)
     {
+        abort_unless($request->user()->organization_id, 403, 'Organization context required.');
         $query = ClaimAppeal::with(['invoice.case'])
-            ->where('organization_id', $request->user()->organization_id);
+            ->where('organization_id', $request->user()->organization_id)
+            ->whereHas('invoice', fn ($invoice) => $invoice
+                ->where('organization_id', $request->user()->organization_id)
+                ->whereHas('case', fn ($case) => $case->where('organization_id', $request->user()->organization_id)));
         if ($request->filled('status')) {
             $query->where('status', $request->string('status')->toString());
         }
@@ -28,7 +32,7 @@ class AppealController extends Controller
                     ->orWhereHas('invoice', fn ($invoice) => $invoice->where('invoice_number', 'like', "%{$search}%"));
             });
         }
-        $appeals = $query->latest()
+        $appeals = $query->latest()->orderByDesc('id')
             ->paginate($request->get('per_page', 15));
 
         return response()->json([
@@ -57,7 +61,11 @@ class AppealController extends Controller
             ], 422);
         }
 
-        $invoice = Invoice::with(['case'])->findOrFail($request->invoice_id);
+        abort_unless($request->user()->organization_id, 403, 'Organization context required.');
+        $invoice = Invoice::with(['case'])
+            ->where('organization_id', $request->user()->organization_id)
+            ->whereHas('case', fn ($case) => $case->where('organization_id', $request->user()->organization_id))
+            ->findOrFail($request->invoice_id);
 
         if ($invoice->status !== 'denied') {
             return response()->json([

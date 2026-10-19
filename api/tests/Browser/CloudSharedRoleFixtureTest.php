@@ -13,6 +13,8 @@ class CloudSharedRoleFixtureTest extends PharmacyWorkflowTest
 {
     use CloudBrowserFixture;
 
+    protected function prepareSharedBrowserEvidence(array $evidence): array { return $evidence; }
+
     public function test_seed_cloud_shared_role_browser_fixture(): void
     {
         $directory = $this->browserDirectory('shared.sqlite');
@@ -42,7 +44,7 @@ class CloudSharedRoleFixtureTest extends PharmacyWorkflowTest
         }
         // Financial baseline has no payments. The UI records synthetic receipts only.
         $this->assertSame(0, DB::table('payments')->count());
-        $this->exportBrowserDatabase($directory, 'shared.sqlite', ['case_id' => $case->id,
-            'case_number' => $case->case_number, 'hidden' => $hidden, 'sessions' => $this->browserSessions($users)]);
+        $this->exportBrowserDatabase($directory, 'shared.sqlite', $this->prepareSharedBrowserEvidence(['case_id' => $case->id,
+            'case_number' => $case->case_number, 'hidden' => $hidden, 'sessions' => $this->browserSessions($users)]));
     }
 }

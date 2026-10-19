@@ -29,7 +29,7 @@ trait CloudBrowserFixture
     }
 
     /** Only fixture users receive seeded MFA-attested sessions; no login is tested. */
-    private function browserSessions(array $users): array
+    protected function browserSessions(array $users): array
     {
         $provenance = '/workspace/.cloud-tools/synthetic-passport-public.sha256';
         $this->assertFileExists($provenance);
@@ -53,6 +53,10 @@ trait CloudBrowserFixture
     {
         $evidence['source_hashes'] = [];
         $paths = [__FILE__, (new \ReflectionClass($this))->getFileName(), base_path('tests/Feature/PharmacyWorkflowTest.php')];
+        for ($class = new \ReflectionClass($this); $class; $class = $class->getParentClass()) {
+            $path = $class->getFileName();
+            if ($path && str_starts_with($path, base_path('tests/'))) $paths[] = $path;
+        }
         // Bind browser evidence to the complete application source, excluding dependencies and secrets.
         foreach (['api/app', 'api/routes', 'admin-panel/app', 'admin-panel/components', 'admin-panel/store', 'admin-panel/hooks', 'admin-panel/lib'] as $source) {
             $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(dirname(base_path()).'/'.$source, \FilesystemIterator::SKIP_DOTS));

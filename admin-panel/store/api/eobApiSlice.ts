@@ -33,7 +33,7 @@ export interface EobStats {
 
 export const eobApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    getEobs: builder.query<{ data: { data: Eob[] } }, any>({
+    getEobs: builder.query<{ data: { data: Eob[]; next_page_url: string | null } }, any>({
       query: (params) => ({
         url: '/eobs',
         params,

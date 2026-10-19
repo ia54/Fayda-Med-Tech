@@ -38,6 +38,7 @@ import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 
 export default function EobProcessingPage() {
+  const [page, setPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState("")
   const [reviewRecord, setReviewRecord] = useState<Eob | null>(null)
   const [statusFilter, setStatusFilter] = useState("")
@@ -46,7 +47,7 @@ export default function EobProcessingPage() {
   const { toast } = useToast()
 
   // Queries
-  const { data: eobsData, isLoading: isEobsLoading, isError: eobsError, refetch: reloadEobs } = useGetEobsQuery({ search: searchTerm, status: statusFilter || undefined })
+  const { data: eobsData, isLoading: isEobsLoading, isFetching: isEobsFetching, isError: eobsError, refetch: reloadEobs } = useGetEobsQuery({ search: searchTerm, status: statusFilter || undefined, page })
   const { data: statsData, isLoading: isStatsLoading, isError: statsError } = useGetEobStatsQuery()
   const [createEob, { isLoading: isCreating }] = useCreateEobMutation()
   const [updateEob, { isLoading: isUpdating }] = useUpdateEobMutation()
@@ -278,10 +279,10 @@ export default function EobProcessingPage() {
                   placeholder="Search by patient or payer..."
                   className="pl-9 bg-background/50 border-border/50 h-9 w-[200px] lg:w-[300px]"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
                 />
               </div>
-              <select aria-label="Filter EOB status" className="h-9 rounded-md border bg-background px-2 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <select aria-label="Filter EOB status" className="h-9 rounded-md border bg-background px-2 text-sm" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }}>
                 <option value="">All statuses</option>
                 <option value="pending">Review required</option>
                 <option value="processed">Processed</option>
@@ -357,6 +358,11 @@ export default function EobProcessingPage() {
                 )}
               </TableBody>
             </Table>
+          </div>
+          <div className="flex items-center justify-end gap-3 mt-4">
+            <Button variant="outline" disabled={isEobsFetching || page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
+            <span>Page {page}</span>
+            <Button variant="outline" disabled={isEobsFetching || !eobsData?.data?.next_page_url} onClick={() => setPage(page + 1)}>Next</Button>
           </div>
         </CardContent>
       </Card>
