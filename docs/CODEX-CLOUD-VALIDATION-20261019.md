@@ -106,3 +106,7 @@ Backend workflow [39227943872](https://github.com/ia54/Fayda-Med-Tech/actions/ru
 - Both sterile and nonsterile compounding remain confirmed product scope. Hazardous handling is separate. Dr. Ghadeh's per-site capability, procedures, clinical acceptance and real release authority remain outstanding.
 - Controlled/compounded actual dispensing, provider calls, production hosting, patient information, payment collection and external messages remain excluded. No production credentials or provider accounts are required for this work.
 - Publication and a new-task restore check remain separate from the development result. Tasks can finish or exhaust resources; this evidence does not promise indefinite unattended execution.
+
+## Subsequent browser work
+
+The continuation from owner-verified head `74d4c9f` completes the selected compounded reservation/handover and shared-role financial browser journeys. See [the source-bound browser report](CODEX-CLOUD-BROWSER-ACCEPTANCE-20261019.md) and [evidence index](evidence/CLOUD-BROWSER-20261019.json). Its source pins and focused checks are separate from the historical full-suite/hosted results above. Publication and fresh-task restoration remain independently unverified.
