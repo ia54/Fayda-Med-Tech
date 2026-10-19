@@ -33,7 +33,10 @@ class DocumentUploadRequest extends FormRequest
         return [
             'title' => 'required|string|max:255',
             'file' => 'required|file|mimes:pdf,jpeg,png,jpg,doc,docx|max:20480',
-            'metadata' => 'nullable|array',
+            'metadata' => 'nullable|array:case_id,category,description',
+            'metadata.case_id' => 'nullable|integer|min:1',
+            'metadata.category' => 'nullable|string|max:100',
+            'metadata.description' => 'nullable|string|max:2000',
         ];
     }
 }

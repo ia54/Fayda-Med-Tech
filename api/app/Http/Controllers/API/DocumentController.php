@@ -50,27 +50,14 @@ class DocumentController extends Controller
     {
         try {
             $user = $request->user();
-            $perPage = (int) $request->get('per_page', 10);
+            $perPage = max(1, min(100, (int) $request->get('per_page', 10)));
 
-            $query = Document::with(['signers', 'ocrResults']);
+            $query = Document::visibleTo(auth()->user())->with(['signers', 'ocrResults']);
 
-            // Filter for Client or Attorney Role
-            if ($user->role === 'client' || $user->role === 'attorney') {
-                // Get cases where the user is a party
-                $caseIds = CaseModel::whereHas('parties', function($q) use ($user) {
-                    $q->where('user_id', $user->id);
-                })->pluck('id')->toArray();
-
-                $query->where(function($q) use ($user, $caseIds) {
-                    // They are a signer
-                    $q->whereHas('signers', function($sq) use ($user) {
-                        $sq->where('user_id', $user->id)
-                          ->orWhere('email', $user->email);
-                    })
-                    // Or it's linked to their assigned case
-                    ->orWhereIn('metadata->case_id', $caseIds)
-                    // Or it's uploaded by them
-                    ->orWhere('uploaded_by', $user->id);
+            if ($request->filled('search')) {
+                $search = trim((string) $request->input('search'));
+                $query->where(function ($query) use ($search) {
+                    $query->where('title', 'like', '%'.$search.'%')->orWhere('original_name', 'like', '%'.$search.'%');
                 });
             }
 
@@ -84,9 +71,9 @@ class DocumentController extends Controller
                     return $query->where('ocr_status', $request->ocr_status);
                 })
                 ->when($request->filled('case_id'), function ($query) use ($request) {
-                    return $query->where('metadata->case_id', $request->case_id);
+                    return $query->where('case_id', $request->case_id);
                 })
-                ->orderBy('created_at', 'desc')
+                ->orderBy('created_at', 'desc')->orderByDesc('id')
                 ->paginate($perPage);
 
             return response()->json([
@@ -134,19 +121,30 @@ class DocumentController extends Controller
      */
     public function store(DocumentUploadRequest $request): JsonResponse
     {
+        abort_unless($request->user()->organization_id, 422, 'An organization is required for uploads.');
+        if ($caseId = data_get($request->metadata, 'case_id')) {
+            $case = CaseModel::where('organization_id', $request->user()->organization_id);
+            if (in_array($request->user()->role, ['client', 'attorney'], true)) {
+                $case->whereHas('parties', fn ($q) => $q->where('user_id', $request->user()->id));
+            }
+            abort_unless($case->whereKey($caseId)->exists(), 404, 'Case not found');
+        }
         try {
             $file = $request->file('file');
-            $path = $file->store('documents/uploads', 'public');
+            $path = $file->store('uploads', 'documents');
 
             $document = Document::create([
-                'uploaded_by' => optional($request->user())->id,
+                'uploaded_by' => $request->user()->id,
+                'organization_id' => $request->user()->organization_id,
+                'case_id' => data_get($request->metadata, 'case_id'),
+                'storage_disk' => 'documents',
                 'title' => $request->title,
                 'original_name' => $file->getClientOriginalName(),
                 'filename' => $file->hashName(),
                 'mime_type' => $file->getMimeType(),
                 'size' => $file->getSize(),
                 'path' => $path,
-                'url' => Storage::url($path),
+                'url' => null,
                 'metadata' => $request->metadata,
             ]);
 
@@ -178,7 +176,7 @@ class DocumentController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        $document = Document::with(['signers', 'signatures', 'ocrResults'])->find($id);
+        $document = Document::visibleTo(auth()->user())->with(['signers', 'signatures', 'ocrResults'])->find($id);
 
         if (!$document) {
             return response()->json([
@@ -194,9 +192,17 @@ class DocumentController extends Controller
         ], 200);
     }
 
+    public function eligibleSigners(int $id): JsonResponse
+    {
+        $document = Document::visibleTo(auth()->user())->findOrFail($id);
+        $users = \App\Models\User::where('organization_id', $document->organization_id)->where('status', 'active')
+            ->orderBy('first_name')->get(['id', 'first_name', 'last_name', 'email']);
+        return response()->json(['status' => true, 'data' => $users]);
+    }
+
     public function assignSigners(SignerAssignmentRequest $request, int $id): JsonResponse
     {
-        $document = Document::find($id);
+        $document = Document::visibleTo(auth()->user())->find($id);
 
         if (!$document) {
             return response()->json([
@@ -205,8 +211,18 @@ class DocumentController extends Controller
             ], 404);
         }
 
+        abort_unless($document->signature_status === 'not_sent' && !$document->docusign_dispatch_id && !$document->docusign_envelope_id, 409, 'Signer assignments are locked after signing begins.');
+        foreach ($request->signers as $signer) {
+            if (!empty($signer['user_id'])) {
+                $user = \App\Models\User::where('organization_id', $document->organization_id)->find($signer['user_id']);
+                abort_unless($user && strcasecmp($user->email, $signer['email']) === 0, 422, 'Signer account must match the email and organization.');
+            }
+        }
+
         try {
             DB::transaction(function () use ($document, $request) {
+                $document = Document::visibleTo($request->user())->lockForUpdate()->findOrFail($document->id);
+                abort_unless($document->signature_status === 'not_sent' && !$document->docusign_dispatch_id && !$document->docusign_envelope_id, 409, 'Signer assignments are locked after signing begins.');
                 foreach ($request->signers as $index => $signer) {
                     DocumentSigner::updateOrCreate(
                         [
@@ -228,6 +244,8 @@ class DocumentController extends Controller
                 'message' => 'Signers assigned successfully',
                 'data' => $document->load('signers'),
             ], 200);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $exception) {
+            throw $exception;
         } catch (Throwable $exception) {
             return response()->json([
                 'status' => false,
@@ -239,13 +257,17 @@ class DocumentController extends Controller
 
     public function sendForSignature(SignatureProcessRequest $request, int $id, DocuSignService $docuSignService): JsonResponse
     {
-        $document = Document::with('signers')->find($id);
+        $document = Document::visibleTo(auth()->user())->with('signers')->find($id);
 
         if (!$document) {
             return response()->json([
                 'status' => false,
                 'message' => 'Document not found',
             ], 404);
+        }
+
+        if ($document->docusign_envelope_id || $document->docusign_dispatch_id || $document->signature_status !== 'not_sent') {
+            return response()->json(['status' => false, 'message' => 'A signing request already exists or needs reconciliation. Contact your administrator before retrying.'], 409);
         }
 
         if ($document->signers->isEmpty()) {
@@ -255,7 +277,7 @@ class DocumentController extends Controller
             ], 422);
         }
 
-        if (!Storage::disk('public')->exists($document->path)) {
+        if (!Storage::disk($document->disk())->exists($document->path)) {
             return response()->json([
                 'status' => false,
                 'message' => 'Document file not found in storage',
@@ -263,9 +285,9 @@ class DocumentController extends Controller
         }
 
         try {
-            $token = $docuSignService->getAccessToken();
+            $token = $docuSignService->getAccessToken($document->organization_id);
             $accountId = $docuSignService->getAccountId();
-            $baseUri = $docuSignService->getBaseUri();
+            $baseUri = DocuSignService::validateBaseUri($docuSignService->getBaseUri());
 
             if (!$baseUri || !$accountId || !$token) {
                 return response()->json([
@@ -276,10 +298,25 @@ class DocumentController extends Controller
         } catch (Throwable $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'DocuSign authentication failed: ' . $e->getMessage(),
+                'message' => 'Signing authentication failed. Ask your administrator to verify the account and consent.',
             ], 500);
         }
 
+        // Persist identity evidence with the claim before any provider send.
+        // Signer edits use this same row lock, so the snapshot and payload agree.
+        $dispatchId = (string) \Illuminate\Support\Str::uuid();
+        $claim = DB::transaction(function () use ($document, $dispatchId, $accountId, $baseUri) {
+            $locked = Document::visibleTo(auth()->user())->lockForUpdate()->findOrFail($document->id);
+            if ($locked->organization_id !== $document->organization_id || $locked->docusign_dispatch_id || $locked->docusign_envelope_id || $locked->signature_status !== 'not_sent') return null;
+            $locked->load(['signers'=>fn ($query)=>$query->orderBy('signing_order')->orderBy('id')]);
+            if ($locked->signers->isEmpty()) return null;
+            $bytes = Storage::disk($locked->disk())->get($locked->path);
+            $snapshot = \App\Services\SigningRecovery::snapshot($locked, (string)$accountId, $baseUri, $bytes);
+            $locked->forceFill(['docusign_dispatch_id'=>$dispatchId, 'docusign_dispatch_snapshot'=>$snapshot])->save();
+            return [$locked, $bytes];
+        });
+        if (!$claim) return response()->json(['status'=>false, 'message'=>'A signing request already exists or needs reconciliation.'], 409);
+        [$document, $documentBytes] = $claim;
         $recipients = [];
         foreach ($document->signers->sortBy('signing_order')->values() as $index => $signer) {
             $recipients[] = [
@@ -290,7 +327,8 @@ class DocumentController extends Controller
                 'tabs' => [
                     'signHereTabs' => [
                         [
-                            'anchorString' => '/sn1/',
+                            'anchorString' => '/sn' . ($index + 1) . '/',
+                            'anchorIgnoreIfNotPresent' => 'false',
                             'anchorUnits' => 'pixels',
                             'anchorXOffset' => '20',
                             'anchorYOffset' => '10',
@@ -305,7 +343,7 @@ class DocumentController extends Controller
             'emailBlurb' => $request->email_message ?: 'A document requires your signature.',
             'documents' => [
                 [
-                    'documentBase64' => base64_encode(Storage::disk('public')->get($document->path)),
+                    'documentBase64' => base64_encode($documentBytes),
                     'name' => $document->original_name,
                     'fileExtension' => pathinfo($document->original_name, PATHINFO_EXTENSION) ?: 'pdf',
                     'documentId' => '1',
@@ -317,26 +355,28 @@ class DocumentController extends Controller
             'status' => 'sent',
         ];
 
+        $payload['transactionId'] = $dispatchId;
+
         try {
-            $endpoint = $baseUri . '/restapi/v2.1/accounts/' . $accountId . '/envelopes';
+            $endpoint = $baseUri . '/restapi/v2.1/accounts/' . rawurlencode((string) $accountId) . '/envelopes';
 
             $response = Http::withToken($token)
-                ->acceptJson()
+                ->acceptJson()->connectTimeout(10)->timeout(60)->withoutRedirecting()
                 ->post($endpoint, $payload);
 
-            $this->storeApiLog($document->id, 'docusign', $endpoint, 'POST', $payload, $response->json(), $response->status(), $response->successful() ? 'success' : 'failed');
-
             if (!$response->successful()) {
+                $this->storeApiLog($document->id, 'docusign', $endpoint, 'POST', null, null, $response->status(), 'failed');
                 return response()->json([
                     'status' => false,
                     'message' => 'Failed to send document to DocuSign',
-                    'error' => $response->json(),
+                    'error' => 'The signing request needs administrator reconciliation before retrying.',
                 ], 500);
             }
 
             $envelopeId = data_get($response->json(), 'envelopeId');
+            if (!is_string($envelopeId) || $envelopeId === '' || strlen($envelopeId) > 128) throw new \RuntimeException('Missing envelope identifier.');
 
-            DB::transaction(function () use ($document, $envelopeId) {
+            DB::transaction(function () use ($document, $envelopeId, $dispatchId) {
                 $document->update([
                     'docusign_envelope_id' => $envelopeId,
                     'document_status' => 'sent_for_signature',
@@ -352,10 +392,13 @@ class DocumentController extends Controller
                     'provider_envelope_id' => $envelopeId,
                     'provider_event' => 'envelope_sent',
                     'status' => 'pending',
-                    'provider_payload' => ['response' => $document->fresh()],
+                    'organization_id' => $document->organization_id,
+                    'provider_payload' => ['dispatch_id' => $dispatchId],
                     'processed_at' => now(),
                 ]);
             });
+
+            $this->storeApiLog($document->id, 'docusign', $endpoint, 'POST', null, null, $response->status(), 'success');
 
             return response()->json([
                 'status' => true,
@@ -367,19 +410,19 @@ class DocumentController extends Controller
                 ],
             ], 200);
         } catch (Throwable $exception) {
-            $this->storeApiLog($document->id, 'docusign', 'envelopes', 'POST', $payload, null, 500, 'failed', $exception->getMessage());
+            $this->storeApiLog($document->id, 'docusign', 'envelopes', 'POST', $payload, null, 500, 'failed', 'Signing dispatch failed; reconcile before retrying.');
 
             return response()->json([
                 'status' => false,
                 'message' => 'DocuSign integration failed',
-                'error' => $exception->getMessage(),
+                'error' => 'The signing request needs administrator reconciliation before retrying.',
             ], 500);
         }
     }
 
     public function signInApp(Request $request, int $id): JsonResponse
     {
-        $document = Document::with('signers')->find($id);
+        $document = Document::visibleTo(auth()->user())->with('signers')->find($id);
 
         if (!$document) {
             return response()->json([
@@ -389,83 +432,60 @@ class DocumentController extends Controller
         }
 
         $request->validate([
-            'file' => 'required|file|mimes:pdf',
-            'signer_email' => 'required|email'
+            'file' => 'required|file|mimes:pdf|max:20480',
+            'signer_email' => 'nullable|email',
         ]);
-
-        $signerEmail = $request->input('signer_email');
-        $signer = $document->signers()->where('email', $signerEmail)->first();
-
-        if (!$signer) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Signer not assigned to this document',
-            ], 403);
-        }
-
+        // The caller cannot select another person's signing identity.
+        abort_if($request->filled('signer_email') && strcasecmp($request->signer_email, $request->user()->email) !== 0, 403);
+        abort_if($document->docusign_envelope_id || $document->docusign_dispatch_id, 409, 'Complete or reconcile this request through DocuSign.');
+        $path = null;
         try {
-            $file = $request->file('file');
-            
-            if (Storage::disk('public')->exists($document->path)) {
-                Storage::disk('public')->delete($document->path);
-            }
-
-            $path = $file->store('documents/uploads', 'public');
-            
-            DB::transaction(function () use ($document, $signer, $path, $file) {
+            DB::transaction(function () use ($document, $request, &$path) {
+                $document = Document::visibleTo($request->user())->lockForUpdate()->findOrFail($document->id);
+                abort_if($document->docusign_envelope_id || $document->docusign_dispatch_id, 409, 'Complete or reconcile this request through DocuSign.');
+                $signer = $document->signers()->where('user_id', $request->user()->id)->lockForUpdate()->first();
+                abort_unless($signer, 403, 'Your account is not an assigned signer.');
+                abort_unless(in_array($signer->status, ['pending', 'sent'], true), 409, 'This signature has already been processed.');
+                abort_if($document->signers()->where('signing_order', '<', $signer->signing_order)->where('status', '!=', 'signed')->exists(), 409, 'An earlier signer must complete their signature first.');
+                $file = $request->file('file');
+                $path = $file->store('signed', 'documents');
+                $signer->update(['status' => 'signed', 'signed_at' => now()]);
+                $allSigned = !$document->signers()->where('status', '!=', 'signed')->exists();
                 $document->update([
-                    'path' => $path,
-                    'url' => Storage::url($path),
-                    'size' => $file->getSize()
+                    'document_status' => $allSigned ? 'signed' : 'sent_for_signature',
+                    'signature_status' => $allSigned ? 'completed' : 'pending',
+                    'signed_at' => $allSigned ? now() : null,
                 ]);
-
-                $signer->update([
-                    'status' => 'signed',
-                    'signed_at' => now(),
-                ]);
-
-                $allSigned = $document->signers()->where('status', '!=', 'signed')->count() === 0;
-
-                if ($allSigned) {
-                    $document->update([
-                        'document_status' => 'signed',
-                        'signature_status' => 'completed',
-                        'signed_at' => now(),
-                    ]);
-                } else {
-                    $document->update([
-                        'signature_status' => 'partial',
-                    ]);
-                }
-
                 Signature::create([
+                    'organization_id' => $document->organization_id,
                     'document_id' => $document->id,
                     'document_signer_id' => $signer->id,
                     'provider' => 'in-app',
                     'provider_event' => 'signed',
                     'status' => 'completed',
+                    'signed_file_path' => $path,
+                    'provider_payload' => [
+                        'actor_id' => $request->user()->id,
+                        'sha256' => hash_file('sha256', $file->getRealPath()),
+                        'original_sha256' => hash('sha256', Storage::disk($document->disk())->get($document->path)),
+                    ],
                     'processed_at' => now(),
                 ]);
             });
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Document signed successfully',
-                'data' => $document->fresh(['signers', 'signatures']),
-            ], 200);
-
         } catch (Throwable $exception) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Failed to process in-app signature',
-                'error' => $exception->getMessage(),
-            ], 500);
+            if ($path) { Storage::disk('documents')->delete($path); }
+            throw $exception;
         }
+        return response()->json([
+            'status' => true,
+            'message' => 'Document signed successfully',
+            'data' => $document->fresh(['signers', 'signatures']),
+        ]);
     }
 
     public function signatureStatus(int $id): JsonResponse
     {
-        $document = Document::with(['signers', 'signatures'])->find($id);
+        $document = Document::visibleTo(auth()->user())->with(['signers', 'signatures'])->find($id);
 
         if (!$document) {
             return response()->json([
@@ -490,28 +510,59 @@ class DocumentController extends Controller
 
     public function preview(int $id)
     {
-        $document = Document::find($id);
+        $document = Document::visibleTo(auth()->user())->find($id);
 
         if (!$document) {
             return response()->json(['message' => 'Document not found'], 404);
         }
 
-        if (!Storage::disk('public')->exists($document->path)) {
-            return response()->json(['message' => 'File not found in storage'], 404);
+        if ($document->docusign_envelope_id && $document->signature_status === 'completed') {
+            return $this->signedArtifact($document, false);
         }
 
-        $path = Storage::disk('public')->path($document->path);
+        $signed = $document->signatures()->where('provider', 'in-app')->where('status', 'completed')
+            ->whereNotNull('signed_file_path')->latest('id')->first();
+        $disk = Storage::disk($signed ? 'documents' : $document->disk());
+        $filePath = $signed ? $signed->signed_file_path : $document->path;
+        abort_unless($disk->exists($filePath), 404, 'File not found in storage');
+        $mime = $signed ? 'application/pdf' : $document->mime_type;
+        $disposition = in_array($mime, ['application/pdf', 'image/png', 'image/jpeg'], true) ? 'inline' : 'attachment';
+        return $disk->response($filePath, $document->original_name, [
+            'Content-Type' => $mime ?: 'application/octet-stream',
+            'X-Document-Version' => $signed ? 'signed' : 'original',
+            'X-Completion-Certificate' => 'false',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "sandbox; default-src 'none'",
+        ], $disposition);
+    }
 
-        return response(Storage::disk('public')->get($document->path), 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $document->original_name . '"',
-            'Access-Control-Expose-Headers' => 'Content-Disposition'
-        ]);
+    public function completionCertificate(int $id)
+    {
+        $document = Document::visibleTo(auth()->user())->findOrFail($id);
+        abort_unless($document->docusign_envelope_id && $document->signature_status === 'completed', 409, 'A completed signing request is required.');
+        return $this->signedArtifact($document, true);
+    }
+
+    private function signedArtifact(Document $document, bool $certificate)
+    {
+        try {
+            $archive = app(\App\Services\SignedDocumentArchive::class)->retrieve($document, app(DocuSignService::class));
+            $path = $certificate ? $archive->provider_payload['certificate_path'] : $archive->signed_file_path;
+            return Storage::disk('documents')->response($path, $certificate ? 'completion-certificate.pdf' : 'signed-document.pdf', [
+                'Content-Type'=>'application/pdf', 'Cache-Control'=>'private, no-store',
+                'X-Content-Type-Options'=>'nosniff', 'Content-Security-Policy'=>"sandbox; default-src 'none'",
+                'X-Document-Version'=>$certificate ? 'certificate' : 'signed', 'X-Completion-Certificate'=>'true',
+            ], 'inline');
+        } catch (Throwable $exception) {
+            // A failed signed-file retrieval must never silently serve the original upload.
+            return response()->json(['status'=>false,'message'=>'Signed documents are temporarily unavailable. Please retry or contact your administrator.'],503)->header('Cache-Control','private, no-store');
+        }
     }
 
     public function destroy(int $id): JsonResponse
     {
-        $document = Document::find($id);
+        $document = Document::visibleTo(auth()->user())->find($id);
 
         if (!$document) {
             return response()->json([
@@ -521,15 +572,11 @@ class DocumentController extends Controller
         }
 
         try {
-            if (Storage::disk('public')->exists($document->path)) {
-                Storage::disk('public')->delete($document->path);
-            }
-
             $document->delete();
 
             return response()->json([
                 'status' => true,
-                'message' => 'Document deleted successfully',
+                'message' => 'Document archived successfully',
             ], 200);
         } catch (Throwable $exception) {
             return response()->json([
@@ -542,14 +589,14 @@ class DocumentController extends Controller
 
     public function assignCategories(Request $request, int $id): JsonResponse
     {
-        $document = Document::with('categories')->find($id);
+        $document = Document::visibleTo(auth()->user())->with('categories')->find($id);
         if (!$document) {
             return response()->json(['status' => false, 'message' => 'Document not found'], 404);
         }
 
         $request->validate([
             'category_ids' => 'required|array',
-            'category_ids.*' => 'exists:document_categories,id',
+            'category_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('document_categories', 'id')->where('organization_id', $document->organization_id)],
         ]);
 
         $document->categories()->sync($request->category_ids);
@@ -570,8 +617,8 @@ class DocumentController extends Controller
             'request_method' => $method,
             'response_status' => $responseStatus,
             'status' => $status,
-            'request_payload' => $requestPayload,
-            'response_payload' => is_array($responsePayload) ? $responsePayload : null,
+            'request_payload' => ['document_id' => $documentId],
+            'response_payload' => ['status' => $responseStatus],
             'error_message' => $errorMessage,
         ]);
     }

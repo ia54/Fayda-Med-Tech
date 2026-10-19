@@ -42,6 +42,8 @@ return [
         'client_id' => env('DOCUSIGN_CLIENT_ID'),
         'impersonated_user_id' => env('DOCUSIGN_IMPERSONATED_USER_ID'),
         'private_key_path' => env('DOCUSIGN_PRIVATE_KEY_PATH'),
+        'private_key' => env('DOCUSIGN_PRIVATE_KEY'),
+        'private_key_b64' => env('DOCUSIGN_PRIVATE_KEY_B64'),
         'webhook_secret' => env('DOCUSIGN_WEBHOOK_SECRET'),
     ],
 

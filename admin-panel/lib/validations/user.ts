@@ -7,6 +7,8 @@ export const UserRoleEnum = z.enum([
   'attorney',
   'medical_biller',
   'provider_staff',
+  'pharmacist',
+  'pharmacy_technician',
   'client',
 ]);
 
@@ -93,6 +95,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   attorney: 'Attorney',
   medical_biller: 'Medical Biller',
   provider_staff: 'Provider Staff',
+  pharmacist: 'Pharmacist',
+  pharmacy_technician: 'Pharmacy Technician',
   client: 'Client (Patient)',
 };
 

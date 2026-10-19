@@ -1,5 +1,6 @@
 "use client";
 
+import { AuthenticatedDocumentPreview } from "@/components/AuthenticatedDocumentPreview";
 import React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -179,16 +180,7 @@ export function DocumentListTable({
                         >
                           <CheckCircle2 className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8 text-blue-500 border-blue-500/30 hover:bg-blue-500/10"
-                          asChild
-                        >
-                          <a href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/storage/${doc.path}`} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
+                        <AuthenticatedDocumentPreview id={doc.id} title={doc.title} />
                         <Button
                           variant="outline"
                           size="icon"
@@ -204,6 +196,7 @@ export function DocumentListTable({
                           variant="outline"
                           size="icon"
                           className="h-8 w-8 text-rose-500 border-rose-500/30 hover:bg-rose-500/10"
+                          aria-label={`Archive ${doc.title}`}
                           onClick={() => handleDeleteDocument(doc.id)}
                           disabled={isDeletingDocument}
                         >

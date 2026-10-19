@@ -107,13 +107,8 @@ class BillingDashboardController extends Controller
                     ];
                 });
 
-            // Payer Performance (Mocked data since we don't have enough distribution yet)
-            $payerPerformance = [
-                ['payer' => 'Medicare', 'rate' => 94.2, 'color' => 'bg-chart-2'],
-                ['payer' => 'Blue Cross', 'rate' => 89.7, 'color' => 'bg-primary'],
-                ['payer' => 'Aetna', 'rate' => 87.3, 'color' => 'bg-accent'],
-                ['payer' => 'Cigna', 'rate' => 82.1, 'color' => 'bg-chart-3'],
-            ];
+            // No payer acceptance dataset is connected yet.
+            $payerPerformance = [];
 
             return response()->json([
                 'status' => true,

@@ -6,7 +6,7 @@ export interface User {
   first_name: string;
   last_name: string;
   email: string;
-  role: 'admin' | 'firm_admin' | 'attorney' | 'medical_biller' | 'provider_staff' | 'client';
+  role: 'admin' | 'firm_admin' | 'attorney' | 'medical_biller' | 'provider_staff' | 'pharmacist' | 'pharmacy_technician' | 'client';
   organization: string | null;
   organization_id: number | null;
   organization_relation?: {
@@ -28,7 +28,7 @@ export interface UserFormData {
   email: string;
   password?: string;
   organization_id: number;
-  role: 'admin' | 'firm_admin' | 'attorney' | 'medical_biller' | 'provider_staff' | 'client';
+  role: 'admin' | 'firm_admin' | 'attorney' | 'medical_biller' | 'provider_staff' | 'pharmacist' | 'pharmacy_technician' | 'client';
   status: 'active' | 'inactive';
   send_email?: boolean;
 }
@@ -70,7 +70,7 @@ export interface DeleteUserResponse {
 export interface GetUsersParams {
   page?: number;
   per_page?: number;
-  role?: 'admin' | 'firm_admin' | 'attorney' | 'medical_biller' | 'provider_staff' | 'client' | 'all';
+  role?: 'admin' | 'firm_admin' | 'attorney' | 'medical_biller' | 'provider_staff' | 'pharmacist' | 'pharmacy_technician' | 'client' | 'all';
   status?: 'active' | 'inactive';
   search?: string;
 }

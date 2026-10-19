@@ -10,7 +10,16 @@ export interface RegisterRequest {
   organization: string;
 }
 
+export interface MfaRequiredResponse {
+  status: true;
+  mfa_required: true;
+  enrollment_required: boolean;
+  challenge_token: string;
+  expires_in: number;
+}
+
 export interface LoginRequest {
+  enroll_mfa?: boolean;
   email: string;
   password: string;
 }
@@ -20,6 +29,7 @@ export interface RefreshTokenRequest {
 }
 
 export interface AuthResponse {
+  recovery_codes?: string[] | null;
   status: boolean;
   message: string;
   user: {
@@ -62,7 +72,7 @@ export const authApiSlice = apiSlice.injectEndpoints({
         body: credentials,
       }),
     }),
-    login: builder.mutation<AuthResponse, LoginRequest>({
+    login: builder.mutation<AuthResponse | MfaRequiredResponse, LoginRequest>({
       query: (credentials) => ({
         url: '/login',
         method: 'POST',

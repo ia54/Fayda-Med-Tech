@@ -66,7 +66,7 @@ export function TopNav() {
         </Button>
 
         {/* Logo - only visible on mobile */}
-        <div className="mr-4 md:hidden">
+        <div className="mr-4 shrink-0 md:hidden">
           <Image
             src="/images/fayda-logo.png"
             alt="FaydaTech"

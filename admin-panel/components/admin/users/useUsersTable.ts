@@ -79,7 +79,7 @@ export function useUsersTable(filters = {} as ReturnType<typeof useUserFilters>)
   const [deleteUserMutation, { isLoading: isDeleting }] = useDeleteUserMutation();
 
   // Extract data
-  const users = usersResponse?.data?.users || [];
+  const users = useMemo(() => usersResponse?.data?.users ?? [], [usersResponse?.data?.users]);
   const pagination = usersResponse?.data?.pagination || {
     current_page: 1,
     per_page: 10,
@@ -181,7 +181,7 @@ export function useUsersTable(filters = {} as ReturnType<typeof useUserFilters>)
     // Mutations
     createUser: createUserMutation,
     updateUser: (id: number, data: Partial<UserFormData>) => updateUserMutation({ id, data }),
-    deleteUser: deleteUserMutation,
+    deleteUser: async (id: number) => { await deleteUserMutation(id).unwrap(); },
     isCreating,
     isUpdating,
     isDeleting,

@@ -16,9 +16,19 @@ class AppealController extends Controller
      */
     public function index(Request $request)
     {
-        $appeals = ClaimAppeal::with(['invoice.case'])
-            ->where('organization_id', $request->user()->organization_id)
-            ->latest()
+        $query = ClaimAppeal::with(['invoice.case'])
+            ->where('organization_id', $request->user()->organization_id);
+        if ($request->filled('status')) {
+            $query->where('status', $request->string('status')->toString());
+        }
+        if ($request->filled('search')) {
+            $search = $request->string('search')->toString();
+            $query->where(function ($query) use ($search) {
+                $query->where('appeal_number', 'like', "%{$search}%")
+                    ->orWhereHas('invoice', fn ($invoice) => $invoice->where('invoice_number', 'like', "%{$search}%"));
+            });
+        }
+        $appeals = $query->latest()
             ->paginate($request->get('per_page', 15));
 
         return response()->json([
@@ -29,7 +39,7 @@ class AppealController extends Controller
     }
 
     /**
-     * Generate and save an AI-assisted appeal letter.
+     * Prepare and save a template appeal draft for human review.
      */
     public function generate(Request $request)
     {
@@ -56,8 +66,8 @@ class AppealController extends Controller
             ], 400);
         }
 
-        // Mock AI Generation Logic
-        $letterContent = $this->mockAppealLetter($invoice, $request->reason_category, $request->additional_details);
+        // Local template only; no model or clinical verification is performed.
+        $letterContent = $this->templateAppealLetter($invoice, $request->reason_category, $request->additional_details);
 
         // Save the appeal to the database
         $appeal = ClaimAppeal::create([
@@ -68,6 +78,8 @@ class AppealController extends Controller
             'content' => $letterContent,
             'status' => 'draft',
             'metadata' => [
+                'generation_method' => 'template',
+                'requires_human_review' => true,
                 'additional_details' => $request->additional_details
             ]
         ]);
@@ -79,26 +91,27 @@ class AppealController extends Controller
         ], 210);
     }
 
-    private function mockAppealLetter($invoice, $category, $details)
+    private function templateAppealLetter($invoice, $category, $details)
     {
-        $firmName = $invoice->organization->name ?? 'FaydaTech Legal';
+        $firmName = $invoice->organization->org_name ?? '[Organization name required]';
         $caseTitle = $invoice->case->title ?? 'N/A';
         
         return "
-RE: Formal Appeal of Claim Denial
+DRAFT TEMPLATE — HUMAN REVIEW REQUIRED — NOT SUBMITTED
+RE: Review of Claim Denial
 Invoice Number: {$invoice->invoice_number}
 Patient/Case: {$caseTitle}
 Denial Category: {$category}
 
 To Whom It May Concern,
 
-This letter serves as a formal appeal regarding the denial of the above-referenced claim. Upon review of the denial notification, we believe the decision was made in error based on the following grounds related to {$category}.
+This draft concerns the recorded denial category {$category}. The reviewer must confirm the payer, denial notice, submission deadline and grounds for appeal before use.
 
-Our records indicate that all services provided were medically necessary and documented in accordance with standard coding practices. Specifically:
-- {$category} justification has been verified against clinical guidelines.
-- Additional context: " . ($details ?? "No additional details provided.") . "
+Medical necessity, coding accuracy and clinical-guideline support have not been verified by this template. Add supporting records and an authorized reviewer’s determination before use.
 
-We request a thorough re-evaluation of this claim. If further documentation is required, please contact our billing department immediately.
+User-provided context (requires verification): " . ($details ?? "No additional details provided.") . "
+
+[Reviewer: add the requested action, supporting evidence, recipient and contact details.]
 
 Sincerely,
 Billing Department

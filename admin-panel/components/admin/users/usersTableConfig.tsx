@@ -1,4 +1,4 @@
-import { ColumnDef } from "@tanstack/react-table";
+import { ColumnDef } from "@/components/global/table";
 import { MoreHorizontal, Eye, Pencil, Trash2, Mail, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {

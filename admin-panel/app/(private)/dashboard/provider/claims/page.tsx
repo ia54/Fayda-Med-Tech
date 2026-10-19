@@ -7,34 +7,25 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { FileText, Plus, Search, MoreHorizontal, Edit, Eye, Send, Download, Filter, Loader2, Clock, CheckCircle, DollarSign } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useGetInvoicesQuery, useGetProviderStatsQuery } from "@/store/api/billingApiSlice"
+import { FileText, Plus, Search, Eye, Filter, Loader2, Clock, CheckCircle, DollarSign } from "lucide-react"
+import { Invoice, useGetInvoicesQuery, useGetProviderStatsQuery, useUpdateProviderDraftMutation } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ClaimsPage() {
   const router = useRouter()
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<Invoice | null>(null)
 
   // Fetch real data
-  const { data: claimsData, isLoading: isClaimsLoading } = useGetInvoicesQuery({
-    search: searchTerm,
+  const { currentData: claimsData, isFetching: isClaimsLoading, isError: claimsFailed, refetch: retryClaims } = useGetInvoicesQuery({
+    search: searchTerm, page, per_page: 15,
     status: statusFilter === "all" ? undefined : statusFilter
   })
-  const { data: statsData, isLoading: isStatsLoading } = useGetProviderStatsQuery()
+  const { data: statsData, isLoading: isStatsLoading, isError: statsFailed, refetch: retryStats } = useGetProviderStatsQuery()
 
   const claims = claimsData?.data?.data || []
   const stats = statsData?.data?.stats || {
@@ -62,19 +53,20 @@ export default function ClaimsPage() {
               <FileText className="h-8 w-8 text-primary" />
               Claims Management
             </h1>
-            <p className="text-muted-foreground">Submit medical invoices and track insurance reimbursement status</p>
+            <p className="text-muted-foreground">Track internal medical billing records and recorded payment status</p>
           </div>
           <Button 
             className="bg-primary hover:bg-primary/90 shadow-md"
             onClick={() => router.push("/dashboard/provider/claims/create")}
           >
             <Plus className="h-4 w-4 mr-2" />
-            New Claim Submission
+            New Billing Record
           </Button>
         </div>
 
+        {statsFailed && <p role="alert">Could not load billing totals. <button className="underline" onClick={() => retryStats()}>Try again</button></p>}
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className={statsFailed ? "hidden" : "grid gap-4 md:grid-cols-2 lg:grid-cols-4"}>
           <Card className="hover:shadow-lg transition-all duration-300 bg-card/50 backdrop-blur-sm border-border/50">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Inventory</CardTitle>
@@ -82,7 +74,7 @@ export default function ClaimsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{isStatsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : stats.total_claims}</div>
-              <p className="text-xs text-muted-foreground mt-1">All processed claims</p>
+              <p className="text-xs text-muted-foreground mt-1">All billing records</p>
             </CardContent>
           </Card>
           <Card className="hover:shadow-lg transition-all duration-300 bg-card/50 backdrop-blur-sm border-border/50">
@@ -123,7 +115,7 @@ export default function ClaimsPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle>Clinical Claims Inventory</CardTitle>
-                <CardDescription>Comprehensive list of all submitted and pending medical claims</CardDescription>
+                <CardDescription>Internal billing records; saving does not submit a claim to an insurer</CardDescription>
               </div>
               <div className="flex gap-2">
                 <div className="relative">
@@ -131,11 +123,11 @@ export default function ClaimsPage() {
                   <Input
                     placeholder="Search by claim ID or patient..."
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
                     className="pl-10 w-full md:w-80 bg-white/50"
                   />
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <Select value={statusFilter} onValueChange={value => { setStatusFilter(value); setPage(1) }}>
                   <SelectTrigger className="w-32 bg-white/50">
                     <Filter className="h-4 w-4 mr-2" />
                     <SelectValue placeholder="Filter" />
@@ -143,7 +135,7 @@ export default function ClaimsPage() {
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="sent">Submitted</SelectItem>
+                    <SelectItem value="sent">Billing Review</SelectItem>
                     <SelectItem value="paid">Paid</SelectItem>
                     <SelectItem value="denied">Denied</SelectItem>
                   </SelectContent>
@@ -152,7 +144,7 @@ export default function ClaimsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {isClaimsLoading ? (
+            {claimsFailed ? <p role="alert">Could not load billing records. <button className="underline" onClick={() => retryClaims()}>Try again</button></p> : isClaimsLoading ? (
               <div className="space-y-4">
                 {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
               </div>
@@ -174,36 +166,16 @@ export default function ClaimsPage() {
                       <TableRow key={claim.id} className="hover:bg-muted/30 transition-colors">
                         <TableCell className="font-semibold text-primary">#{claim.invoice_number}</TableCell>
                         <TableCell>
-                          <div className="font-medium text-emerald-950 dark:text-white">{claim.case?.title || 'General Service'}</div>
+                          <div className="font-medium text-emerald-950 dark:text-white">{claim.metadata?.patient_name || claim.case?.title || 'Not recorded'}</div>
                           <div className="text-xs text-muted-foreground">#{claim.case?.case_number || 'N/A'}</div>
                         </TableCell>
-                        <TableCell className="font-bold text-slate-900 dark:text-slate-100">${Number(claim.amount).toLocaleString()}</TableCell>
+                        <TableCell className="font-bold text-slate-900 dark:text-slate-100">${Number(claim.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={getStatusColor(claim.status)}>{claim.status.toUpperCase()}</Badge>
+                          <Badge variant="outline" className={getStatusColor(claim.status)}>{claim.status === 'sent' && claim.metadata?.billing_review?.state === 'reviewed' ? 'REVIEWED' : claim.status === 'sent' ? 'BILLING REVIEW' : claim.status.toUpperCase()}</Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{new Date(claim.created_at).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                              <DropdownMenuItem className="cursor-pointer">
-                                <Eye className="mr-2 h-4 w-4" /> View Detail
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="cursor-pointer">
-                                <Edit className="mr-2 h-4 w-4" /> Edit Record
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="cursor-pointer text-emerald-600">
-                                <Send className="mr-2 h-4 w-4" /> Push to Billing
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="cursor-pointer">
-                                <Download className="mr-2 h-4 w-4" /> Export PDF
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <Button variant="outline" size="sm" onClick={() => setSelected(claim)} aria-label={`View ${claim.invoice_number}`}><Eye className="mr-2 h-4 w-4" />View details</Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -220,6 +192,40 @@ export default function ClaimsPage() {
             )}
           </CardContent>
         </Card>
+        <div className="flex items-center justify-between gap-3">
+          <Button variant="outline" disabled={page <= 1 || isClaimsLoading} onClick={() => setPage(p => p - 1)}>Previous</Button>
+          <span role="status">Page {page} of {claimsData?.data.last_page || 1} · {claimsData?.data.total ?? 0} records</span>
+          <Button variant="outline" disabled={isClaimsLoading || claimsFailed || !claimsData || page >= claimsData.data.last_page} onClick={() => setPage(p => p + 1)}>Next</Button>
+        </div>
+        <Dialog open={!!selected} onOpenChange={open => { if (!open) setSelected(null) }}>
+          <DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{selected?.invoice_number}</DialogTitle><DialogDescription>Internal billing record. Drafts can be edited before sending for billing review.</DialogDescription></DialogHeader>
+            {selected?.status === "draft" ? <DraftEditor key={selected.id} invoice={selected} onSaved={() => setSelected(null)} /> : selected && <dl className="space-y-3 break-words">
+              {Object.entries({Patient: selected.metadata?.patient_name, Case: selected.case?.title, Amount: `$${Number(selected.amount).toFixed(2)}`, Status: selected.status === 'sent' && selected.metadata?.billing_review?.state === 'reviewed' ? 'Reviewed' : selected.status === 'sent' ? 'Billing review' : selected.status, 'Service date': selected.metadata?.service_date, Payer: selected.metadata?.payer, 'CPT codes': selected.metadata?.cpt_codes, 'Diagnosis codes': selected.metadata?.diagnosis_codes, Notes: selected.metadata?.notes || selected.notes}).map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="whitespace-pre-wrap">{value || 'Not recorded'}</dd></div>)}
+            </dl>}
+          </DialogContent>
+        </Dialog>
       </div>
   )
+}
+
+function DraftEditor({ invoice, onSaved }: { invoice: Invoice; onSaved: () => void }) {
+  const [amount, setAmount] = useState(String(invoice.amount))
+  const [metadata, setMetadata] = useState({ patient_name: invoice.metadata?.patient_name || '', service_date: invoice.metadata?.service_date || '', payer: invoice.metadata?.payer || '', cpt_codes: invoice.metadata?.cpt_codes || '', diagnosis_codes: invoice.metadata?.diagnosis_codes || '', notes: invoice.metadata?.notes || invoice.notes || '' })
+  const [error, setError] = useState('')
+  const [save, {isLoading}] = useUpdateProviderDraftMutation()
+  async function submit(status: 'draft' | 'sent') {
+    setError('')
+    if (!/^\d+(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) { setError('Enter a positive amount with at most two decimal places.'); return }
+    try { await save({id: invoice.id, amount: Number(amount), status, metadata}).unwrap(); onSaved() }
+    catch (err: any) { setError(Object.values(err.data?.errors || {}).flat().join(' ') || err.data?.message || 'Could not save. Please try again.') }
+  }
+  return <div className="space-y-3">
+    <p className="text-sm">Case: {invoice.case?.title || invoice.case_id}</p>
+    {invoice.metadata?.billing_review && <p role="status">Billing feedback: {invoice.metadata.billing_review.note}</p>}
+    <label className="block">Amount ($)<Input aria-label="Draft amount" value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" disabled={isLoading} /></label>
+    {(Object.keys(metadata) as (keyof typeof metadata)[]).map(key => <label key={key} className="block capitalize">{key.replaceAll('_',' ')}<Input aria-label={`Draft ${key.replaceAll('_',' ')}`} type={key === 'service_date' ? 'date' : 'text'} value={metadata[key]} onChange={e => setMetadata({...metadata, [key]: e.target.value})} disabled={isLoading} /></label>)}
+    {error && <p role="alert" className="text-destructive">{error}</p>}
+    <p className="text-sm text-muted-foreground">Sending for review locks provider editing. Authorized billing staff can continue the record. No claim is sent to an insurer.</p>
+    <div className="flex flex-wrap gap-2"><Button disabled={isLoading} onClick={() => submit('draft')}>Save draft</Button><Button variant="outline" disabled={isLoading} onClick={() => submit('sent')}>Send for billing review</Button></div>
+  </div>
 }

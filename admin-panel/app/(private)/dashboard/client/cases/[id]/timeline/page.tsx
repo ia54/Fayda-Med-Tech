@@ -1,5 +1,7 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
 import { useParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +11,7 @@ import { useGetClientCaseByIdQuery } from "@/store/api/casesApiSlice"
 import { format } from "date-fns"
 
 const getEventIcon = (type: string) => {
-  switch (type.toLowerCase()) {
+  switch ((type || "activity").toLowerCase()) {
     case 'milestone': return { icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" };
     case 'document': return { icon: FileText, color: "text-blue-500", bg: "bg-blue-50" };
     case 'legal': return { icon: Scale, color: "text-purple-500", bg: "bg-purple-50" };
@@ -22,7 +24,7 @@ export default function CaseTimelinePage() {
   const { id } = useParams()
   const caseId = parseInt(id as string)
   
-  const { data: caseData, isLoading, error } = useGetClientCaseByIdQuery(caseId)
+  const { data: caseData, isLoading, error, refetch } = useGetClientCaseByIdQuery(caseId)
 
   if (isLoading) {
     return (
@@ -38,7 +40,7 @@ export default function CaseTimelinePage() {
       <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-6">
         <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
         <h2 className="text-xl font-bold text-slate-900">Oops! Failed to load journey</h2>
-        <p className="text-slate-500 mt-2">We couldn&apos;t retrieve the timeline for this case. Please try again later.</p>
+        <p className="text-slate-500 mt-2">We couldn&apos;t retrieve the timeline for this case. Please try again.</p><Button onClick={() => refetch()}>Try again</Button>
       </div>
     )
   }
@@ -47,6 +49,7 @@ export default function CaseTimelinePage() {
 
   return (
     <div className="max-w-4xl mx-auto py-10 px-6 animate-in slide-in-from-bottom duration-700">
+      <Button variant="outline" asChild><Link href={`/dashboard/client/cases/${caseId}`}>Back to case</Link></Button>
       <div className="mb-10 text-center">
         <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Case Journey</h1>
         <p className="text-slate-500 dark:text-slate-400 mt-2 text-lg">Timeline and milestones for {caseData.case_number}</p>
@@ -77,7 +80,7 @@ export default function CaseTimelinePage() {
                     <div className="flex items-center justify-between mb-1">
                       <time className="text-xs font-bold text-slate-400 uppercase tracking-widest">{eventDate}</time>
                       <Badge className="text-[10px] font-bold uppercase bg-emerald-500 hover:bg-emerald-600">
-                        Completed
+                        Recorded
                       </Badge>
                     </div>
                     <CardTitle className="text-lg font-bold">{event.title}</CardTitle>
@@ -93,9 +96,9 @@ export default function CaseTimelinePage() {
       ) : (
         <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
           <Clock className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-slate-900">Timeline Starting Soon</h3>
+          <h3 className="text-lg font-semibold text-slate-900">No activity recorded</h3>
           <p className="text-slate-500 max-w-xs mx-auto mt-2">
-            Once your case progress begins, all milestones and updates will appear here.
+            Updates recorded for this case will appear here.
           </p>
         </div>
       )}

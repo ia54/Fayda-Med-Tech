@@ -34,7 +34,7 @@ class SignatureController extends Controller
      */
     public function historyByDocument(int $documentId): JsonResponse
     {
-        $document = Document::with(['signatures', 'signers'])->find($documentId);
+        $document = Document::visibleTo(auth()->user())->with(['signatures', 'signers'])->find($documentId);
 
         if (!$document) {
             return response()->json([
@@ -57,136 +57,66 @@ class SignatureController extends Controller
 
     public function docusignWebhook(Request $request, DocuSignService $docuSignService): JsonResponse
     {
-        $webhookSecret = (string) $docuSignService->getWebhookSecret();
-        $incomingSecret = (string) $request->header('X-Docusign-Secret');
-
-        if ($webhookSecret && $incomingSecret !== $webhookSecret) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Unauthorized webhook request',
-            ], 401);
-        }
-
         $payload = $request->all();
-        $envelopeId = data_get($payload, 'data.envelopeId')
-            ?: data_get($payload, 'envelopeId')
-            ?: data_get($payload, 'envelopeSummary.envelopeId');
-
-        if (!$envelopeId) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Envelope ID not found in webhook payload',
-            ], 422);
+        $envelopeId = data_get($payload, 'data.envelopeId') ?: data_get($payload, 'envelopeId') ?: data_get($payload, 'envelopeSummary.envelopeId');
+        $document = is_string($envelopeId) && strlen($envelopeId) <= 128
+            ? Document::withoutGlobalScopes()->whereNull('deleted_at')->where('docusign_envelope_id', $envelopeId)->first() : null;
+        $secret = (string) $docuSignService->getWebhookSecret($document?->organization_id);
+        $signature = (string) $request->header('X-Docusign-Signature-1');
+        if (!$document || $secret === '' || $signature === '' || !hash_equals(base64_encode(hash_hmac('sha256', $request->getContent(), $secret, true)), $signature)) {
+            return response()->json(['status'=>false, 'message'=>'Unauthorized webhook request'], 401);
         }
 
-        $document = Document::where('docusign_envelope_id', $envelopeId)->first();
-
-        if (!$document) {
-            ApiLog::create([
-                'provider' => 'docusign',
-                'endpoint' => 'webhook',
-                'request_method' => 'POST',
-                'response_status' => 404,
-                'status' => 'failed',
-                'request_payload' => $payload,
-                'error_message' => 'Document not found for envelope: ' . $envelopeId,
-            ]);
-
-            return response()->json([
-                'status' => false,
-                'message' => 'No document found for given envelope',
-            ], 404);
+        if (is_string($payload['event'] ?? null) && str_starts_with($payload['event'], 'recipient-')) {
+            return response()->json(['status'=>true, 'message'=>'Recipient event ignored; envelope summary required'], 200);
         }
 
+        // JSON Connect may place the summary inside data.envelopeSummary.
+        $status = data_get($payload, 'data.envelopeSummary.status') ?: data_get($payload, 'data.status') ?: data_get($payload, 'status') ?: data_get($payload, 'envelopeSummary.status');
+        if (!$status && is_string($payload['event'] ?? null) && str_starts_with($payload['event'], 'envelope-')) $status = substr($payload['event'], 9);
+        if (!is_string($status) || !in_array(strtolower($status), ['created','sent','delivered','completed','declined','voided'], true)) {
+            // Recipient-only and unknown events cannot establish envelope completion.
+            return response()->json(['status'=>true, 'message'=>'Event ignored'], 200);
+        }
+        $status = strtolower($status);
+        $eventKey = 'webhook:' . hash('sha256', $request->getContent());
         try {
-            $eventStatus = strtolower((string) (data_get($payload, 'data.status') ?: data_get($payload, 'status') ?: 'pending'));
-            $documentSignatureStatus = $this->mapEnvelopeStatus($eventStatus);
-
-            DB::transaction(function () use ($document, $payload, $eventStatus, $documentSignatureStatus, $envelopeId) {
-                $documentUpdate = [
-                    'signature_status' => $documentSignatureStatus,
-                ];
-
-                if ($documentSignatureStatus === 'completed') {
-                    $documentUpdate['document_status'] = 'signed';
-                    $documentUpdate['signed_at'] = now();
+            DB::transaction(function () use ($document, $payload, $status, $eventKey, $envelopeId) {
+                $locked = Document::withoutGlobalScopes()->whereKey($document->id)->lockForUpdate()->firstOrFail();
+                $history = Signature::withoutGlobalScopes()->where('document_id', $locked->id)->where('provider', 'docusign');
+                if ((clone $history)->where('provider_event', $eventKey)->exists()) return;
+                $next = $this->mapEnvelopeStatus($status);
+                $terminal = in_array($locked->signature_status, ['completed','declined','voided'], true);
+                if (!$terminal) {
+                    $update = ['signature_status'=>$next];
+                    if ($next === 'completed') $update += ['document_status'=>'signed', 'signed_at'=>$locked->signed_at ?: now()];
+                    $locked->update($update);
                 }
-
-                $document->update($documentUpdate);
-
-                $recipients = data_get($payload, 'data.recipients.signers', []);
-                if (!is_array($recipients)) {
-                    $recipients = [];
-                }
-
-                foreach ($recipients as $recipient) {
-                    $email = data_get($recipient, 'email');
-                    $recipientStatus = strtolower((string) data_get($recipient, 'status', 'pending'));
-                    $signerStatus = $this->mapSignerStatus($recipientStatus);
-
-                    $documentSigner = DocumentSigner::where('document_id', $document->id)
-                        ->where('email', $email)
-                        ->first();
-
-                    if ($documentSigner) {
-                        $documentSigner->update([
-                            'status' => $signerStatus,
-                            'docusign_recipient_id' => data_get($recipient, 'recipientId'),
-                            'signed_at' => $signerStatus === 'signed' ? now() : $documentSigner->signed_at,
-                        ]);
+                // Conflicting or older events cannot undo a terminal envelope or signer.
+                if (!$terminal || $locked->signature_status === $next) {
+                    $recipients = data_get($payload, 'data.envelopeSummary.recipients.signers') ?? data_get($payload, 'data.recipients.signers', []);
+                    foreach (is_array($recipients) ? $recipients : [] as $recipient) {
+                        if (!is_array($recipient) || !is_string($recipient['email'] ?? null)) continue;
+                        $recipientStatus = $recipient['status'] ?? null;
+                        if (!in_array($recipientStatus, ['sent','delivered','completed','declined'], true)) continue;
+                        $signer = DocumentSigner::withoutGlobalScopes()->where('document_id', $locked->id)->where('email', $recipient['email'])->first();
+                        if (!$signer || in_array($signer->status, ['signed','declined','failed'], true)) continue;
+                        $nextSigner = $recipientStatus === 'completed' ? 'signed' : ($recipientStatus === 'declined' ? 'declined' : 'sent');
+                        $signer->update(['status'=>$nextSigner, 'signed_at'=>$nextSigner === 'signed' ? ($signer->signed_at ?: now()) : $signer->signed_at]);
                     }
-
-                    Signature::create([
-                        'document_id' => $document->id,
-                        'document_signer_id' => optional($documentSigner)->id,
-                        'provider' => 'docusign',
-                        'provider_envelope_id' => $envelopeId,
-                        'provider_event' => $eventStatus,
-                        'status' => $this->mapSignatureEventStatus($recipientStatus),
-                        'signed_file_path' => data_get($payload, 'data.documents.0.uri'),
-                        'signed_file_url' => data_get($payload, 'data.documents.0.url'),
-                        'provider_payload' => $recipient,
-                        'processed_at' => now(),
-                    ]);
                 }
+                Signature::create([
+                    'organization_id'=>$locked->organization_id, 'document_id'=>$locked->id,
+                    'provider'=>'docusign', 'provider_envelope_id'=>$envelopeId,
+                    'provider_event'=>$eventKey, 'status'=>$this->mapSignatureEventStatus($locked->signature_status),
+                    'provider_payload'=>['envelope_status'=>$status, 'ignored_transition'=>$terminal && $locked->signature_status !== $next],
+                    'processed_at'=>now(),
+                ]);
             });
-
-            ApiLog::create([
-                'document_id' => $document->id,
-                'provider' => 'docusign',
-                'endpoint' => 'webhook',
-                'request_method' => 'POST',
-                'response_status' => 200,
-                'status' => 'success',
-                'request_payload' => $payload,
-                'response_payload' => ['processed' => true, 'envelope_id' => $envelopeId],
-            ]);
-
-            return response()->json([
-                'status' => true,
-                'message' => 'Webhook processed successfully',
-                'data' => [
-                    'document_id' => $document->id,
-                    'signature_status' => $document->fresh()->signature_status,
-                ],
-            ], 200);
+            return response()->json(['status'=>true, 'message'=>'Webhook processed successfully', 'data'=>['document_id'=>$document->id, 'signature_status'=>$document->fresh()->signature_status]]);
         } catch (Throwable $exception) {
-            ApiLog::create([
-                'document_id' => $document->id,
-                'provider' => 'docusign',
-                'endpoint' => 'webhook',
-                'request_method' => 'POST',
-                'response_status' => 500,
-                'status' => 'failed',
-                'request_payload' => $payload,
-                'error_message' => $exception->getMessage(),
-            ]);
-
-            return response()->json([
-                'status' => false,
-                'message' => 'Failed to process webhook',
-                'error' => $exception->getMessage(),
-            ], 500);
+            // Avoid retaining raw provider payloads, recipient details or database errors.
+            return response()->json(['status'=>false, 'message'=>'Failed to process signing update'], 500);
         }
     }
 

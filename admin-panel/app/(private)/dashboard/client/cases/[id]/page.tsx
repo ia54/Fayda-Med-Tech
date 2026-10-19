@@ -25,7 +25,7 @@ const statusColors: Record<string, string> = {
 export default function ClientCaseDetailPage() {
   const params = useParams()
   const caseId = Number(params.id)
-  const { data: caseData, isLoading, error } = useGetClientCaseByIdQuery(caseId)
+  const { data: caseData, isLoading, error, refetch } = useGetClientCaseByIdQuery(caseId)
 
   if (isLoading) {
     return (
@@ -44,8 +44,9 @@ export default function ClientCaseDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <Scale className="h-12 w-12 text-slate-300 mb-4" />
-        <h3 className="text-lg font-semibold text-slate-600">Case not found</h3>
-        <p className="text-sm text-slate-400 mt-1">This case may not exist or you may not have access.</p>
+        <h3 className="text-lg font-semibold text-slate-600">Case unavailable</h3>
+        <p className="text-sm text-slate-400 mt-1">The case could not be loaded, or you may not have access.</p>
+        <Button className="mt-4" onClick={() => refetch()}>Try again</Button>
         <Button variant="outline" className="mt-4" asChild>
           <Link href="/dashboard/client/cases"><ArrowLeft className="h-4 w-4 mr-2" /> Back to Cases</Link>
         </Button>
@@ -81,7 +82,7 @@ export default function ClientCaseDetailPage() {
               <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950"><Calendar className="h-4 w-4 text-blue-600" /></div>
               <div>
                 <p className="text-xs text-muted-foreground font-medium">Accident Date</p>
-                <p className="text-sm font-bold">{c.accident_date ? new Date(c.accident_date).toLocaleDateString() : "N/A"}</p>
+                <p className="text-sm font-bold">{c.accident_date ? new Date(c.accident_date).toLocaleDateString(undefined, { timeZone: "UTC" }) : "N/A"}</p>
               </div>
             </div>
           </CardContent>
@@ -92,7 +93,7 @@ export default function ClientCaseDetailPage() {
               <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950"><Clock className="h-4 w-4 text-amber-600" /></div>
               <div>
                 <p className="text-xs text-muted-foreground font-medium">Statute of Limitations</p>
-                <p className="text-sm font-bold">{c.sol_date ? new Date(c.sol_date).toLocaleDateString() : "N/A"}</p>
+                <p className="text-sm font-bold">{c.sol_date ? new Date(c.sol_date).toLocaleDateString(undefined, { timeZone: "UTC" }) : "N/A"}</p>
               </div>
             </div>
           </CardContent>
@@ -167,18 +168,18 @@ export default function ClientCaseDetailPage() {
             <CardTitle className="text-lg flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" /> Related
             </CardTitle>
-            <CardDescription>View documents and invoices for this case</CardDescription>
+            <CardDescription>View your document and invoice libraries</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Button variant="outline" className="w-full justify-between" asChild>
               <Link href="/dashboard/client/documents">
-                <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> View Case Documents</span>
+                <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> View My Documents</span>
                 <ChevronRight className="h-4 w-4" />
               </Link>
             </Button>
             <Button variant="outline" className="w-full justify-between" asChild>
               <Link href="/dashboard/client/invoices">
-                <span className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> View Case Invoices</span>
+                <span className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> View My Invoices</span>
                 <ChevronRight className="h-4 w-4" />
               </Link>
             </Button>
@@ -202,10 +203,10 @@ export default function ClientCaseDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="relative pl-6 space-y-6">
-              {c.timeline.map((event: any, i: number) => (
+              {c.timeline.map((event: any, i: number, timeline) => (
                 <div key={event.id || i} className="relative">
                   <div className="absolute -left-6 top-1 h-3 w-3 rounded-full bg-primary border-2 border-white dark:border-slate-900" />
-                  {i < c.timeline.length - 1 && (
+                  {i < timeline.length - 1 && (
                     <div className="absolute -left-[18px] top-4 h-full w-0.5 bg-slate-200 dark:bg-slate-700" />
                   )}
                   <div>

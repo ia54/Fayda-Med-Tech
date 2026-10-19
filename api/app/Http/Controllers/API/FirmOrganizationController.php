@@ -68,11 +68,11 @@ class FirmOrganizationController extends Controller
                 'no_of_employees' => 'nullable|integer|min:1',
                 'monthly_revenue' => 'nullable|numeric|min:0',
                 'yearly_revenue' => 'nullable|numeric|min:0',
-                'company_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-                'primary_color' => 'nullable|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/',
-                'secondary_color' => 'nullable|string|regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/',
+                'company_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'primary_color' => ['nullable', 'string', 'regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/'],
+                'secondary_color' => ['nullable', 'string', 'regex:/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/'],
                 'tax_bin_no' => 'nullable|string|max:255',
-                'support_documents.*' => 'nullable|file|mimes:pdf,doc,docx,jpeg,png,jpg|max:5120',
+                'support_documents' => 'prohibited',
             ]);
 
             if ($validator->fails()) {
@@ -83,7 +83,7 @@ class FirmOrganizationController extends Controller
                 ], 422);
             }
 
-            $data = $request->except(['company_logo', 'support_documents', '_method']);
+            $data = \Illuminate\Support\Arr::except($validator->validated(), ['company_logo', 'support_documents']);
 
             // Handle company logo upload
             if ($request->hasFile('company_logo')) {
@@ -96,17 +96,6 @@ class FirmOrganizationController extends Controller
                 $logoName = time() . '_' . uniqid() . '.' . $logo->getClientOriginalExtension();
                 $logoPath = $logo->storeAs('organizations/logos', $logoName, 'public');
                 $data['company_logo'] = $logoPath;
-            }
-
-            // Handle support documents upload
-            if ($request->hasFile('support_documents')) {
-                $supportDocs = $organization->support_documents ?? [];
-                foreach ($request->file('support_documents') as $doc) {
-                    $docName = time() . '_' . uniqid() . '.' . $doc->getClientOriginalExtension();
-                    $docPath = $doc->storeAs('organizations/documents', $docName, 'public');
-                    $supportDocs[] = $docPath;
-                }
-                $data['support_documents'] = $supportDocs;
             }
 
             $organization->update($data);

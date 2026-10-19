@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,44 +20,62 @@ import { useToast } from "@/hooks/use-toast"
 import { LoadingSpinner } from "@/components/loading-spinner"
 
 export function CaseSettlementTab({ caseId }: { caseId: number }) {
-  const { data: settlementResponse, isLoading, refetch } = useGetSettlementsQuery({ case_id: caseId })
+  const { data: settlementResponse, isLoading, isError, refetch } = useGetSettlementsQuery({ case_id: caseId })
   const [createSettlement, { isLoading: isCreating }] = useCreateSettlementMutation()
   const { toast } = useToast()
 
   const [calcData, setCalcData] = useState({
     gross_amount: "0",
-    fee_percentage: "33.33",
+    fee_percentage: "0",
     litigation_costs: "0",
     other_deductions: "0"
   })
 
+  const saveAttempt = useRef<{ fingerprint: string; key: string } | null>(null)
+  const [savedInputs, setSavedInputs] = useState("")
+  const inputs = JSON.stringify({ caseId, ...calcData })
+  const [error, setError] = useState("")
   const settlement = settlementResponse?.data?.data?.[0] // Assuming one main settlement record for now
 
   // Calculations
   const gross = parseFloat(calcData.gross_amount) || 0
   const feePercent = parseFloat(calcData.fee_percentage) || 0
-  const fees = (gross * feePercent) / 100
+  const fees = Math.round(gross * feePercent) / 100
   const costs = parseFloat(calcData.litigation_costs) || 0
   const other = parseFloat(calcData.other_deductions) || 0
   const netToClient = gross - fees - costs - other
 
   const handleSaveSettlement = async () => {
+    if (isCreating || savedInputs === inputs) return
+    setError("")
+    if (Object.values(calcData).some(value => !/^\d+(\.\d{1,2})?$/.test(value)) || gross <= 0 || feePercent > 100 || netToClient < 0) {
+      setError("Enter a positive gross amount, a fee from 0 to 100%, and non-negative deductions that do not exceed the gross amount."); return
+    }
     try {
-      await createSettlement({
+      const payload = {
         case_id: caseId,
-        settlement_amount: gross,
+        settlement_amount: gross.toFixed(2),
+        attorney_fees: fees.toFixed(2),
+        costs: costs.toFixed(2),
+        other_deductions: other.toFixed(2),
         settlement_date: new Date().toISOString().split('T')[0],
-        status: "completed",
-        notes: `Breakdown: Fees(${feePercent}%) = $${fees.toFixed(2)}, Costs = $${costs.toFixed(2)}, Net = $${netToClient.toFixed(2)}`
-      }).unwrap()
-      toast({ title: "Settlement Recorded", description: "Financial breakdown saved successfully" })
+        status: "pending",
+        notes: `Breakdown: Fees(${feePercent}%) = $${fees.toFixed(2)}, Costs = $${costs.toFixed(2)}, Other deductions = $${other.toFixed(2)}, Net = $${netToClient.toFixed(2)}`
+      }
+      const fingerprint = JSON.stringify(payload)
+      if (saveAttempt.current?.fingerprint !== fingerprint) saveAttempt.current = { fingerprint, key: crypto.randomUUID() }
+      await createSettlement({ ...payload, request_id: saveAttempt.current.key }).unwrap()
+      setSavedInputs(inputs)
+      toast({ title: "Settlement Recorded", description: "Pending record saved. No funds were transferred." })
       refetch()
-    } catch (error) {
+    } catch (error: any) {
+      setError(Object.values(error.data?.errors || {}).flat().join(" ") || error.data?.message || "Could not save settlement.")
       toast({ title: "Error", description: "Failed to save settlement", variant: "destructive" })
     }
   }
 
   if (isLoading) return <LoadingSpinner />
+  if (isError) return <div role="alert">Could not load settlements. <Button onClick={() => refetch()}>Try again</Button></div>
 
   return (
     <div className="space-y-6">
@@ -66,9 +84,12 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
           <h3 className="text-lg font-bold text-emerald-900 dark:text-white">Settlement Breakdown</h3>
           <p className="text-sm text-slate-500">Calculate net recovery and firm fees</p>
         </div>
-        {settlement && <Badge className="bg-emerald-600">Settled: ${parseFloat(settlement.settlement_amount).toLocaleString()}</Badge>}
+        {settlement && <Badge className="bg-emerald-600">Latest record ({settlement.status}): ${parseFloat(settlement.settlement_amount).toLocaleString()}</Badge>}
       </div>
 
+      {settlement && <p className="text-sm break-words">Latest saved breakdown: {settlement.net_to_client != null ? `Fees $${settlement.attorney_fees}; costs $${settlement.costs}; other deductions $${settlement.other_deductions}; estimated net $${settlement.net_to_client}` : `Structured breakdown unavailable. ${settlement.notes || "No notes recorded"}`}</p>}
+      <p className="text-sm text-muted-foreground">Planning calculation only. Enter the agreed fee and all deductions. Saving creates a pending record and does not authorize or transfer funds.</p>
+      {error && <p role="alert" className="text-destructive">{error}</p>}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Calculation Form */}
         <Card className="border-emerald-100 bg-white shadow-sm h-fit">
@@ -85,7 +106,7 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
                 <Input 
                   type="number" 
                   className="pl-9 font-bold text-lg" 
-                  value={calcData.gross_amount}
+                  aria-label="Gross Settlement Amount ($)" value={calcData.gross_amount}
                   onChange={e => setCalcData({...calcData, gross_amount: e.target.value})}
                 />
               </div>
@@ -98,7 +119,7 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
                   <Percent className="absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
                   <Input 
                     type="number" 
-                    value={calcData.fee_percentage}
+                    aria-label="Attorney Fee %" value={calcData.fee_percentage}
                     onChange={e => setCalcData({...calcData, fee_percentage: e.target.value})}
                   />
                 </div>
@@ -107,7 +128,7 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
                 <label className="text-sm font-bold text-slate-700">Litigation Costs ($)</label>
                 <Input 
                   type="number" 
-                  value={calcData.litigation_costs}
+                  aria-label="Litigation Costs ($)" value={calcData.litigation_costs}
                   onChange={e => setCalcData({...calcData, litigation_costs: e.target.value})}
                 />
               </div>
@@ -117,14 +138,14 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
               <label className="text-sm font-bold text-slate-700">Other Deductions / Liens ($)</label>
               <Input 
                 type="number" 
-                value={calcData.other_deductions}
+                aria-label="Other Deductions / Liens ($)" value={calcData.other_deductions}
                 onChange={e => setCalcData({...calcData, other_deductions: e.target.value})}
               />
             </div>
 
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 mt-4" onClick={handleSaveSettlement} disabled={isCreating}>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 mt-4" onClick={handleSaveSettlement} disabled={isCreating || savedInputs === inputs}>
               <FileCheck2 className="w-4 h-4 mr-2" />
-              Finalize Settlement
+              {savedInputs === inputs ? "Pending Settlement Saved" : "Save Pending Settlement"}
             </Button>
           </CardContent>
         </Card>
@@ -136,7 +157,7 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
               <Wallet className="w-24 h-24" />
             </div>
             <CardHeader>
-              <CardDescription className="text-slate-400 uppercase text-[10px] font-bold tracking-widest">Net Recovery to Client</CardDescription>
+              <CardDescription className="text-slate-400 uppercase text-[10px] font-bold tracking-widest">Estimated Net to Client</CardDescription>
               <CardTitle className="text-5xl font-black text-white mt-2">${netToClient.toLocaleString(undefined, {minimumFractionDigits: 2})}</CardTitle>
             </CardHeader>
             <CardContent>
@@ -159,11 +180,11 @@ export function CaseSettlementTab({ caseId }: { caseId: number }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100 flex flex-col gap-1">
-              <p className="text-[10px] uppercase font-bold text-emerald-700">Firm Revenue</p>
+              <p className="text-[10px] uppercase font-bold text-emerald-700">Fees and Costs</p>
               <p className="text-xl font-bold text-emerald-900">${(fees + costs).toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
             </div>
             <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 flex flex-col gap-1">
-              <p className="text-[10px] uppercase font-bold text-blue-700">Client Payout %</p>
+              <p className="text-[10px] uppercase font-bold text-blue-700">Estimated Client Share</p>
               <p className="text-xl font-bold text-blue-900">{gross > 0 ? ((netToClient / gross) * 100).toFixed(1) : "0"}%</p>
             </div>
           </div>

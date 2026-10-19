@@ -25,6 +25,8 @@ class Signature extends Model
         'processed_at',
     ];
 
+    protected $hidden = ['signed_file_path', 'signed_file_url', 'provider_payload'];
+
     protected $casts = [
         'provider_payload' => 'array',
         'processed_at' => 'datetime',

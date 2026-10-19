@@ -44,7 +44,7 @@ class AppSettingController extends Controller
      * @OA\Get(
      *     path="/api/get-env-values",
      *     summary="Retrieve environment variables",
-     *     description="Get mail and stripe configurations (Admin only)",
+     *     description="Get non-secret service configuration status (Admin only)",
      *     operationId="getEnvValues",
      *     tags={"Application Settings"},
      *     security={{"bearerAuth":{}}},
@@ -53,22 +53,17 @@ class AppSettingController extends Controller
      */
     public function getEnvValues()
     {
-        $settingArray = array(
-            'MAIL_MAILER' => env('MAIL_MAILER'),
-            'MAIL_HOST' => env('MAIL_HOST'),
-            'MAIL_PORT' => env('MAIL_PORT'),
-            'MAIL_USERNAME' => env('MAIL_USERNAME'),
-            'MAIL_PASSWORD' => env('MAIL_PASSWORD'),
-            'MAIL_ENCRYPTION' => env('MAIL_ENCRYPTION'),
-            'MAIL_FROM_ADDRESS' => env('MAIL_FROM_ADDRESS'),
-            'STRIPE_MODE' => env('STRIPE_MODE'),
-            'STRIPE_KEY' => env('STRIPE_KEY'),
-            'STRIPE_SECRET' => env('STRIPE_SECRET'),
-            'STRIPE_WEBHOOK_SECRET' => env('STRIPE_WEBHOOK_SECRET'),
-        );
-        $response['env_values'] = $settingArray;
+        return response()->json([
+            'configuration_mode' => 'hosting_managed',
+            'mail' => [
+                'transport' => config('mail.default'),
+                'host_configured' => filled(config('mail.mailers.smtp.host')),
+                'credentials_configured' => filled(config('mail.mailers.smtp.username')) && filled(config('mail.mailers.smtp.password')),
+                'sender_configured' => filled(config('mail.from.address')),
+            ],
+            'payments' => ['mode' => 'record_only', 'online_collection_enabled' => false],
+        ]);
 
-        return response()->json($response,200);
     }
 
     /**
@@ -291,7 +286,7 @@ class AppSettingController extends Controller
      * @OA\Post(
      *     path="/api/setting-env-update",
      *     summary="Update environment variables",
-     *     description="Updates .env values for mail, stripe, and other system services (Admin only)",
+     *     description="Retired endpoint; server configuration is managed through hosting",
      *     operationId="updateEnvValues",
      *     tags={"Application Settings"},
      *     security={{"bearerAuth":{}}},
@@ -307,25 +302,9 @@ class AppSettingController extends Controller
      */
     public function settingEnvUpdate(Request $request)
     {
-        $inputs = Arr::except($request->all(), ['_token']);
-        $keys = [];
+        return response()->json([
+            'message' => 'Server configuration is managed through the hosting environment. This endpoint cannot modify it.',
+        ], 410);
 
-        foreach ($inputs as $k => $v) {
-            $keys[$k] = $k;
-        }
-
-        foreach ($inputs as $key => $value) {
-
-            $oldValue = env($key);
-            $newValue = str_replace(' ', '', $value);
-
-            $path = base_path('.env');
-            if (file_exists($path)) {
-                file_put_contents(
-                    $path, str_replace($key . '=' . $oldValue, $key . '=' . $newValue, file_get_contents($path))
-                );
-            }
-        }
-        return response()->json(['message' => 'Env Updated successfully'],200);
     }
 }

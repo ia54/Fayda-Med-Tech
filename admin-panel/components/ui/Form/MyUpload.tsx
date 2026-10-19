@@ -1,9 +1,6 @@
 import Image from "next/image";
 import React, { useState } from "react";
-import { DeleteIcon, FileUploadIcon } from "../icons";
-import MyInp from "./MyInp";
-import { Button } from "@heroui/button";
-import signinBG from "@/src/assets/img/Sign/signinBG.jpg";
+import { Trash2 as DeleteIcon, Upload as FileUploadIcon } from "lucide-react";
 
 const MyUpload = ({
   setSelectedFile,
@@ -60,12 +57,12 @@ const MyUpload = ({
   };
 
   return (
-    <div className={`flex justify-${align}`}>
+    <div className={`flex ${{ left: "justify-start", center: "justify-center", right: "justify-end" }[align]}`}>
       <div
         className={`avatar-wrapper w-full h-full`}
         style={{
           height: `${height}px`,
-          width: `${width ? `${width}px` : "full"}`,
+          width: width ? `${width}px` : "100%",
         }}
       >
         {previewUrl || myDefaultValue ? (
@@ -79,16 +76,13 @@ const MyUpload = ({
               className="border rounded-lg h-full w-full object-cover___"
             />
             {isEditing && (
-              <span className="bg-white bg-opacity-30 hover:bg-danger hover:bg-opacity-20 border border-danger p-2 rounded-bl-lg rounded-tr-lg inline-block absolute top-0  right-0 cursor-pointer">
-                <DeleteIcon
-                  className=" text-danger scale-150"
-                  onClick={() => {
+              <button type="button" aria-label="Remove image" className="bg-white bg-opacity-30 hover:bg-danger hover:bg-opacity-20 border border-danger p-2 rounded-bl-lg rounded-tr-lg inline-block absolute top-0  right-0 cursor-pointer"
+                 onClick={() => {
                     setSelectedFile(null);
                     setPreviewUrl(null);
                     setMyDefaultValue(null);
                   }}
-                />
-              </span>
+              ><DeleteIcon className="text-danger" /></button>
             )}
           </div>
         ) : (
@@ -97,24 +91,27 @@ const MyUpload = ({
             style={{
               backgroundImage: `
               linear-gradient(to right, rgba(59, 130, 246, 0.5), rgba(139, 92, 246, 0.5)),
-              url(${signinBG.src})
+              none
               `,
               backgroundSize: "cover",
               backgroundPosition: "center",
             }}
           >
-            <Button isIconOnly className="h-full w-full bg-opacity-50">
+            <label className="h-full w-full flex items-center justify-center bg-opacity-50">
               <div className="flex flex-col gap-1 items-center justify-center">
                 <FileUploadIcon className="text-white size-6" />
                 <span className="text-white">{placeholder}</span>
               </div>
-              <MyInp
+              <input
                 type="file"
                 name="file"
+                aria-label={placeholder}
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                disabled={!isEditing}
                 onChange={onFileChange}
                 className="opacity-0 absolute top-0 left-0 bottom-0 w-full h-full"
               />
-            </Button>
+            </label>
           </div>
         )}
       </div>

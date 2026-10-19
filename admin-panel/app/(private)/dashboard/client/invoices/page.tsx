@@ -5,18 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
-import { FileText, Search, DollarSign, CreditCard, Download, Loader2, ExternalLink } from "lucide-react"
-import { useGetClientInvoicesQuery, useCreateClientPaymentMutation } from "@/store/api/billingApiSlice"
-import { useToast } from "@/hooks/use-toast"
+import { FileText, Search, DollarSign, ExternalLink } from "lucide-react"
+import { useGetClientInvoicesQuery } from "@/store/api/billingApiSlice"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 
@@ -29,46 +21,10 @@ const statusColors: Record<string, string> = {
 }
 
 export default function ClientInvoicesPage() {
-  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState("")
-  const [payModalOpen, setPayModalOpen] = useState(false)
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null)
-  const [paymentMethod, setPaymentMethod] = useState("credit_card")
-  const [paymentAmount, setPaymentAmount] = useState("")
-
-  const { data: invoicesData, isLoading } = useGetClientInvoicesQuery({ search: searchTerm })
-  const [createPayment, { isLoading: isPaying }] = useCreateClientPaymentMutation()
-
+  const [page, setPage] = useState(1)
+  const { currentData: invoicesData, isFetching: isLoading, isError, refetch } = useGetClientInvoicesQuery({ search: searchTerm, page })
   const invoices = invoicesData?.data?.data || []
-
-  const openPayModal = (invoice: any) => {
-    setSelectedInvoice(invoice)
-    setPaymentAmount(String(invoice.amount))
-    setPayModalOpen(true)
-  }
-
-  const handlePay = async () => {
-    if (!selectedInvoice || !paymentAmount) return
-
-    try {
-      await createPayment({
-        invoice_id: selectedInvoice.id,
-        amount: Number(paymentAmount),
-        payment_method: paymentMethod,
-        payment_date: new Date().toISOString().split("T")[0],
-      }).unwrap()
-
-      toast({ title: "Payment Successful", description: `Payment of $${Number(paymentAmount).toFixed(2)} recorded.` })
-      setPayModalOpen(false)
-      setSelectedInvoice(null)
-    } catch (err: any) {
-      toast({
-        title: "Payment Failed",
-        description: err.data?.message || "An error occurred processing your payment.",
-        variant: "destructive",
-      })
-    }
-  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -79,7 +35,7 @@ export default function ClientInvoicesPage() {
             My Invoices
           </h1>
           <p className="text-muted-foreground mt-1">
-            View billing invoices and make payments for your legal and medical services.
+            View recorded charges, receipts and balances for your cases. Online payments are not available here; contact your billing team for payment instructions.
           </p>
         </div>
       </div>
@@ -92,12 +48,12 @@ export default function ClientInvoicesPage() {
               placeholder="Search invoices..."
               className="pl-10"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
             />
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isError ? <p role="alert">Could not load invoices. <Button onClick={() => refetch()}>Try again</Button></p> : isLoading ? (
             <div className="space-y-4">
               {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
             </div>
@@ -115,7 +71,7 @@ export default function ClientInvoicesPage() {
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Case</TableHead>
                     <TableHead>Amount</TableHead>
-                    <TableHead>Due Date</TableHead>
+                    <TableHead>Recorded paid</TableHead><TableHead>Balance</TableHead><TableHead>Due Date</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -128,8 +84,9 @@ export default function ClientInvoicesPage() {
                         {invoice.case?.title || "N/A"}
                       </TableCell>
                       <TableCell className="font-black">${Number(invoice.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell>${Number(invoice.total_paid || 0).toFixed(2)}</TableCell><TableCell>${(Number(invoice.amount) - Number(invoice.total_paid || 0)).toFixed(2)}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : "N/A"}
+                        {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString(undefined, { timeZone: "UTC" }) : "N/A"}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={cn("uppercase text-[10px] font-bold", statusColors[invoice.status] || "")}>
@@ -143,15 +100,6 @@ export default function ClientInvoicesPage() {
                               <ExternalLink className="h-3 w-3 mr-1" /> View
                             </Link>
                           </Button>
-                          {invoice.status !== "paid" && invoice.status !== "voided" && (
-                            <Button
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-600/20"
-                              onClick={() => openPayModal(invoice)}
-                            >
-                              <CreditCard className="h-3 w-3 mr-1" /> Pay Now
-                            </Button>
-                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -163,53 +111,7 @@ export default function ClientInvoicesPage() {
         </CardContent>
       </Card>
 
-      {/* Payment Modal */}
-      <Dialog open={payModalOpen} onOpenChange={setPayModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Make Payment</DialogTitle>
-            <DialogDescription>
-              Pay invoice {selectedInvoice?.invoice_number} — ${Number(selectedInvoice?.amount || 0).toFixed(2)}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Payment Amount ($)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={paymentAmount}
-                onChange={(e) => setPaymentAmount(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Payment Method</Label>
-              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="credit_card">Credit Card</SelectItem>
-                  <SelectItem value="debit_card">Debit Card</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="check">Check</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPayModalOpen(false)}>Cancel</Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={handlePay}
-              disabled={isPaying || !paymentAmount}
-            >
-              {isPaying ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processing...</> : <>Confirm Payment</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <div className="flex items-center justify-between"><Button variant="outline" disabled={page <= 1 || isLoading} onClick={() => setPage(p => p-1)}>Previous</Button><span>Page {page} of {invoicesData?.data.last_page || 1}</span><Button variant="outline" disabled={isLoading || isError || !invoicesData || page >= invoicesData.data.last_page} onClick={() => setPage(p => p+1)}>Next</Button></div>
     </div>
   )
 }

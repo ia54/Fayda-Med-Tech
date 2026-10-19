@@ -1,4 +1,5 @@
 "use client";
+import { formatOrganizationDate } from "./formatOrganizationDate";
 
 import { ColumnDef } from "@/components/global/table";
 import { Organization } from "@/store/api/organizationsApiSlice";
@@ -205,7 +206,7 @@ export function getOrganizationColumns(actions: {
       },
       cell: ({ value }) => (
         <span className="text-sm text-muted-foreground">
-          {new Date(value).toLocaleDateString()}
+          {formatOrganizationDate(value)}
         </span>
       ),
     },
