@@ -1,0 +1,852 @@
+{
+  "audit_date": "2026-10-19",
+  "audited_commit": "c6d0db736440cb4646d57f2103eaaaedad4213ba",
+  "delivery_order": "synthetic_pilot_then_full_product",
+  "unit": "one engineer-day = 8 focused engineering hours; excludes external wait and professional/vendor/hosting labor",
+  "method": "remaining-work inspection ranges; no historical earned-effort or overall code-complete percentage inferred",
+  "sums": {
+    "pilot": {
+      "packages": 12,
+      "low": 7.75,
+      "high": 17.75
+    },
+    "full_product_after_pilot": {
+      "packages": 31,
+      "low": 123,
+      "high": 241
+    },
+    "full_product_after_pilot_with_25_percent_reserve": {
+      "low": 153.75,
+      "high": 301.25
+    }
+  },
+  "pilot_gates": [
+    {
+      "id": "G01",
+      "title": "Pilot scope and explicit exclusions",
+      "status": "met",
+      "evidence": "Owner selected synthetic pilot first; CLIENT-PILOT scope"
+    },
+    {
+      "id": "G02",
+      "title": "Cloud runtime and locked dependency installation",
+      "status": "met",
+      "evidence": "CODEX-CLOUD-VALIDATION-20261019.md; publication separate"
+    },
+    {
+      "id": "G03",
+      "title": "Pinned source and full backend test baseline",
+      "status": "met",
+      "evidence": "c6d0db7 source archive; 454 tests/9263 assertions; latest-head hosted CI separate"
+    },
+    {
+      "id": "G04",
+      "title": "Actual password/MFA/recovery/logout browser evidence",
+      "status": "met",
+      "evidence": "a84538f authentication result; controlled expiry; external delivery excluded"
+    },
+    {
+      "id": "G05",
+      "title": "Shared-role financial/settlement access browser baseline",
+      "status": "met",
+      "evidence": "69c4290; seeded sessions; final pilot replay separate"
+    },
+    {
+      "id": "G06",
+      "title": "Source-backed report and actual CSV download baseline",
+      "status": "met",
+      "evidence": "69c4290 shared-role evidence; historical source pin retained"
+    },
+    {
+      "id": "G07",
+      "title": "Private document pilot lifecycle",
+      "status": "partial",
+      "evidence": "Earlier historical fallback evidence; current PDF/download/negative branch refresh needed"
+    },
+    {
+      "id": "G08",
+      "title": "Manual EOB and appeal pilot lifecycle",
+      "status": "partial",
+      "evidence": "Earlier September 30 evidence; current load/pagination/retry branches needed"
+    },
+    {
+      "id": "G09",
+      "title": "Truthful UI and complete pilot access-boundary sweep",
+      "status": "open",
+      "evidence": "New client analytics disclosure and fabricated financial/plan values"
+    },
+    {
+      "id": "G10",
+      "title": "Current dependency findings disposition",
+      "status": "open",
+      "evidence": "Fresh npm/pnpm advisories; Composer audit blocked"
+    },
+    {
+      "id": "G11",
+      "title": "Concurrency and responsive/accessibility pilot checks",
+      "status": "partial",
+      "evidence": "Login viewport only; multi-tab/full pilot keyboard and mobile checks unverified"
+    },
+    {
+      "id": "G12",
+      "title": "Final one-candidate replay and owner pilot acceptance",
+      "status": "open",
+      "evidence": "P08/P09/P11; cloud reuse is separately tracked P10"
+    }
+  ],
+  "items": [
+    {
+      "id": "P01",
+      "phase": "pilot",
+      "work": "Close client analytics access leak",
+      "remaining_engineer_days_low": 0.5,
+      "remaining_engineer_days_high": 1,
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Client cannot read other case financial aggregates; role/tenant/assignment regression and browser denial pass.",
+      "evidence": "api/app/Http/Controllers/API/BillingAnalyticsController.php:17; api/routes/api.php:400; analytics diagnostic",
+      "estimate_confidence": "high",
+      "decision_or_external_dependency": "none",
+      "status": "remaining"
+    },
+    {
+      "id": "P02",
+      "phase": "pilot",
+      "work": "Remove fabricated financial/plan data and inactive controls",
+      "remaining_engineer_days_low": 0.5,
+      "remaining_engineer_days_high": 1,
+      "depends_on": [
+        "P01"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Unsupported metrics show unavailable; real aggregates state basis and year; no invented payer figures or subscription receipts.",
+      "evidence": "BillingAnalyticsController.php:24; admin-panel/app/(private)/dashboard/legal/billing/page.tsx:48",
+      "estimate_confidence": "high",
+      "decision_or_external_dependency": "none",
+      "status": "remaining"
+    },
+    {
+      "id": "P03",
+      "phase": "pilot",
+      "work": "Refresh protected document lifecycle",
+      "remaining_engineer_days_low": 1,
+      "remaining_engineer_days_high": 2,
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Synthetic upload, PDF/text preview, actual download/hash, reload, revoked and cross-tenant/client access pass in Chromium.",
+      "evidence": "deploy/production/CLIENT-PILOT.md; api/app/Http/Controllers/API/DocumentController.php",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "none",
+      "status": "remaining"
+    },
+    {
+      "id": "P04",
+      "phase": "pilot",
+      "work": "Refresh manual EOB and appeal branches",
+      "remaining_engineer_days_low": 0.5,
+      "remaining_engineer_days_high": 1.5,
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Create/review/deny/search/page/load-error/retry flows pass; appeal stays a disclosed retained template and financial ledger remains unchanged.",
+      "evidence": "deploy/production/CLIENT-PILOT.md; api/app/Http/Controllers/API/AppealController.php",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "none",
+      "status": "remaining"
+    },
+    {
+      "id": "P05",
+      "phase": "pilot",
+      "work": "Exercise session concurrency and remaining recovery edges",
+      "remaining_engineer_days_low": 1,
+      "remaining_engineer_days_high": 2,
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Two-tab/reload/rotating-refresh/logout overlap and expired-challenge cases have deterministic evidence; defects repaired without allowing replay.",
+      "evidence": "docs/CODEX-CLOUD-AUTH-ACCEPTANCE-20261019.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "none",
+      "status": "remaining"
+    },
+    {
+      "id": "P06",
+      "phase": "pilot",
+      "work": "Target pilot mobile and keyboard/accessibility checks",
+      "remaining_engineer_days_low": 0.5,
+      "remaining_engineer_days_high": 1.5,
+      "depends_on": [
+        "P03",
+        "P04"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Agreed pilot routes fit narrow/wide viewports; keyboard, focus, labels, dialogs and readable tables pass; device limits explicit.",
+      "evidence": "docs/CODEX-CLOUD-AUTH-ACCEPTANCE-20261019.md",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "none",
+      "status": "remaining"
+    },
+    {
+      "id": "P07",
+      "phase": "pilot",
+      "work": "Remediate and verify current dependency findings",
+      "remaining_engineer_days_low": 1,
+      "remaining_engineer_days_high": 3,
+      "depends_on": [],
+      "accountable": "Engineering",
+      "done_when": "Scoped lockfile patches verified in installs/tests/builds; audits rerun; residual Quill finding and applicability documented; no ignores conceal risk.",
+      "evidence": "docs/evidence/BUILD-AUDIT-20261019.json; deploy/production/DEPENDENCIES.md",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "Composer advisory destination must be available; any residual risk acceptance is owner/security decision",
+      "status": "remaining"
+    },
+    {
+      "id": "P08",
+      "phase": "pilot",
+      "work": "Replay final pilot roles and pharmacy preview",
+      "remaining_engineer_days_low": 0.5,
+      "remaining_engineer_days_high": 1,
+      "depends_on": [
+        "P01",
+        "P02",
+        "P03",
+        "P04",
+        "P05",
+        "P06",
+        "P07"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Eight role boundaries, save/reload/error behavior and clearly synthetic pharmacy preview agree on one final candidate.",
+      "evidence": "docs/CODEX-CLOUD-BROWSER-ACCEPTANCE-20261019.md",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "none",
+      "status": "remaining"
+    },
+    {
+      "id": "P09",
+      "phase": "pilot",
+      "work": "Freeze verified builds, CI, archives and fresh security evidence",
+      "remaining_engineer_days_low": 0.5,
+      "remaining_engineer_days_high": 1,
+      "depends_on": [
+        "P08"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Exact candidate has applicable hosted checks/builds, trusted archives and issue list; no unresolved pilot blockers.",
+      "evidence": "docs/CODEX-CLOUD-VALIDATION-20261019.md",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "GitHub API/runtime network restriction; latest hosted check status requires verified access",
+      "status": "remaining"
+    },
+    {
+      "id": "P10",
+      "phase": "pilot",
+      "work": "Verify reusable cloud publication/restoration",
+      "remaining_engineer_days_low": 0.25,
+      "remaining_engineer_days_high": 0.75,
+      "depends_on": [],
+      "accountable": "Owner + engineering",
+      "done_when": "Owner publication completes and independent fresh task restores source/tools and passes synthetic startup checks.",
+      "evidence": "Environment draft revision 10; current runtime source version unchanged",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "User-only Publish; active effort only, waiting unquoted; not a blocker for recorded current-runtime pilot",
+      "status": "remaining"
+    },
+    {
+      "id": "P11",
+      "phase": "pilot",
+      "work": "Prepare demo, resettable fixture and owner acceptance",
+      "remaining_engineer_days_low": 0.5,
+      "remaining_engineer_days_high": 1,
+      "depends_on": [
+        "P09"
+      ],
+      "accountable": "Engineering + owner",
+      "done_when": "Synthetic walkthrough, reproducible fixtures and known exclusions delivered; owner feedback disposition and pilot acceptance recorded.",
+      "evidence": "deploy/production/CLIENT-PILOT.md",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "Owner attendance/feedback; hosted delivery is a separate deployment scope",
+      "status": "remaining"
+    },
+    {
+      "id": "P12",
+      "phase": "pilot",
+      "work": "Pilot defect/retest allowance",
+      "remaining_engineer_days_low": 1,
+      "remaining_engineer_days_high": 2,
+      "depends_on": [
+        "P01",
+        "P02",
+        "P03",
+        "P04",
+        "P05",
+        "P06",
+        "P07"
+      ],
+      "accountable": "Engineering",
+      "done_when": "Pilot-blocking findings are fixed and their focused regressions pass; unused allowance is not mandatory work.",
+      "evidence": "Planning allowance; no double-counted new features",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "none",
+      "status": "remaining"
+    },
+    {
+      "id": "F01",
+      "phase": "full_product_after_pilot",
+      "work": "Freeze site, provider, workflow and acceptance contracts",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 5,
+      "depends_on": [
+        "P11"
+      ],
+      "accountable": "Owner + pharmacist + engineering",
+      "done_when": "Per-site jurisdictions, capabilities, schedules, hazardous classification, provider inventory, acceptance cases and accountable approvers recorded.",
+      "evidence": "deploy/production/PROVIDER-OPERATIONS-REGISTER.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Dr. Ghadeh/site leads; existing vendors, licensed standards and account owners unknown",
+      "status": "remaining"
+    },
+    {
+      "id": "F02",
+      "phase": "full_product_after_pilot",
+      "work": "Patient identity, professional credentials and per-site configuration gaps",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F01"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Mismatch/unknown/expiry/revocation and site configuration cases accepted; reuse existing patient/enrollment ledgers.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:151",
+      "estimate_confidence": "medium",
+      "decision_or_external_dependency": "Approved credential and patient-record policies",
+      "status": "remaining"
+    },
+    {
+      "id": "F03",
+      "phase": "full_product_after_pilot",
+      "work": "Catalogue, package/unit conversions and source provenance",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F01"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Approved package-to-dispensing conversions, potency/units and versioned source data reconcile without inferred mappings.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:151",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Licensed catalogue, formulary and unit conventions",
+      "status": "remaining"
+    },
+    {
+      "id": "F04",
+      "phase": "full_product_after_pilot",
+      "work": "Ordinary prescription/correction/replacement/allowance conflicts",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F01",
+        "F02"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Later-supply conflicts, renewal/replacement and partial-supply cases preserve original supply and money histories.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:295; deploy/production/RELEASE-STATUS.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Pharmacist-approved ordinary workflow matrix",
+      "status": "remaining"
+    },
+    {
+      "id": "F05",
+      "phase": "full_product_after_pilot",
+      "work": "Ordinary external and controlled prescription transfer/amendment paths",
+      "remaining_engineer_days_low": 4,
+      "remaining_engineer_days_high": 8,
+      "depends_on": [
+        "F04",
+        "F08",
+        "F10"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Source/destination authority, remaining allowances, rejection/cancel/replay and duplicate usable authorization cases pass.",
+      "evidence": "api/app/Http/Controllers/API/PharmacyPrescriptionTransferController.php:15",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Provider transfer interfaces and applicable schedule rules; compounded paths are F18",
+      "status": "remaining"
+    },
+    {
+      "id": "F06",
+      "phase": "full_product_after_pilot",
+      "work": "Inventory purchasing and loss/excess/return/destruction gaps",
+      "remaining_engineer_days_low": 4,
+      "remaining_engineer_days_high": 8,
+      "depends_on": [
+        "F01",
+        "F03"
+      ],
+      "accountable": "Engineering + operations",
+      "done_when": "Remaining transport, variance and disposition cases reconcile exact units; restricted custody follows accepted procedures.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:282; docs/PHARMACY-SYSTEM.md:453",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Supplier/transport/disposal procedures; existing count and disposition ledgers reused",
+      "status": "remaining"
+    },
+    {
+      "id": "F07",
+      "phase": "full_product_after_pilot",
+      "work": "Recall external scope changes, outreach and closure",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F06"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Accepted notice changes/termination, follow-up, returns and closure preserve prior exposure/custody history.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:216; docs/BUILD-COMPLETION.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Who contacts patients and accepts recall termination; no live outreach currently authorized",
+      "status": "remaining"
+    },
+    {
+      "id": "F08",
+      "phase": "full_product_after_pilot",
+      "work": "Controlled schedule-specific authorization/rule engine",
+      "remaining_engineer_days_low": 5,
+      "remaining_engineer_days_high": 10,
+      "depends_on": [
+        "F01",
+        "F02"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Approved schedule/source/timing/refill/partial/expiry/exception cases fail safely and never treat a Boolean classification as authorization.",
+      "evidence": "api/app/Http/Controllers/API/PharmacyController.php; docs/PHARMACY-SYSTEM.md:167",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Signed policy matrix and current professional/legal review",
+      "status": "remaining"
+    },
+    {
+      "id": "F09",
+      "phase": "full_product_after_pilot",
+      "work": "Controlled inventory/custody and correction exceptions",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F06",
+        "F08"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Schedule-specific count, discrepancy, custody, correction and restricted handover cases accepted.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:167",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Site controlled-substance procedures and authority",
+      "status": "remaining"
+    },
+    {
+      "id": "F10",
+      "phase": "full_product_after_pilot",
+      "work": "Approved electronic prescription receipt adapter",
+      "remaining_engineer_days_low": 6,
+      "remaining_engineer_days_high": 12,
+      "depends_on": [
+        "F01",
+        "F02"
+      ],
+      "accountable": "Engineering + provider",
+      "done_when": "Synthetic supported receipt/change/cancel, patient/prescriber matching, dedupe, timeout and reconciliation cases pass.",
+      "evidence": "deploy/production/PROVIDER-OPERATIONS-REGISTER.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Existing provider/account/interface/certification unconfirmed; estimate assumes one interface",
+      "status": "remaining"
+    },
+    {
+      "id": "F11",
+      "phase": "full_product_after_pilot",
+      "work": "Licensed clinical reference and screening adapter",
+      "remaining_engineer_days_low": 5,
+      "remaining_engineer_days_high": 10,
+      "depends_on": [
+        "F01",
+        "F03"
+      ],
+      "accountable": "Engineering + pharmacist + provider",
+      "done_when": "Source/version, interaction/allergy/dose/product warnings, unavailability and reasoned override cases professionally accepted.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:151",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "One licensed provider and approved clinical test cases; no current live screening",
+      "status": "remaining"
+    },
+    {
+      "id": "F12",
+      "phase": "full_product_after_pilot",
+      "work": "MAPS submission, acknowledgments, correction and outage handling",
+      "remaining_engineer_days_low": 6,
+      "remaining_engineer_days_high": 12,
+      "depends_on": [
+        "F01",
+        "F08",
+        "F09"
+      ],
+      "accountable": "Engineering + reporting provider",
+      "done_when": "Accepted test submission, duplicate prevention, rejection/correction, outage queue and reconciled acknowledgment retained.",
+      "evidence": "deploy/production/PROVIDER-OPERATIONS-REGISTER.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Approved submission provider, schemas, account, sandbox and onboarding; one interface assumed",
+      "status": "remaining"
+    },
+    {
+      "id": "F13",
+      "phase": "full_product_after_pilot",
+      "work": "MAPS query access and review workflow",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F01",
+        "F08"
+      ],
+      "accountable": "Engineering + reporting provider",
+      "done_when": "Separate authorized query, unavailable-state, audit and pharmacist review accepted.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:167",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Query entitlement/interface separate from submission",
+      "status": "remaining"
+    },
+    {
+      "id": "F14",
+      "phase": "full_product_after_pilot",
+      "work": "Validate formulation/calculation/quality/BUD policy implementation",
+      "remaining_engineer_days_low": 4,
+      "remaining_engineer_days_high": 8,
+      "depends_on": [
+        "F01",
+        "F03"
+      ],
+      "accountable": "Engineering + compounding lead",
+      "done_when": "Approved formula/unit/potency/calculation and quality/date cases verified against licensed sources; unknowns do not pass.",
+      "evidence": "docs/PHARMACY-QUALITY-RELEASE.md:13",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Official applicable standards, approved formulae and thresholds; existing documentary ledgers reused",
+      "status": "remaining"
+    },
+    {
+      "id": "F15",
+      "phase": "full_product_after_pilot",
+      "work": "Real compounded output reservation, release and supply lifecycle",
+      "remaining_engineer_days_low": 8,
+      "remaining_engineer_days_high": 15,
+      "depends_on": [
+        "F02",
+        "F03",
+        "F14",
+        "F16",
+        "F17"
+      ],
+      "accountable": "Engineering + compounding lead",
+      "done_when": "Operational authorization links finished output to usable stock/reservation/fill; revalidates every gate at handover; recall/expiry/correction never create duplicate supply.",
+      "evidence": "api/app/Http/Controllers/API/PharmacyHandoverRehearsalController.php:11",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Accepted release policy; rehearsal alone cannot satisfy this package",
+      "status": "remaining"
+    },
+    {
+      "id": "F16",
+      "phase": "full_product_after_pilot",
+      "work": "Sterile-specific qualification and release evidence",
+      "remaining_engineer_days_low": 5,
+      "remaining_engineer_days_high": 10,
+      "depends_on": [
+        "F01",
+        "F14"
+      ],
+      "accountable": "Engineering + sterile lead",
+      "done_when": "Required site/personnel/environment/equipment/process/testing evidence and stale/failure blocks accepted for supported sterile pathways.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:115; docs/PHARMACY-QUALITY-RELEASE.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Facility qualification, standards, monitoring/test systems and professional acceptance; physical work not engineer effort",
+      "status": "remaining"
+    },
+    {
+      "id": "F17",
+      "phase": "full_product_after_pilot",
+      "work": "Nonsterile and hazardous process-specific controls",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F01",
+        "F14"
+      ],
+      "accountable": "Engineering + compounding lead",
+      "done_when": "Applicable nonsterile evidence and independent hazardous classification/handling requirements accepted; no default assumptions.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:115",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Per-site process and hazardous-handling decision; both preparation types remain required",
+      "status": "remaining"
+    },
+    {
+      "id": "F18",
+      "phase": "full_product_after_pilot",
+      "work": "Compounded amendments, transfers, returns and release exceptions",
+      "remaining_engineer_days_low": 4,
+      "remaining_engineer_days_high": 8,
+      "depends_on": [
+        "F15",
+        "F04"
+      ],
+      "accountable": "Engineering + compounding lead",
+      "done_when": "Ingredient/batch/container/patient lineage and exact supply history survive accepted corrections and transfers; patient returns never reenter usable stock.",
+      "evidence": "docs/BUILD-COMPLETION.md; docs/PHARMACY-SYSTEM.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Approved compounded exception procedures; no overlap with F05 ordinary/controlled implementation",
+      "status": "remaining"
+    },
+    {
+      "id": "F19",
+      "phase": "full_product_after_pilot",
+      "work": "Physical labels, scanner/printer and handover integration",
+      "remaining_engineer_days_low": 4,
+      "remaining_engineer_days_high": 8,
+      "depends_on": [
+        "F01",
+        "F03",
+        "F14"
+      ],
+      "accountable": "Engineering + site leads",
+      "done_when": "Actual supported device/label/container/guide/reprint/recipient scenarios accepted; retained hashes and physical output agree.",
+      "evidence": "docs/PHARMACY-QUALITY-RELEASE.md:172; docs/PHARMACY-SYSTEM.md:266",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Device models, formats, medication-guide sources and site attendance; assumes one device family",
+      "status": "remaining"
+    },
+    {
+      "id": "F20",
+      "phase": "full_product_after_pilot",
+      "work": "Versioned PIP pricing/coverage/coordination and EOB rules",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F01",
+        "F03"
+      ],
+      "accountable": "Engineering + billing lead",
+      "done_when": "Approved fees, effective dates, coordination, EOB/correction and issue/deadline cases reconcile in cents; record-only money boundary retained.",
+      "evidence": "docs/PHARMACY-SYSTEM.md:151",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Payer/fee/coverage policies and billing approval",
+      "status": "remaining"
+    },
+    {
+      "id": "F21",
+      "phase": "full_product_after_pilot",
+      "work": "Payer submission, acknowledgment and reconciliation adapters",
+      "remaining_engineer_days_low": 8,
+      "remaining_engineer_days_high": 15,
+      "depends_on": [
+        "F01",
+        "F20"
+      ],
+      "accountable": "Engineering + payer provider",
+      "done_when": "Supported test submission/rejection/retry/correction/reversal and remittance reconciliation pass without duplicate claims.",
+      "evidence": "deploy/production/PROVIDER-OPERATIONS-REGISTER.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "One clearinghouse/transport assumed; payer count/enrollment/certification unquoted",
+      "status": "remaining"
+    },
+    {
+      "id": "F22",
+      "phase": "full_product_after_pilot",
+      "work": "Approved AI adapter and reviewed suggestion application",
+      "remaining_engineer_days_low": 4,
+      "remaining_engineer_days_high": 8,
+      "depends_on": [
+        "F01",
+        "F02"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Approved provider dispatch, source-linked suggestions, abstention/failure and explicit normal intake/amendment confirmation pass; no autonomous clinical authority.",
+      "evidence": "docs/PHARMACY-AI-DRAFTS.md:22",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "GLM deployment/account/terms undecided; one model/interface assumed; no live calls now",
+      "status": "remaining"
+    },
+    {
+      "id": "F23",
+      "phase": "full_product_after_pilot",
+      "work": "Pharmacy OCR source-fidelity pipeline and evaluation",
+      "remaining_engineer_days_low": 3,
+      "remaining_engineer_days_high": 6,
+      "depends_on": [
+        "F01",
+        "F22"
+      ],
+      "accountable": "Engineering + pharmacist",
+      "done_when": "Original-file/page provenance, OCR uncertainty, review and representative synthetic quality benchmark accepted.",
+      "evidence": "docs/PHARMACY-AI-DRAFTS.md; api/app/Http/Controllers/API/OcrController.php",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Approved OCR processing terms; reuse shared Vision only if appropriate, not assumed",
+      "status": "remaining"
+    },
+    {
+      "id": "F24",
+      "phase": "full_product_after_pilot",
+      "work": "External signature provider acceptance",
+      "remaining_engineer_days_low": 2,
+      "remaining_engineer_days_high": 4,
+      "depends_on": [
+        "F01"
+      ],
+      "accountable": "Engineering + operational owner",
+      "done_when": "Existing adapter delivery, recipient/template ownership, verified webhook/archive and retry/recovery accepted.",
+      "evidence": "api/app/Services/DocuSignService.php; deploy/production/SIGNING.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Existing DocuSign account/terms/test environment; not required for excluded synthetic pilot",
+      "status": "remaining"
+    },
+    {
+      "id": "F25",
+      "phase": "full_product_after_pilot",
+      "work": "Production identity, mail and operator recovery",
+      "remaining_engineer_days_low": 2,
+      "remaining_engineer_days_high": 4,
+      "depends_on": [
+        "F01",
+        "F28"
+      ],
+      "accountable": "Engineering + owner",
+      "done_when": "Owner-controlled sign-in/MFA/reset/invitation delivery or approved recovery procedure demonstrated on real origins.",
+      "evidence": "docs/CODEX-CLOUD-AUTH-ACCEPTANCE-20261019.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Approved sender/provider and support owner; no production credentials needed for present audit",
+      "status": "remaining"
+    },
+    {
+      "id": "F26",
+      "phase": "full_product_after_pilot",
+      "work": "Production privacy, access, audit/export and retention review",
+      "remaining_engineer_days_low": 4,
+      "remaining_engineer_days_high": 8,
+      "depends_on": [
+        "F01",
+        "F02",
+        "F08",
+        "F15"
+      ],
+      "accountable": "Engineering + security/operations",
+      "done_when": "Role/site/document/PHI/audit retention and export controls, least privilege and residual dependency findings disposition accepted.",
+      "evidence": "deploy/production/LAUNCH.md; deploy/production/DEPENDENCIES.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Retention/security policies; independent legal/security review time is separate",
+      "status": "remaining"
+    },
+    {
+      "id": "F27",
+      "phase": "full_product_after_pilot",
+      "work": "Concurrency/load, workers, monitoring and outage recovery",
+      "remaining_engineer_days_low": 6,
+      "remaining_engineer_days_high": 10,
+      "depends_on": [
+        "F10",
+        "F12",
+        "F15",
+        "F21"
+      ],
+      "accountable": "Engineering + operations",
+      "done_when": "Accepted volume/load and fault scenarios, worker/scheduler recovery, idempotency, alert/runbook and backup routines verified.",
+      "evidence": "deploy/production/LAUNCH.md; deploy/production/RELEASE-STATUS.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Real site volumes, SLA/RPO/RTO and operations ownership unknown",
+      "status": "remaining"
+    },
+    {
+      "id": "F28",
+      "phase": "full_product_after_pilot",
+      "work": "Host inventory, coordinated restore and migration/rollback rehearsal",
+      "remaining_engineer_days_low": 5,
+      "remaining_engineer_days_high": 9,
+      "depends_on": [
+        "P09"
+      ],
+      "accountable": "Engineering + hosting administrator",
+      "done_when": "Authorized host identity/inventory and recoverable DB/private-file/key/config restore, migration/rollback rehearsal accepted; final cutover is F31.",
+      "evidence": "deploy/production/LAUNCH.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Authenticated hosting access, approved deployment window and explicit deployment authorization remain separate",
+      "status": "remaining"
+    },
+    {
+      "id": "F29",
+      "phase": "full_product_after_pilot",
+      "work": "Per-site full-workflow UAT, training and final acceptance support",
+      "remaining_engineer_days_low": 4,
+      "remaining_engineer_days_high": 8,
+      "depends_on": [
+        "F04",
+        "F05",
+        "F07",
+        "F09",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F15",
+        "F18",
+        "F19",
+        "F20",
+        "F21",
+        "F22",
+        "F23",
+        "F24",
+        "F25",
+        "F26",
+        "F27",
+        "F28",
+        "F30"
+      ],
+      "accountable": "Engineering + pharmacist + owner",
+      "done_when": "Supported end-to-end ordinary/controlled/sterile/nonsterile/site scenarios, training, incident ownership and signed scope accepted; no unresolved blockers.",
+      "evidence": "deploy/production/PROVIDER-OPERATIONS-REGISTER.md; docs/PHARMACY-SYSTEM.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Pharmacist/site professional effort, certification and calendar availability not included",
+      "status": "remaining"
+    },
+    {
+      "id": "F30",
+      "phase": "full_product_after_pilot",
+      "work": "Safe production/site enablement gates and configuration",
+      "remaining_engineer_days_low": 2,
+      "remaining_engineer_days_high": 4,
+      "depends_on": [
+        "F08",
+        "F11",
+        "F12",
+        "F15",
+        "F26"
+      ],
+      "accountable": "Engineering + pharmacist + owner",
+      "done_when": "Replace preview-only availability with tested fail-closed per-site/workflow enablement prerequisites; unaccepted sites remain disabled; no blanket environment bypass.",
+      "evidence": "api/app/Http/Middleware/PharmacyPreviewOnly.php:13",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Explicit professional and owner approvals before actual activation; development tests alone cannot approve operations",
+      "status": "remaining"
+    },
+    {
+      "id": "F31",
+      "phase": "full_product_after_pilot",
+      "work": "Final candidate cutover, real-origin acceptance and rollback standby",
+      "remaining_engineer_days_low": 1,
+      "remaining_engineer_days_high": 3,
+      "depends_on": [
+        "F29"
+      ],
+      "accountable": "Engineering + hosting administrator + owner",
+      "done_when": "Fresh final-head CI/builds/archives, accepted migration/backup, authorized cutover and real-HTTPS smoke pass; deployed commit and rollback evidence recorded.",
+      "evidence": "deploy/production/LAUNCH.md",
+      "estimate_confidence": "low",
+      "decision_or_external_dependency": "Owner release/deployment authorization, hosting window and reopening-write acceptance; no deployment authorized by this audit",
+      "status": "remaining"
+    }
+  ],
+  "assumptions": [
+    "One primary prescribing interface, one clinical reference, one MAPS submission interface plus separate query access, one payer transport/clearinghouse, one AI model/OCR path and one initial device family.",
+    "Planning follows the repository Michigan-focused requirements; additional jurisdictions require explicit re-sizing. Do not infer actual site jurisdictions from those references.",
+    "Actual site count is unknown. F29 covers one representative acceptance cycle; each additional site must be sized after inventory.",
+    "Full product reserve is 25 percent above remaining package ranges; pilot P12 already contains its defect allowance.",
+    "Vendor certification, provider procurement, licensed clinical standards, pharmacy qualification, formal independent compliance review and hosting costs/calendar are not quoted.",
+    "New providers/sites/device families or policy redesign expand the baseline through explicit change control."
+  ]
+}

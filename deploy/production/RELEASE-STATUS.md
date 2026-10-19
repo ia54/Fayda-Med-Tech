@@ -2,6 +2,10 @@
 
 This is the current launch checklist. `OUTSTANDING.md` retains the historical evidence and older increments; older counts and statements there are not current acceptance claims.
 
+## October 19 completion audit
+
+For current engineering scope, remaining effort and pilot-first sequencing, use [the reconciled completion audit](../../docs/BUILD-COMPLETION-AUDIT-20261019.md) and [sized backlog](../../docs/BUILD-FINISH-BACKLOG-20261019.json). Audited source `c6d0db7` has 454-test cloud evidence; earlier source pins below remain historical. Fresh dependency findings supersede the old low-only note. The launch-readiness JSON is a historical gate snapshot at `914ae750`, not a current code-completion percentage. No production/site gate is cleared by this planning audit.
+
 ## September 30 client pilot and dependency work
 
 The owner authorized a narrower synthetic shared-platform client pilot while the full multi-location pharmacy mission continues. See [CLIENT-PILOT.md](CLIENT-PILOT.md) and [PROVIDER-OPERATIONS-REGISTER.md](PROVIDER-OPERATIONS-REGISTER.md). Dr. Ghadeh is the identified pharmacy/co-owner and proposed operational approver; her account inventory and operating acceptance remain pending. No provider contract, account or clinical approval is inferred from her identification.

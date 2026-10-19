@@ -2,6 +2,10 @@
 
 Updated October 18, 2026. The owner has directed build work to proceed while server access is deferred. This is a software worklist, not a launch approval or a percentage-complete claim.
 
+## October 19 audit and agreed delivery order
+
+The owner selected **synthetic pilot first, then full product**. The reconciled [completion audit and finish plan](BUILD-COMPLETION-AUDIT-20261019.md), [sized backlog](BUILD-FINISH-BACKLOG-20261019.csv) and [dependency/acceptance model](BUILD-FINISH-BACKLOG-20261019.json) now define remaining work. Historical increments below retain their original evidence; they are not current completion percentages. The audit reproduces an uncovered client analytics disclosure, identifies fabricated analytics/subscription displays and records new dependency advisories. These are prioritized pilot repairs; the full confirmed clinical/operational scope remains open.
+
 ## Workflow navigation baseline
 
 The compounding worksheet now presents worksheet review, ingredient allocation/preparation, quality/dating, container custody, suitability/labels and history in workflow order. Navigation preserves mounted forms and existing container deep links. Discontinuation and ingredient incident holds remain visible above the sections. Opening a detail record skips unrelated formulation/worksheet list requests; returning to the lists refreshes them. Worksheet retrieval has an explicit retry and refresh path.

@@ -2,6 +2,10 @@
 
 This records current dependency evidence, not approval to deploy or process patient data. Re-run audits for the selected release and verify the actual host platform before cutover.
 
+## October 19 audit update
+
+Fresh `pnpm audit --json` reports **3 high, 2 moderate and 3 low** admin advisory findings; `npm audit --json` reports **1 high** public-site finding (source-map-js, also present in admin). Composer's locked audit was blocked by the runtime's Packagist network restriction, so current API advisory status is unknown. See the [source-bound audit evidence](../../docs/evidence/BUILD-AUDIT-20261019.json) for packages, affected paths, reported patches and limits, and P07 in the [finish backlog](../../docs/BUILD-FINISH-BACKLOG-20261019.json) for remediation. Lockfiles were unchanged by the audit. Earlier findings below are historical and must not be described as current advisory clearance. No runtime exploitability or package upgrade is asserted by registry severity alone.
+
 ## Locked dependency findings
 
 - API: Composer audit of the complete locked tree, including development dependencies, reports no known security advisories. `doctrine/annotations` remains abandoned through the Swagger tooling; this is an unresolved maintenance finding, not a clean-maintenance claim.

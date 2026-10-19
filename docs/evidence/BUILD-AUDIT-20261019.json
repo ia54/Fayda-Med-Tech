@@ -1,0 +1,311 @@
+{
+  "audit_date": "2026-10-19",
+  "audited_commit": "c6d0db736440cb4646d57f2103eaaaedad4213ba",
+  "production_accessed": false,
+  "application_source_changed": false,
+  "inspection_scope": "Completion/source-and-evidence audit; targeted synthetic API reproduction and package registry audits. Not exhaustive penetration, regulatory, clinical or production audit.",
+  "source_sha256": {
+    "api/app/Http/Controllers/API/BillingAnalyticsController.php": "0778aec8635e90e43d77cea6ab2c563770809b8bc2585b5315064a763e0cbe9d",
+    "api/routes/api.php": "279e40e72c6919ce7b5f6fa2b8f3233eea1af7fd4f453ef80cc8ca5ffc22e429",
+    "admin-panel/app/(private)/dashboard/legal/billing/page.tsx": "19dc8c9a7416998c3452555b6989b7bca4fd87260dc1ab8da76abfa462e144b9",
+    "admin-panel/app/(private)/dashboard/billing/analytics/page.tsx": "e97e7135de27bddc15b4aa897dfdeca592bc5fb2988668817b32b66ffcdeee57",
+    "api/app/Http/Middleware/PharmacyPreviewOnly.php": "f722b5daaa4dc88d9358a4331d2c555cbc77aaec55fbfc0b6d63f098bfc234a8",
+    "api/app/Http/Controllers/API/PharmacyController.php": "d56283581ac2e60c1cfead6418363f39637ea8d3e1d6b822625ed59a2e432fa5",
+    "api/app/Http/Controllers/API/PharmacyHandoverRehearsalController.php": "1ba5d8b9399ba38b216991e02c242360a8540c82038a2d4f8812412a2d7889d0",
+    "api/app/Http/Controllers/API/PharmacyPrescriptionTransferController.php": "6610c60085933a23d6cacf3d3b3abb80772ab298ad53371a40c3bf3e4ea0da3d",
+    "api/app/Services/PharmacyAuthorizationLimits.php": "abbec774b5ebb971f6d1193cd4076f64f92ca2519005ef9227c767b3c0faf1a7",
+    "api/app/Services/PharmacyQualityProtocolLedger.php": "45f5080866b41218296635213760eb39f6a0098b448eaa9d80cedbd45a4dba23",
+    "api/app/Services/PharmacyBatchQualityLedger.php": "a5dd1da822da342a8b8eb0a104b8552835b80a39b344e3f9faaf6386d9ea8a5a",
+    "api/app/Services/PharmacyBeyondUseLedger.php": "e0f73b446eecf1064866d3c46b5f581cd37fd6c575b13a797252f0ebed87c567",
+    "api/app/Services/PharmacyExtractionLedger.php": "daa480c22c27a0c40dc0b1add889bb31bb6514022b576932ec74f1e58f12fcf1",
+    "api/app/Services/DocuSignService.php": "484e759869e2f73f88fc9201c5ebbfdfffbf53d234f058b141cd1a42e1ece363",
+    "api/app/Http/Controllers/API/OcrController.php": "62f14de4766a47b94015b1bf2fa80bc5c84092c6f739ac6cad03f60a754f53d6",
+    "api/composer.lock": "435e9397e7e081f0913f3ef6edf667be70ddb7146eeaf653f3a9d48128fdf80c",
+    "admin-panel/pnpm-lock.yaml": "a9497736a81c2d09a9fb6ff989cccecaeccedff4238c08971c4a69d93f9961ef",
+    "frontend/package-lock.json": "1cb585951dfe5e27d3ebdcb73037ac6e86530fd8850d21344c5e9352800dd28e"
+  },
+  "inventory": {
+    "admin_page_source_files": 129,
+    "feature_test_files": 29,
+    "pharmacy_service_files": 59,
+    "migration_files": 137,
+    "pharmacy_test_methods": 269
+  },
+  "historical_launch_tracker": {
+    "commit": "914ae750db9f5c56e3fa3768d59fa1ebd697a601",
+    "counts": {
+      "passed": 4,
+      "in_progress": 6,
+      "blocked": 10
+    },
+    "usable_as_current_completion_percent": false
+  },
+  "fresh_checks": {
+    "analytics_diagnostic": {
+      "command": "php vendor/bin/phpunit -c phpunit.xml --colors=never /workspace/.cloud-tools/build-audit/BillingAnalyticsAuditTest.php --filter test_audit_client_analytics",
+      "tests": 1,
+      "assertions": 7,
+      "interpretation": "confirms unsafe existing behavior: inaccessible invoices total 0 but organization denial rate 50%, invented 14.5 days/78.4% and 234 payer claims visible to client"
+    },
+    "admin_package_audit": {
+      "command": "corepack pnpm audit --json",
+      "advisory_counts": {
+        "info": 0,
+        "low": 3,
+        "moderate": 2,
+        "high": 3,
+        "critical": 0
+      },
+      "advisories": [
+        {
+          "module_name": "quill",
+          "title": "Quill is vulnerable to XSS via HTML export feature",
+          "severity": "low",
+          "vulnerable_versions": "=2.0.3",
+          "patched_versions": null,
+          "github_advisory_id": "GHSA-v3m3-f69x-jf25",
+          "url": "https://github.com/advisories/GHSA-v3m3-f69x-jf25",
+          "findings": [
+            {
+              "version": "2.0.3",
+              "paths": [
+                ".>react-quill-new>quill"
+              ],
+              "dev": false,
+              "optional": false,
+              "bundled": false
+            }
+          ]
+        },
+        {
+          "module_name": "dompurify",
+          "title": "DOMPurify: IN_PLACE: node-removing afterSanitize hook leaves detached subtree event handlers armed, causing DOM XSS",
+          "severity": "low",
+          "vulnerable_versions": ">=3.4.13 <=3.4.15",
+          "patched_versions": ">=3.4.16",
+          "github_advisory_id": "GHSA-p98j-92pf-mc4p",
+          "url": "https://github.com/advisories/GHSA-p98j-92pf-mc4p",
+          "findings": [
+            {
+              "version": "3.4.15",
+              "paths": [
+                ".>dompurify"
+              ],
+              "dev": false,
+              "optional": false,
+              "bundled": false
+            }
+          ]
+        },
+        {
+          "module_name": "braces",
+          "title": "braces vulnerable to stack-exhaustion denial of service through deeply nested patterns",
+          "severity": "high",
+          "vulnerable_versions": "<=3.0.3",
+          "patched_versions": ">=3.0.4",
+          "github_advisory_id": "GHSA-vfj7-8cjw-p6xm",
+          "url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+          "findings": [
+            {
+              "version": "3.0.3",
+              "paths": [
+                ".>eslint-config-next>@next/eslint-plugin-next>fast-glob>micromatch>braces"
+              ],
+              "dev": true,
+              "optional": false,
+              "bundled": false
+            }
+          ]
+        },
+        {
+          "module_name": "dompurify",
+          "title": "DOMPurify: IN_PLACE returns a force-removed rawtext root whose text carries attacker markup \u2014 pure HTML reparse executes",
+          "severity": "low",
+          "vulnerable_versions": "<=3.4.15",
+          "patched_versions": ">=3.4.16",
+          "github_advisory_id": "GHSA-6688-9rhm-gjv2",
+          "url": "https://github.com/advisories/GHSA-6688-9rhm-gjv2",
+          "findings": [
+            {
+              "version": "3.4.15",
+              "paths": [
+                ".>dompurify"
+              ],
+              "dev": false,
+              "optional": false,
+              "bundled": false
+            }
+          ]
+        },
+        {
+          "module_name": "source-map-js",
+          "title": "source-map-js allows event-loop denial of service through indexed source-map section offsets",
+          "severity": "high",
+          "vulnerable_versions": ">=1.0.0 <1.2.2",
+          "patched_versions": ">=1.2.2",
+          "github_advisory_id": "GHSA-68fv-2mgg-jv7q",
+          "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
+          "findings": [
+            {
+              "version": "1.2.1",
+              "paths": [
+                ".>@vercel/analytics>next>postcss>source-map-js",
+                ".>autoprefixer>postcss>source-map-js",
+                ".>geist>next>postcss>source-map-js",
+                ".>next>postcss>source-map-js",
+                ".>@tailwindcss/postcss>@tailwindcss/node>source-map-js",
+                ".>@tailwindcss/postcss>postcss>source-map-js",
+                ".>postcss>source-map-js"
+              ],
+              "dev": false,
+              "optional": false,
+              "bundled": false
+            }
+          ]
+        },
+        {
+          "module_name": "sharp",
+          "title": "sharp : Vulnerability in librsvg dependency CVE-2026-96889",
+          "severity": "high",
+          "vulnerable_versions": "<0.35.5",
+          "patched_versions": ">=0.35.5",
+          "github_advisory_id": "GHSA-wq5f-xc86-pv6w",
+          "url": "https://github.com/advisories/GHSA-wq5f-xc86-pv6w",
+          "findings": [
+            {
+              "version": "0.35.4",
+              "paths": [
+                ".>@vercel/analytics>next>sharp",
+                ".>geist>next>sharp",
+                ".>next>sharp"
+              ],
+              "dev": false,
+              "optional": true,
+              "bundled": false
+            }
+          ]
+        },
+        {
+          "module_name": "next",
+          "title": "Next.js has cache poisoning of SSG and ISR pages in self-hosted applications",
+          "severity": "moderate",
+          "vulnerable_versions": ">=15.0.0 <15.5.27",
+          "patched_versions": ">=15.5.27",
+          "github_advisory_id": "GHSA-4jqv-mc3x-m676",
+          "url": "https://github.com/advisories/GHSA-4jqv-mc3x-m676",
+          "findings": [
+            {
+              "version": "15.5.26",
+              "paths": [
+                ".>@vercel/analytics>next",
+                ".>geist>next",
+                ".>next"
+              ],
+              "dev": false,
+              "optional": false,
+              "bundled": false
+            }
+          ]
+        },
+        {
+          "module_name": "next",
+          "title": "Next.js has cache poisoning in SSG/ISR rendering that leads to cross-user content substitution and persistent denial of service",
+          "severity": "moderate",
+          "vulnerable_versions": ">=15.0.0 <15.5.27",
+          "patched_versions": ">=15.5.27",
+          "github_advisory_id": "GHSA-mcj8-r9mp-w47p",
+          "url": "https://github.com/advisories/GHSA-mcj8-r9mp-w47p",
+          "findings": [
+            {
+              "version": "15.5.26",
+              "paths": [
+                ".>@vercel/analytics>next",
+                ".>geist>next",
+                ".>next"
+              ],
+              "dev": false,
+              "optional": false,
+              "bundled": false
+            }
+          ]
+        }
+      ]
+    },
+    "public_package_audit": {
+      "command": "npm audit --json",
+      "advisory_counts": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 1,
+        "critical": 0,
+        "total": 1
+      },
+      "details": {
+        "source-map-js": {
+          "name": "source-map-js",
+          "severity": "high",
+          "isDirect": false,
+          "via": [
+            {
+              "source": 1241209,
+              "name": "source-map-js",
+              "dependency": "source-map-js",
+              "title": "source-map-js allows event-loop denial of service through indexed source-map section offsets",
+              "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
+              "severity": "high",
+              "cwe": [
+                "CWE-1284"
+              ],
+              "cvss": {
+                "score": 7.5,
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+              },
+              "range": ">=1.0.0 <1.2.2"
+            }
+          ],
+          "effects": [],
+          "range": "1.0.0 - 1.2.1",
+          "nodes": [
+            "node_modules/source-map-js"
+          ],
+          "fixAvailable": true
+        }
+      }
+    },
+    "api_package_audit": {
+      "command": "composer audit --locked --format=json",
+      "status": "blocked",
+      "reason": "CONNECT tunnel to packagist.org security-advisories returned 403; current PHP advisory status unknown; historical audit not substituted"
+    }
+  },
+  "evidence_archive": {
+    "path": "/workspace/.cloud-tools/build-audit/build-completion-audit-20261019.tar.gz",
+    "sha256": "bb7852e2c94e7f89fa7dd797ffc67503527365a32f424371596f7b3bd7052135",
+    "size_bytes": 10848
+  },
+  "artifact_sha256": {
+    "/workspace/.cloud-tools/build-audit/BillingAnalyticsAuditTest.php": "342b4d4812735929a175ae58bb31e82ce67d993af013850b8e75705d3ff9e525",
+    "/workspace/.cloud-tools/build-audit/analytics-reproduction.log": "660be9427b382bf9443b74b5e6a971b5551f4a0740ad23bd0191af39e66f287b",
+    "/workspace/.cloud-tools/build-audit/admin-audit.json": "3a920e4d7c27af5e9a8c4438cb75f9368aec3012a9fe132bb6aa6b914302e5f4",
+    "/workspace/.cloud-tools/build-audit/public-audit.json": "0ae38d693b5fd1d0a5d9011a3600d5dea19889be9fa5c179ee138109816055b2",
+    "/workspace/.cloud-tools/build-audit/composer-audit-error.log": "df132c0eb6f2d4c7367fccaeb8ce636e02f70dc9bff0d4df12eed4e1b75dc751",
+    "/workspace/.cloud-tools/build-audit/make_backlog.py": "be9c8cbccdcf87b4df1653fb37f2a1c925d2a37f93a4cac4ab8bad210d86c224"
+  },
+  "sizing_summary": {
+    "pilot": {
+      "packages": 12,
+      "low": 7.75,
+      "high": 17.75
+    },
+    "full_product_after_pilot": {
+      "packages": 31,
+      "low": 123,
+      "high": 241
+    },
+    "full_product_after_pilot_with_25_percent_reserve": {
+      "low": 153.75,
+      "high": 301.25
+    }
+  }
+}
