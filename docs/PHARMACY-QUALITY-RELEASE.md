@@ -4,7 +4,7 @@ Development plan and local implementation status, October 4, 2026. Pharmacy rema
 
 ## Source basis and decisions still required
 
-Michigan R 338.533 adopts specified USP compounding chapters and requires applicable 503A pharmacies to comply. R 338.535 separately governs starting/resuming sterile compounding. Site scope and the applicable operating framework need Dr. Ghadeh's confirmation; sterile scope is not inferred from the request for compounded medications.
+Michigan R 338.533 adopts specified USP compounding chapters and requires applicable 503A pharmacies to comply. R 338.535 separately governs starting/resuming sterile compounding. The owner confirmed both sterile and nonsterile product scope on September 25 and reconfirmed it October 19. Each site’s capability and applicable operating framework still need Dr. Ghadeh’s confirmation; product scope is not site approval.
 
 Primary source inspected October 4: [Michigan pharmacy general rules, R 338.533 and R 338.535](https://ars.apps.lara.state.mi.us/AdminCode/DownloadAdminCodeFile?FileName=R+338.471+to+R+338.592.pdf&ReturnHTML=True).
 
@@ -35,7 +35,7 @@ Prior Chrome acceptance covered independent protocol, quality and dating review,
 ## Remaining implementation and acceptance
 
 - Container custody, recount and repackaging persistence/reconciliation are implemented in the later sections below. Finished-product label proofs and simulated print evidence are now published; barcode comparison is under local acceptance. Final release authorization, with revalidation through reservation and handover, remains unfinished.
-- Applicable official standards, site capability, sterile/nonsterile scope, provider connections and pharmacist/device acceptance. Software tests do not establish clinical adequacy.
+- Applicable official standards, site capability for the confirmed sterile and nonsterile product scope, provider connections and pharmacist/device acceptance. Software tests do not establish clinical adequacy.
 - Integrity-conflict recovery now exposes rejection-only controls from current history metadata for pending quality, dating, packaging and suitability proposals and draft protocols. Independent authorized pharmacists must supply investigation evidence and explicitly confirm rejection. Network/access/server failures do not expose this control. Backend authorization remains authoritative; original records are retained. Browser acceptance remains outstanding.
 
 The full seven-step workflow above remains in scope. No clinical assurance, operational acceptance or medication release is claimed.

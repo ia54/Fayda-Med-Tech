@@ -114,7 +114,7 @@ This is a foundation, not a complete clinical record system: structured drug/all
 
 ## Sterile and nonsterile implementation scope — September 25
 
-Both are required. New compounded intake must explicitly identify sterile or nonsterile preparation; contradictory or missing classifications are rejected. Existing records remain unclassified rather than receiving an invented default. Both types remain blocked from final dispensing.
+Both are required; the owner reconfirmed this scope on October 19, 2026. This is product scope, not approval of either pathway at any operating location. New compounded intake must explicitly identify sterile or nonsterile preparation; contradictory or missing classifications are rejected. Existing records remain unclassified rather than receiving an invented default. Both types remain blocked from final dispensing.
 
 Next shared implementation: immutable approved formulation versions; ingredient identities, supplier lots, expiry, potency and units; calculation evidence; a patient/prescription-linked batch record; preparer and checker attribution; quarantine, rejection and recall traceability. An AI suggestion must remain a proposal until reviewed.
 
