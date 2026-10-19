@@ -56,6 +56,7 @@ try {
  const reviewed=await wait(biller,`/api/eobs/${eob.id}`,'PUT',()=>biller.getByRole('button',{name:'Mark reviewed',exact:true}).click());assert.equal(reviewed.status(),200);console.log('EOB paging, list retry and retained review retry passed');
  await biller.getByRole('dialog').waitFor({state:'hidden'});assert.equal(db.prepare('SELECT status FROM eobs WHERE id=?').get(eob.id).status,'processed');
  console.log('Preparing private document browser lifecycle');
+ await biller.getByLabel(`Actions for EOB ${eob.id}`).click();await biller.getByRole('menuitem',{name:'Review record',exact:true}).click();const rejected=await wait(biller,`/api/eobs/${eob.id}`,'PUT',()=>biller.getByRole('button',{name:'Reject record',exact:true}).click());assert.equal(rejected.status(),200);await biller.getByRole('dialog').waitFor({state:'hidden'});assert.equal(db.prepare('SELECT status FROM eobs WHERE id=?').get(eob.id).status,'rejected');
  const pdf=await PDFDocument.create();pdf.addPage().drawText('SYNTHETIC CLOUD PILOT - NO PHI',{x:40,y:700,size:16});const bytes=Buffer.from(await pdf.save());
  await client.goto('http://127.0.0.1:3000/dashboard/client/documents/upload');
  await client.getByLabel('Choose document').setInputFiles({name:'SYN-cloud-pilot.pdf',mimeType:'application/pdf',buffer:bytes});
@@ -64,6 +65,7 @@ try {
  await client.goto('http://127.0.0.1:3000/dashboard/client/documents');
  await client.getByLabel('Preview SYNTHETIC cloud pilot document',{exact:true}).click();
  const preview=client.locator('[data-document-preview="true"]');await preview.locator('iframe').waitFor();
+ await client.keyboard.press('Tab');assert.ok(await preview.evaluate(el=>el.contains(document.activeElement)));await client.keyboard.press('Shift+Tab');assert.ok(await preview.evaluate(el=>el.contains(document.activeElement)));
  await client.waitForLoadState('networkidle');await client.screenshot({path:`${c.directory}/private-pdf-preview.png`,fullPage:true});
  const downloading=client.waitForEvent('download');await preview.getByRole('link',{name:'Download original document',exact:true}).click();const download=await downloading;assert.equal(await download.failure(),null);await download.saveAs(`${c.directory}/downloaded-SYN-cloud-pilot.pdf`);assert.equal(sha256(readFileSync(`${c.directory}/downloaded-SYN-cloud-pilot.pdf`)),sha256(bytes));
  const doc=db.prepare("SELECT * FROM documents WHERE title='SYNTHETIC cloud pilot document'").get();assert.ok(doc);
@@ -92,5 +94,5 @@ try {
   await p.screenshot({path:`${c.directory}/mobile-${path.replaceAll('/','-')}.png`,fullPage:true});mobile.push(path);
  }
  assert.deepEqual(snapshot(db,Object.keys(baseline)),baseline);
- await c.result('pilot-records',{mobile_390_keyboard_smoke:mobile,analytics_recorded_basis:true,plan_no_invented_financials:true,appeals_pagination_filter_retry_draft:true,eob_review_failure_retained_retry:true,document_upload_pdf_download_sha256:sha256(bytes),document_assignment_revocation:true,document_foreign_and_anonymous_denied:true,legacy_text_fallback_download_and_reload:true,unsupported_text_upload_denied:true,client_analytics_denied_in_browser:true,payments_stock_fills_unchanged:true,release_authorized:false});
+ await c.result('pilot-records',{mobile_390_keyboard_smoke:mobile,analytics_recorded_basis:true,plan_no_invented_financials:true,appeals_pagination_filter_retry_draft:true,eob_review_failure_retained_retry:true,eob_rejection_recorded:true,document_dialog_keyboard_focus:true,document_upload_pdf_download_sha256:sha256(bytes),document_assignment_revocation:true,document_foreign_and_anonymous_denied:true,legacy_text_fallback_download_and_reload:true,unsupported_text_upload_denied:true,client_analytics_denied_in_browser:true,payments_stock_fills_unchanged:true,release_authorized:false});
 } catch(error){await c.failure('pilot-records');throw error;}finally{await c.close();}
