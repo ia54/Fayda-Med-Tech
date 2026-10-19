@@ -21,9 +21,9 @@ class CheckTokenExpiration
             $token = $user->token();
             
             if ($token->expires_at->isPast()) {
-                // Revoke the token as it's expired
-                $token->revoked = true;
-                $token->save();
+                // Expiry denies access; explicit revocation (logout, recovery or
+                // rotation) separately invalidates the linked refresh credential.
+                // Do not turn a normal access expiry into refresh revocation.
                 
                 return response()->json([
                     'status' => false,

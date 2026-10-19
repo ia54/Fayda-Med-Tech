@@ -73,6 +73,23 @@ class TokenLifecycleTest extends TestCase
         $this->bearer(); $this->postJson('/api/refresh-token', ['refresh_token' => $second->json('refresh_token')])->assertUnauthorized();
         $this->bearer($second->json('access_token')); $this->getJson('/api/profile')->assertUnauthorized();
     }
+    public function test_expired_access_rejection_preserves_single_use_refresh_but_not_logout(): void
+    {
+        $user = $this->user('client');
+        $first = $this->postJson('/api/login', ['email' => $user->email, 'password' => 'Synthetic-test-only-123!'])->assertOk();
+        DB::table('oauth_access_tokens')->where('user_id', $user->id)->update(['expires_at' => now()->subMinute()]);
+        $this->bearer($first->json('access_token'));
+        $this->getJson('/api/profile')->assertUnauthorized();
+        $this->bearer();
+        $second = $this->postJson('/api/refresh-token', ['refresh_token' => $first->json('refresh_token')])->assertOk();
+        $this->postJson('/api/refresh-token', ['refresh_token' => $first->json('refresh_token')])->assertUnauthorized();
+        $this->bearer($first->json('access_token')); $this->getJson('/api/profile')->assertUnauthorized();
+        $this->bearer($second->json('access_token')); $this->getJson('/api/profile')->assertOk();
+        $this->postJson('/api/logout')->assertOk();
+        $this->bearer();
+        $this->postJson('/api/refresh-token', ['refresh_token' => $second->json('refresh_token')])->assertUnauthorized();
+    }
+
     public function test_inactivity_timeout_revokes_old_token_and_allows_recent_activity(): void
     {
         config(['session.lifetime' => 120]);

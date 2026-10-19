@@ -20,7 +20,7 @@ export async function cloudBrowser(database){
  for(const [role,session] of Object.entries(fixture.sessions)){
   const context=await browser.newContext({serviceWorkers:'block',viewport:{width:1440,height:1100}});
   await context.route('**/*',route=>{const u=new URL(route.request().url());if(!['http://127.0.0.1:3000','http://127.0.0.1:8000'].includes(u.origin)){blocked.add(u.hostname);return route.abort();}return route.continue();});
-  await context.addInitScript(session=>localStorage.setItem('persist:root',JSON.stringify({auth:JSON.stringify(session),_persist:JSON.stringify({version:1,rehydrated:true})})),session);
+  if(session.user || session.token) await context.addInitScript(session=>localStorage.setItem('persist:root',JSON.stringify({auth:JSON.stringify(session),_persist:JSON.stringify({version:1,rehydrated:true})})),session);
   pages[role]=await context.newPage();
   pages[role].setDefaultTimeout(20000);pages[role].setDefaultNavigationTimeout(60000);
   pages[role].on('response',r=>{if(r.url().startsWith('http://127.0.0.1:8000/'))responses.push({role,path:new URL(r.url()).pathname,method:r.request().method(),status:r.status()});});
