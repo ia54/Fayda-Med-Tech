@@ -1,0 +1,160 @@
+DISPOSABLE ENGINE: fayda-cloud-mysql
+
+   INFO  Running migrations.  
+
+  2026_09_23_000001_add_payment_corrections ..................... 47.71ms DONE
+  2026_09_23_000002_add_settlement_allocations ................... 5.60ms DONE
+  2026_09_23_000003_add_settlement_request_keys ................. 18.33ms DONE
+  2026_09_23_000004_add_settlement_corrections .................. 39.50ms DONE
+
+PASS: 141 restored tables match every row and schema definition.
+PASS: synthetic database restored into a separate target and private-file archive restored byte-for-byte.
+DISPOSABLE ENGINE: fayda-cloud-mariadb
+
+   INFO  Preparing database.  
+
+  Creating migration table ....................................... 3.89ms DONE
+
+   INFO  Running migrations.  
+
+  2014_10_12_100000_create_password_reset_tokens_table ........... 1.02ms DONE
+  2016_06_01_000001_create_oauth_auth_codes_table ................ 1.95ms DONE
+  2016_06_01_000002_create_oauth_access_tokens_table ............. 1.45ms DONE
+  2016_06_01_000003_create_oauth_refresh_tokens_table ............ 1.31ms DONE
+  2016_06_01_000004_create_oauth_clients_table ................... 1.46ms DONE
+  2016_06_01_000005_create_oauth_personal_access_clients_table ... 0.76ms DONE
+  2019_08_19_000000_create_failed_jobs_table ..................... 1.50ms DONE
+  2025_05_24_094545_create_users_table ........................... 1.48ms DONE
+  2025_11_06_000001_update_users_table_structure ................. 4.08ms DONE
+  2025_11_06_165351_create_organizations_table ................... 1.57ms DONE
+  2025_11_07_172548_create_organization_types_table .............. 1.25ms DONE
+  2025_11_07_181344_create_subscription_plans_table .............. 1.45ms DONE
+  2025_11_08_123930_add_organization_id_and_last_login_to_users_table  3.18ms DONE
+  2025_11_08_125243_add_status_to_users_table .................... 1.02ms DONE
+  2025_11_08_131949_create_blogs_table ........................... 1.47ms DONE
+  2025_11_09_190558_create_blog_categories_table ................. 1.46ms DONE
+  2026_01_11_162650_create_pages_table ........................... 1.20ms DONE
+  2026_01_11_162655_create_medias_table .......................... 0.97ms DONE
+  2026_01_11_162656_create_blocks_table .......................... 1.89ms DONE
+  2026_01_11_162656_create_seos_table ............................ 1.75ms DONE
+  2026_01_11_162657_create_fields_table .......................... 2.19ms DONE
+  2026_01_14_210822_create_app_settings_table .................... 1.23ms DONE
+  2026_01_16_163303_create_file_managers_table ................... 1.80ms DONE
+  2026_02_06_185756_create_faqs_table ............................ 4.68ms DONE
+  2026_02_06_195226_create_testimonials_table .................... 0.79ms DONE
+  2026_02_17_190205_create_why_we_differents_table ............... 0.77ms DONE
+  2026_04_25_194344_create_documents_table ....................... 4.33ms DONE
+  2026_04_25_194411_create_document_signers_table ................ 5.64ms DONE
+  2026_04_25_194422_create_signatures_table ...................... 4.62ms DONE
+  2026_04_25_194431_create_ocr_results_table ..................... 3.57ms DONE
+  2026_04_25_194441_create_api_logs_table ........................ 3.50ms DONE
+  2026_04_25_232557_create_api_credentials_table ................. 2.08ms DONE
+  2026_05_03_000000_add_organization_id_to_existing_tables ...... 20.95ms DONE
+  2026_05_03_000001_create_case_management_tables ............... 15.74ms DONE
+  2026_05_03_000002_update_user_roles_to_string .................. 1.53ms DONE
+  2026_05_03_103110_create_audit_logs_table ...................... 4.01ms DONE
+  2026_05_03_134540_add_permissions_to_users_table ............... 0.89ms DONE
+  2026_05_03_135610_create_roles_table ........................... 1.87ms DONE
+  2026_05_03_135730_create_permissions_table ..................... 1.33ms DONE
+  2026_05_03_144207_create_security_settings_table ............... 0.82ms DONE
+  2026_05_03_144208_create_ip_allowlist_table .................... 1.04ms DONE
+  2026_05_03_152426_add_two_factor_columns_to_users_table ........ 2.60ms DONE
+  2026_05_05_165821_create_billing_tables ....................... 10.27ms DONE
+  2026_05_05_171528_create_claim_appeals_table ................... 5.49ms DONE
+  2026_05_05_172652_create_validation_issues_table ............... 4.51ms DONE
+  2026_05_06_164812_update_cases_table_for_qa_requirements ....... 4.90ms DONE
+  2026_05_06_164859_create_notifications_table ................... 1.35ms DONE
+  2026_05_06_171711_add_branding_colors_to_organizations_table ... 1.52ms DONE
+  2026_05_06_172311_add_pii_fields_to_users_table ................ 1.63ms DONE
+  2026_05_07_000001_update_users_role_enum_to_pdf_standard ....... 1.73ms DONE
+  2026_05_07_000002_create_insurance_companies_table ............. 3.19ms DONE
+  2026_05_07_000003_create_insurance_adjusters_table ............. 3.07ms DONE
+  2026_05_07_000004_create_providers_table ....................... 4.35ms DONE
+  2026_05_07_000005_create_liens_table ........................... 8.72ms DONE
+  2026_05_07_000006_create_treatment_records_table ............... 9.91ms DONE
+  2026_05_07_000007_create_letters_of_protection_table ........... 8.68ms DONE
+  2026_05_07_000009_create_insurance_claims_table ............... 11.18ms DONE
+  2026_05_07_000010_add_missing_columns_to_organizations_table ... 5.35ms DONE
+  2026_05_07_000011_add_two_factor_enabled_to_users_table ........ 0.92ms DONE
+  2026_05_07_221154_add_case_id_to_documents_table ............... 4.14ms DONE
+  2026_05_09_000001_create_demand_letters_table .................. 8.17ms DONE
+  2026_05_09_000002_create_eobs_table ........................... 12.08ms DONE
+  2026_05_09_225015_create_case_settlements_table ................ 4.76ms DONE
+  2026_05_10_214530_add_fees_to_case_settlements ................. 1.63ms DONE
+  2026_05_11_000001_create_medical_histories_table .............. 41.43ms DONE
+  2026_09_22_000001_scope_api_credential_uniqueness .............. 2.65ms DONE
+  2026_09_22_000002_protect_document_storage ..................... 1.93ms DONE
+  2026_09_22_000003_add_mfa_challenges ........................... 4.28ms DONE
+  2026_09_23_000001_add_payment_corrections ...................... 5.19ms DONE
+  2026_09_23_000002_add_settlement_allocations ................... 0.85ms DONE
+  2026_09_23_000003_add_settlement_request_keys .................. 2.33ms DONE
+  2026_09_23_000004_add_settlement_corrections ................... 4.59ms DONE
+  2026_09_24_000001_add_signing_dispatch_guard ................... 1.01ms DONE
+  2026_09_24_000002_add_signing_dispatch_snapshot ................ 1.04ms DONE
+  2026_09_24_000003_add_pharmacy_workflow ....................... 43.71ms DONE
+  2026_09_25_000001_add_pharmacy_staff_assignments ............... 9.74ms DONE
+  2026_09_25_000002_add_pharmacy_patient_records ................ 16.07ms DONE
+  2026_09_25_000003_classify_compounded_prescriptions ............ 0.94ms DONE
+  2026_09_25_000004_add_compounding_records ..................... 21.92ms DONE
+  2026_09_25_000005_add_compounding_ingredient_inventory ........ 15.38ms DONE
+  2026_09_25_000006_add_compounding_execution_records ............ 4.22ms DONE
+  2026_09_27_000001_add_execution_addenda ........................ 4.13ms DONE
+  2026_09_27_000002_add_ingredient_counts ........................ 6.22ms DONE
+  2026_09_27_000003_add_ingredient_recall_holds .................. 4.79ms DONE
+  2026_09_27_000004_create_pharmacy_source_documents ............. 4.21ms DONE
+  2026_09_27_000005_add_prescription_discontinuation ............. 6.41ms DONE
+  2026_09_27_000006_create_prescription_replacements ............. 7.46ms DONE
+  2026_09_27_000007_add_stock_recall_holds ....................... 6.41ms DONE
+  2026_09_27_000008_add_medication_stock_counts .................. 7.28ms DONE
+  2026_09_27_000009_create_stock_transfers ...................... 25.89ms DONE
+  2026_09_27_000010_create_transfer_receipt_corrections ......... 16.17ms DONE
+  2026_09_27_000011_create_pharmacy_recall_notices .............. 12.91ms DONE
+  2026_09_27_000012_create_pharmacy_recall_follow_ups ........... 16.06ms DONE
+  2026_09_27_000013_add_pharmacy_fill_quantity_accounting ........ 2.57ms DONE
+  2026_09_27_000014_create_pharmacy_allowance_closures ........... 5.56ms DONE
+  2026_09_27_000015_create_pharmacy_stock_products ............... 6.15ms DONE
+  2026_09_27_000016_create_pharmacy_fill_labels ................. 10.94ms DONE
+  2026_09_27_000017_create_pharmacy_stock_dispositions ........... 9.63ms DONE
+  2026_09_27_000018_record_atomic_prescription_replacement ....... 0.89ms DONE
+  2026_09_27_000019_create_allowance_corrections ................ 10.41ms DONE
+  2026_09_27_000020_create_recall_notice_corrections ............ 10.89ms DONE
+  2026_09_27_000021_add_pharmacy_barcode_evidence ................ 3.44ms DONE
+  2026_09_27_000022_create_pharmacy_handover_addenda ............. 2.19ms DONE
+  2026_09_27_000023_distinguish_pharmacy_label_record_copies ..... 1.38ms DONE
+  2026_09_27_000024_retain_prescription_amendments ............... 9.22ms DONE
+  2026_09_27_000025_retain_patient_location_withdrawals .......... 0.74ms DONE
+  2026_09_28_000026_record_controlled_intake_classification ...... 2.73ms DONE
+  2026_09_29_000027_retain_controlled_classification_corrections . 7.40ms DONE
+  2026_09_29_000028_retain_prescription_transfer_receipts ....... 20.37ms DONE
+  2026_09_29_000029_retain_prescription_transfer_requests ....... 23.19ms DONE
+  2026_09_29_000030_retain_pharmacy_source_transcriptions ....... 11.06ms DONE
+  2026_09_29_000031_retain_pharmacy_extraction_drafts ........... 18.39ms DONE
+  2026_09_30_000032_create_transfer_variance_resolutions ........ 16.17ms DONE
+  2026_09_30_000033_create_compounding_deviation_incidents ...... 17.30ms DONE
+  2026_09_30_000034_create_compounding_reconciliation_proposals .. 8.11ms DONE
+  2026_09_30_000035_create_compounding_custody_decisions ........ 10.18ms DONE
+  2026_09_30_000036_create_compounding_incident_groups .......... 24.18ms DONE
+  2026_09_30_000037_add_incident_group_review .................... 4.56ms DONE
+  2026_09_30_000038_create_execution_custody_proposals ........... 8.45ms DONE
+  2026_10_03_000039_create_yield_correction_proposals ............ 8.19ms DONE
+  2026_10_03_000040_create_consumption_corrections .............. 11.12ms DONE
+  2026_10_04_000041_create_quality_protocols .................... 13.84ms DONE
+  2026_10_04_000042_create_batch_quality_records ................. 8.25ms DONE
+  2026_10_04_000043_create_beyond_use_proposals .................. 8.16ms DONE
+  2026_10_04_000044_create_packaging_proposals .................. 14.50ms DONE
+  2026_10_04_000045_create_container_custody_records ............. 5.67ms DONE
+  2026_10_04_000046_create_container_quantity_corrections ........ 5.46ms DONE
+  2026_10_04_000047_create_container_repackaging_records ........ 14.56ms DONE
+  2026_10_04_000048_create_container_suitability_records ........ 11.46ms DONE
+  2026_10_04_000049_create_finished_container_label_proofs ....... 6.05ms DONE
+  2026_10_04_000050_create_container_label_print_evidence ........ 3.83ms DONE
+  2026_10_04_000051_add_container_label_barcode .................. 1.67ms DONE
+  2026_10_04_000052_create_container_label_comparisons ........... 5.62ms DONE
+  2026_10_18_000053_create_dispatch_custody ..................... 14.79ms DONE
+  2026_10_18_000054_create_dispatch_recoveries .................. 13.27ms DONE
+  2026_10_18_000055_create_patient_return_custody ............... 11.12ms DONE
+  2026_10_18_000056_create_compound_handover_rehearsals .......... 6.27ms DONE
+
+PASS: four additive migrations preserve legacy payment and settlement values; unknown fields remain null; repeat migration succeeds.
+PASS: 141 restored tables match every row and schema definition.
+PASS: synthetic database restored into a separate target and private-file archive restored byte-for-byte.

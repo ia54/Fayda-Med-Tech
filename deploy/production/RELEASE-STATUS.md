@@ -1,6 +1,11 @@
-# Current release status — October 18, 2026
+# Current release status — October 20, 2026
 
-## October 19 synthetic pilot verification update
+## October 20 owner acceptance and release preparation
+
+Ibrahim accepted the synthetic pilot at 08:05:46 UTC. Exact PR #2 head `ce839f4` has six passing hosted checks, and this independent task restored the saved runtime and passed a fresh representative Chromium replay. Composer has zero advisories; braces high, Quill low and abandoned doctrine/annotations remain open. Production access/recovery, provider/site acceptance and draft-12 publication remain unverified. See [dated acceptance and current checklist](../../docs/RELEASE-PREPARATION-20261020.md). Controlled and compounded real dispensing stay disabled. Pilot acceptance is not security-risk, deployment or clinical acceptance.
+
+
+## Historical October 19 synthetic pilot verification update
 
 The [current closeout](../../docs/SYNTHETIC-PILOT-CLOSEOUT-20261019.md) supersedes earlier pilot evidence gaps and the original audit work status. Billing access/data-truth fixes, EOB pagination, cross-tab refresh repair and five source-bound browser replays pass. Full SQLite: **458 tests / 9,339 assertions**. Dependency disposition, exact hosted checks, owner pilot acceptance and cloud publication/restoration remain open. Full product and clinical release are not approved.
 

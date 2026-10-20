@@ -1,4 +1,6 @@
-# Dependency readiness — September 27, 2026
+# Dependency readiness — October 20, 2026
+
+Current locked audits reconfirm **zero Composer advisories**, abandoned `doctrine/annotations`, and **one high / one low admin advisory** (braces 3.0.3 / Quill 2.0.3). Registry latest versions are unchanged, so neither outstanding fix is available. No advisory ignore or risk acceptance was added. The October 19 Composer-visibility limitation below is superseded by the successful October 20 audit. See [release evidence](../../docs/RELEASE-PREPARATION-20261020.md).
 
 This records current dependency evidence, not approval to deploy or process patient data. Re-run audits for the selected release and verify the actual host platform before cutover.
 
