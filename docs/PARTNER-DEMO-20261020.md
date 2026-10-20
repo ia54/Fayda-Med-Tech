@@ -6,7 +6,7 @@ The fresh environment restored successfully and passed the representative pilot-
 
 ## Short recorded walkthrough
 
-The captioned recording is approximately four minutes, intentionally shorter than the proposed 8–12 minute target. It shows EOB creation, search, explicit review and reload; retained appeal history and local draft generation; private synthetic PDF preview; pharmacy scope/exclusions; and analytics calculation basis. It ends with remaining development and release gates. Pharmacy is an overview here, not a newly recorded end-to-end dispensing or compounding demonstration. The existing five-replay evidence separately covers compounded handover rehearsal and eight roles.
+The captioned recording is **3 minutes 36 seconds**, intentionally shorter than the proposed 8–12 minute target. It shows EOB creation, search, explicit review and reload; retained appeal history and local draft generation; private synthetic PDF preview; pharmacy scope/exclusions; and analytics calculation basis. It ends with remaining development and release gates. Pharmacy is an overview here, not a newly recorded end-to-end dispensing or compounding demonstration. The existing five-replay evidence separately covers compounded handover rehearsal and eight roles.
 
 The pharmacy fixture's worklist is empty; no active prescription is implied. External provider connections are unconfigured in the recording, not simulated successful API calls. Seeded appeal status is explicitly distinguished from actual payer transmission. Captions and title cards are explanatory overlays; application results are real browser footage.
 
@@ -28,3 +28,7 @@ The verified UI address is `http://127.0.0.1:3000` **inside this cloud runtime o
 | 12–15 min | Collect feedback and select the next acceptance cases; avoid promising dates until inputs are confirmed |
 
 Ibrahim reviews the recording before any partner delivery. Dr. Ghadeh/site leads own clinical and site acceptance; hosting administrator owns approved host access/recovery inputs. See [current readiness evidence](RELEASE-PREPARATION-20261020.md) and [remaining development table](BUILD-FINISH-TABLES-20261019.md).
+
+## Export verification
+
+H.264 MP4, 1440×1100, 4,428,606 bytes. Full FFmpeg decode passed; Chromium playback started with no media error. Representative exported frames were visually reviewed. Loopback-server seeking was not established; it is not claimed as a verified player feature. The private Library recording is linked in the task delivery; [export metadata and SHA-256](evidence/release-20261020/video-export.json) bind the file to this evidence.

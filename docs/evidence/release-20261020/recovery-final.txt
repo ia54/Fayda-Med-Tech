@@ -1,6 +1,6 @@
 DISPOSABLE ENGINE: fayda-cloud-mysql
 
-   INFO  Running migrations.  
+   INFO  Running migrations.
 
   2026_09_23_000001_add_payment_corrections ..................... 47.71ms DONE
   2026_09_23_000002_add_settlement_allocations ................... 5.60ms DONE
@@ -11,11 +11,11 @@ PASS: 141 restored tables match every row and schema definition.
 PASS: synthetic database restored into a separate target and private-file archive restored byte-for-byte.
 DISPOSABLE ENGINE: fayda-cloud-mariadb
 
-   INFO  Preparing database.  
+   INFO  Preparing database.
 
   Creating migration table ....................................... 3.89ms DONE
 
-   INFO  Running migrations.  
+   INFO  Running migrations.
 
   2014_10_12_100000_create_password_reset_tokens_table ........... 1.02ms DONE
   2016_06_01_000001_create_oauth_auth_codes_table ................ 1.95ms DONE

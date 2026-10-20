@@ -1,10 +1,10 @@
 DISPOSABLE ENGINE: fayda-cloud-mysql
 
-   INFO  Preparing database.  
+   INFO  Preparing database.
 
   Creating migration table ....................................... 7.81ms DONE
 
-   INFO  Running migrations.  
+   INFO  Running migrations.
 
   2014_10_12_100000_create_password_reset_tokens_table ........... 4.73ms DONE
   2016_06_01_000001_create_oauth_auth_codes_table ............... 15.47ms DONE
