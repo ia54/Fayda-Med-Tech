@@ -4,7 +4,11 @@
 
 The fresh environment restored successfully and passed the representative pilot-records Chromium replay. The video records actual implemented screens using existing synthetic fixture accounts. Sessions are pre-authenticated: the recording does not demonstrate login/MFA. No real patients, live provider connections, payer submissions, money movement or actual dispensing appear.
 
-## Short recorded walkthrough
+## Scope update after owner clarification
+
+The owner requested the core MedTech workflows and then clarified that foundational pharmacy must be included as the operational heart. The revised walkthrough includes ordinary patient/prescription, stock and retained preparation/handover records plus assigned cases, provider draft/submission for internal review, biller review, record-only receipts/corrections, settlements, CSV, documents and EOB/appeal workflows. Advanced controlled/compounding preview screens are excluded. Pharmacy history is explicitly seeded; no automatic pharmacy-to-finance integration is claimed. The initial 3:36 recording below is superseded when the revised export is delivered.
+
+## Initial recorded walkthrough (superseded scope)
 
 The captioned recording is **3 minutes 36 seconds**, intentionally shorter than the proposed 8–12 minute target. It shows EOB creation, search, explicit review and reload; retained appeal history and local draft generation; private synthetic PDF preview; pharmacy scope/exclusions; and analytics calculation basis. It ends with remaining development and release gates. Pharmacy is an overview here, not a newly recorded end-to-end dispensing or compounding demonstration. The existing five-replay evidence separately covers compounded handover rehearsal and eight roles.
 
