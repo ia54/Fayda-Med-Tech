@@ -7,13 +7,14 @@ const path=`/api/pharmacy/locations/${site}/readiness`,base='http://127.0.0.1:30
 const probe=role=>p[role].evaluate(async({path,token})=>{const response=await fetch('http://127.0.0.1:8000'+path,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});return response.status;},{path,token:f.sessions[role].token.access_token});
 try{
  for(const role of ['pharmacist','technician']){
-  const page=p[role];await page.goto(base+'/dashboard/pharmacy');
+  const page=p[role];if(role==='technician')await page.setViewportSize({width:390,height:844});await page.goto(base+'/dashboard/pharmacy');
   const button=page.getByRole('button',{name:'Site readiness',exact:true});
   await button.waitFor();assert.equal(await button.isDisabled(),true);
   await page.getByRole('combobox',{name:/^Pharmacy location/}).selectOption(String(site));
   await button.click();const dialog=page.getByRole('dialog');await dialog.getByText('Operational release: disabled.',{exact:false}).waitFor();
   assert.equal(await dialog.getByText(/: release disabled$/).count(),4);
   await dialog.getByText('not verified',{exact:false}).first().waitFor();
+  if(role==='technician'){const box=await dialog.boundingBox();assert.ok(box.x>=0 && box.x+box.width<=390,'Narrow dialog fits viewport');}
   await page.screenshot({path:`${c.directory}/site-readiness-${role}.png`,fullPage:true});
   await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});assert.equal(await button.evaluate(e=>e===document.activeElement),true);
  }
