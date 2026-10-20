@@ -29,7 +29,9 @@ Focused API tests cover role/organization/current-assignment/expiry/inactive-sit
 - `php vendor/bin/phpunit tests/Feature/PharmacySiteReadinessTest.php --display-warnings`: SQLite 3 tests / 36 assertions passed, no warnings. Artisan pretty reporter emitted missing .env warnings; direct PHPUnit above is the authoritative clean run.
 - `FAYDA_SYNTHETIC_DB=fayda-cloud-mysql /workspace/.cloud-tools/mysql-bin/php vendor/bin/phpunit -c phpunit.mysql.xml --filter PharmacySiteReadinessTest`: 3 tests / 36 assertions passed on isolated MySQL 8.0.46.
 - Same command with fayda-cloud-mariadb: 3 tests / 36 assertions passed on isolated MariaDB 10.11.19.
-- Optimized build and browser evidence: recorded in the follow-up evidence section when complete.
+- `pnpm test:session`: 5/5 passed; `pnpm test:documents`: 2/2 passed.
+- `pnpm build`: optimized build passed all 120 routes. First browser replay used this default localhost build while the harness permits only 127.0.0.1; it failed before acceptance. A fresh build with NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api and NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 is used for final browser evidence. The test selector was also corrected to match the wrapped location label.
+- Final browser evidence: recorded below when complete.
 
 Raw logs are retained in /workspace/.cloud-tools/continuation-20261020. Browser sessions/signing material are excluded from review artifacts. No broad suite rerun is claimed here.
 

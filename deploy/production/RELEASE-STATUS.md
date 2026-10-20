@@ -153,3 +153,7 @@ Independent-chart prescription intake now requires explicit patient-to-case evid
 The pharmacy record checklist now exposes missing source/clinical evidence and approvals made stale by new patient/source records, with scoped navigation links. It is read-only deterministic guidance and explicitly not complete dispensing clearance or connected AI. No dispensing or production gate is relaxed.
 
 Controlled intake now records explicit schedule/received-format/evidence with unresolved values preserved and historical fields left null. This is the prerequisite data foundation only; schedule-specific rules, credentials, EPCS/MAPS and controlled dispensing acceptance remain incomplete. Source-backed documentary classification corrections are implemented in the current increment; operational acceptance remains outstanding.
+
+## October 20 conditional launch follow-up
+
+The owner independently confirmed all six hosted checks SUCCESS at exact ce839f40d36656c147166d63c88689071ee40617. Later heads need separate verification. The October 27 America/New_York conditional target, assigned owners, acceptance evidence and blockers are tracked in [the launch checklist](../../docs/LAUNCH-CHECKLIST-20261027.md); synthetic pilot and live operations have separate gates. [Security continuation](../../docs/SECURITY-CONTINUATION-20261020.md) records dependency remediation and remaining audit/network risks. Publication/fresh-task restoration and live operations remain unverified/unapproved.
