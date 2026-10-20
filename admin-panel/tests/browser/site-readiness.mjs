@@ -14,6 +14,7 @@ try{
   await button.waitFor();assert.equal(await button.isDisabled(),true);
   await page.getByRole('combobox',{name:/^Pharmacy location/}).selectOption(String(site));
   await button.click();const dialog=page.getByRole('dialog');await dialog.getByText('Operational release: disabled.',{exact:false}).waitFor();
+  await dialog.evaluate(element=>Promise.all(element.getAnimations().map(animation=>animation.finished)));
   assert.equal(await dialog.getByText(/: release disabled$/).count(),4);
   viewports.push({role,viewport:page.viewportSize(),dialog:await dialog.boundingBox()});
   await dialog.getByText('not verified',{exact:false}).first().waitFor();
