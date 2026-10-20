@@ -21,7 +21,7 @@ try{
  const page=p.pharmacist;
  // Evict prior RTK cache through a real reload, then inject one bounded failure.
  await page.reload();await page.getByRole('combobox',{name:/^Pharmacy location/}).selectOption(String(site));
- await page.route('**'+path,async route=>{await page.unroute('**'+path);await route.fulfill({status:500,contentType:'application/json',body:'{"message":"Synthetic retry exercise"}'});});
+ await page.route('**'+path,route=>route.fulfill({status:500,contentType:'application/json',body:'{"message":"Synthetic retry exercise"}'}),{times:1});
  await page.getByRole('button',{name:'Site readiness',exact:true}).click();
  await page.getByRole('alert').getByText('Site evidence could not be loaded.',{exact:false}).waitFor();
  await page.getByRole('button',{name:'Retry',exact:true}).click();await page.getByRole('dialog').getByText('Operational release: disabled.',{exact:false}).waitFor();
