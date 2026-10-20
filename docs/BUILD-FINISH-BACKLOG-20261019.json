@@ -234,7 +234,8 @@
       "evidence": "docs/CODEX-CLOUD-VALIDATION-20261019.md",
       "estimate_confidence": "medium",
       "decision_or_external_dependency": "GitHub API/runtime network restriction; latest hosted check status requires verified access",
-      "status": "remaining"
+      "status": "remaining",
+      "engineering_followup_20261020": "Owner verified all six hosted checks at ce839f4. Updated dependencies, local build/browser/SQL recovery and source archive evidence retained; new-head hosted checks, canonical Composer audit and residual-risk disposition remain required."
     },
     {
       "id": "P10",
@@ -302,7 +303,8 @@
       "evidence": "deploy/production/PROVIDER-OPERATIONS-REGISTER.md",
       "estimate_confidence": "low",
       "decision_or_external_dependency": "Dr. Ghadeh/site leads; existing vendors, licensed standards and account owners unknown",
-      "status": "remaining"
+      "status": "remaining",
+      "engineering_followup_20261020": "Read-only assigned-site readiness inventory and its focused database/browser evidence added (docs/SECURITY-CONTINUATION-20261020.md). Full acceptance criteria remain unmet; no clinical enablement or estimate reduction inferred."
     },
     {
       "id": "F02",
@@ -318,7 +320,8 @@
       "evidence": "docs/PHARMACY-SYSTEM.md:151",
       "estimate_confidence": "medium",
       "decision_or_external_dependency": "Approved credential and patient-record policies",
-      "status": "remaining"
+      "status": "remaining",
+      "engineering_followup_20261020": "Read-only assigned-site readiness inventory and its focused database/browser evidence added (docs/SECURITY-CONTINUATION-20261020.md). Full acceptance criteria remain unmet; no clinical enablement or estimate reduction inferred."
     },
     {
       "id": "F03",
@@ -822,7 +825,8 @@
       "evidence": "api/app/Http/Middleware/PharmacyPreviewOnly.php:13",
       "estimate_confidence": "low",
       "decision_or_external_dependency": "Explicit professional and owner approvals before actual activation; development tests alone cannot approve operations",
-      "status": "remaining"
+      "status": "remaining",
+      "engineering_followup_20261020": "Read-only assigned-site readiness inventory and its focused database/browser evidence added (docs/SECURITY-CONTINUATION-20261020.md). Full acceptance criteria remain unmet; no clinical enablement or estimate reduction inferred."
     },
     {
       "id": "F31",

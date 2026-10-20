@@ -235,8 +235,8 @@
       "done_when": "Exact candidate has applicable hosted checks/builds, trusted archives and issue list; no unresolved pilot blockers.",
       "evidence": "SYNTHETIC-PILOT-CLOSEOUT-20261019.md and evidence/SYNTHETIC-PILOT-20261019.json",
       "estimate_confidence": "medium",
-      "decision_or_external_dependency": "GitHub API/runtime network restriction; latest hosted check status requires verified access",
-      "status": "local_checks_archives_verified_hosted_checks_unverified",
+      "decision_or_external_dependency": "Owner verified six SUCCESS checks at ce839f4 on October 20; new candidate and later heads require exact-head hosted verification and residual security disposition.",
+      "status": "historical_ce839f4_hosted_success_new_candidate_reverification_required",
       "original_audit_estimate_days": [
         0.5,
         1
