@@ -216,6 +216,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/prints', [$labels, 'prints']);
         Route::post('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/prints', [$labels, 'recordPrint']);
         Route::get('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'locations']);
+        Route::get('/locations/{id}/readiness', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'siteReadiness']);
         Route::post('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'storeLocation']);
         Route::get('/recall-notices', [\App\Http\Controllers\API\PharmacyRecallController::class, 'index']);
         Route::post('/recall-notices', [\App\Http\Controllers\API\PharmacyRecallController::class, 'store']);

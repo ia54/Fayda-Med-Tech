@@ -24,6 +24,7 @@ jobs:
           persist-credentials: false
       - run: corepack enable
       - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm test:dependencies
       - run: corepack pnpm test:session
       - run: corepack pnpm test:recovery
       - run: corepack pnpm test:documents

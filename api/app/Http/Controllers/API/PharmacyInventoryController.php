@@ -24,6 +24,15 @@ class PharmacyInventoryController extends Controller
         return response()->json(['data' => app(PharmacyAccess::class)->locations($r->user())->orderBy('name')->get()]);
     }
 
+    public function siteReadiness(Request $r, int $id)
+    {
+        abort_unless(in_array($r->user()->role, ['admin', 'pharmacist', 'pharmacy_technician'], true), 403);
+        $this->org($r);
+        $site = app(PharmacyAccess::class)->locations($r->user())->where('id', $id)->first();
+        abort_unless($site, 404);
+        return response()->json(['data' => app(\App\Services\PharmacySiteReadiness::class)->report($site)]);
+    }
+
     public function storeLocation(Request $r)
     {
         abort_unless($r->user()->role === 'admin', 403);

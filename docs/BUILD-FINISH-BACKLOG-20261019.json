@@ -848,5 +848,15 @@
     "Full product reserve is 25 percent above remaining package ranges; pilot P12 already contains its defect allowance.",
     "Vendor certification, provider procurement, licensed clinical standards, pharmacy qualification, formal independent compliance review and hosting costs/calendar are not quoted.",
     "New providers/sites/device families or policy redesign expand the baseline through explicit change control."
-  ]
+  ],
+  "conditional_launch_checklist": {
+    "target_date": "2026-10-27",
+    "timezone": "America/New_York",
+    "scope_order": [
+      "synthetic_client_pilot",
+      "full_product_after_separate_gates"
+    ],
+    "path": "LAUNCH-CHECKLIST-20261027.md",
+    "readiness_inferred_from_date_or_test_counts": false
+  }
 }

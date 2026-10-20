@@ -8,7 +8,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { ModalHost } from "@/components/providers/modal-host";
 import { Analytics } from "@vercel/analytics/next";
-import "react-quill-new/dist/quill.snow.css";
 
 export function ClientLayoutProvider({
   children,

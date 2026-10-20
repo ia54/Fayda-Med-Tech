@@ -105,3 +105,7 @@ The original [sizing audit](BUILD-COMPLETION-AUDIT-20261019.md) remains a histor
 The full product still requires the remaining pharmacy, integration, physical/site, regulatory and production work in the audited backlog. No full-product completion estimate is reduced merely because the synthetic demonstration paths pass.
 
 Replay from the repository root after tool activation, always with a NEW directory, using `/workspace/.cloud-tools/run-session-tabs.sh`, `run-auth-seed.sh`, `run-pilot-records.sh`, `run-shared-seed.sh`, and `run-compound-seed.sh`. Run sequentially because they switch the owned local synthetic API fixture. The main source runners and guarded fixture classes are committed; helper processes do not survive task restoration. The default empty synthetic API has been restored after this run.
+
+## October 20 follow-up
+
+Owner independently verified all six hosted checks SUCCESS at exact ce839f40d36656c147166d63c88689071ee40617 (admin, PHP, MySQL, MariaDB, web build, source package). This supersedes the earlier unknown for that SHA only; later heads need separate verification. Historical observations above remain dated evidence. Dependency remediation and the conditional October 27 schedule are tracked in [SECURITY-CONTINUATION-20261020.md](SECURITY-CONTINUATION-20261020.md) and [LAUNCH-CHECKLIST-20261027.md](LAUNCH-CHECKLIST-20261027.md). Publication and fresh-task restoration remain unverified.

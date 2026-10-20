@@ -309,5 +309,21 @@
   ],
   "full_product_scope_and_baseline_ranges": "Unchanged; synthetic pilot first, then full product; both sterile and nonsterile compounding remain in scope",
   "production_ready": false,
-  "clinical_release_authorized": false
+  "clinical_release_authorized": false,
+  "hosted_ci_followup": {
+    "verified_at": "2026-10-20",
+    "head": "ce839f40d36656c147166d63c88689071ee40617",
+    "status": "six_checks_success",
+    "source": "Owner independent GitHub verification reported in delegation",
+    "checks": [
+      "admin",
+      "PHP",
+      "MySQL",
+      "MariaDB",
+      "web build",
+      "source package"
+    ],
+    "applies_to_later_heads": false,
+    "historical_observations_preserved": true
+  }
 }
