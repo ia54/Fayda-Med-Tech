@@ -1,0 +1,141 @@
+{
+  "source": "ce839f40d36656c147166d63c88689071ee40617",
+  "blocked_external_hosts": [],
+  "chapters": [
+    {
+      "seconds": 0.036,
+      "title": "Core MedTech: one connected working process",
+      "lines": [
+        "The pharmacy foundation is the operational heart: patient, prescription, stock and handover records.",
+        "The wider platform brings case teams, providers, billing staff and clients into a shared workflow.",
+        "Follow work from an assigned case to invoice review, receipt records and reporting.",
+        "Actual implemented screens. Synthetic records. Pre-authenticated test sessions.",
+        "Owner accepted the synthetic pilot. Production approval is a separate step."
+      ]
+    },
+    {
+      "seconds": 17.904,
+      "text": "The pharmacy foundation starts with the patient, prescription and case context. These are synthetic records."
+    },
+    {
+      "seconds": 32.035,
+      "text": "This seeded ordinary fill retains pharmacist review, preparation and handover evidence. No medicine was dispensed."
+    },
+    {
+      "seconds": 47.586,
+      "text": "The ordinary stock record retains the receipt and quantity. This segment is separate from the billing example that follows."
+    },
+    {
+      "seconds": 63.214,
+      "text": "Start with an assigned case. Teams can work from shared case context instead of disconnected handoffs."
+    },
+    {
+      "seconds": 77.709,
+      "text": "Provider: prepare an invoice against the right case, save a draft, then send it to the billing team."
+    },
+    {
+      "seconds": 91.551,
+      "text": "The draft now moves into internal billing review. This is not a live insurer submission."
+    },
+    {
+      "seconds": 103.066,
+      "text": "Billing staff review the invoice and leave a note. Responsibility stays clear as work changes hands."
+    },
+    {
+      "seconds": 113.711,
+      "text": "Record a payment received elsewhere. MedTech keeps the evidence; it does not collect or move money."
+    },
+    {
+      "seconds": 122.219,
+      "text": "Mistakes can be corrected with a reason. The original receipt remains in history."
+    },
+    {
+      "seconds": 133.8,
+      "text": "Record a payment received elsewhere. MedTech keeps the evidence; it does not collect or move money."
+    },
+    {
+      "seconds": 142.235,
+      "text": "The original entry, its reversal and the corrected receipt form a traceable record."
+    },
+    {
+      "seconds": 155.509,
+      "text": "Client: see the relevant invoice and recorded balance. Other clients and unassigned case invoices stay out of view."
+    },
+    {
+      "seconds": 171.198,
+      "text": "Settlement planning brings fees, costs and deductions together so the team can review a clear allocation."
+    },
+    {
+      "seconds": 186.596,
+      "text": "An authorized administrator records completion. This changes a record; it does not transfer settlement funds."
+    },
+    {
+      "seconds": 198.096,
+      "text": "Settlement corrections also retain the earlier record. The updated allocation stays explainable."
+    },
+    {
+      "seconds": 209.989,
+      "text": "Reports turn the recorded work into a useful summary. Export a CSV for review and follow-up."
+    },
+    {
+      "seconds": 229.563,
+      "text": "Private documents stay connected to the case. Authorized users can preview the original inside the workspace."
+    },
+    {
+      "seconds": 248.642,
+      "text": "Manual EOB records support billing review today. No live payer feed is being shown."
+    },
+    {
+      "seconds": 263.226,
+      "text": "A local appeal template gives staff a starting point. Human review is required; no AI or payer submission is connected."
+    },
+    {
+      "seconds": 279.27,
+      "title": "The commercial opportunity",
+      "lines": [
+        "One workflow connects legal, provider, billing and client work.",
+        "Clear handoffs can reduce follow-up friction and fragmented records.",
+        "Retained corrections make financial records easier to explain and review.",
+        "Shared documents and reports support a more organized service operation."
+      ]
+    },
+    {
+      "seconds": 297.31,
+      "title": "A substantial core is working. The next step is focused.",
+      "lines": [
+        "The synthetic pilot is accepted and the core journeys run in a restored environment.",
+        "Next: owner feedback, remaining dependency findings and final release review.",
+        "Then: approved hosting, real backup/recovery checks, identity/mail and support readiness.",
+        "Any live provider connections need their own configuration and acceptance."
+      ]
+    },
+    {
+      "seconds": 317.34,
+      "title": "Ready for a core MedTech demonstration",
+      "lines": [
+        "This is working software demonstrated with synthetic records.",
+        "The value is in connecting a complex, multi-role process with traceable history.",
+        "Production readiness remains a separate decision; no launch date is promised.",
+        "Owner review copy. No public live link or partner access has been created."
+      ]
+    }
+  ],
+  "recordingEvidence": {
+    "invoice_id": 4,
+    "receipt_original_preserved": true,
+    "settlement_original_preserved": true,
+    "net_to_client": 805,
+    "csv_sha256": "703b43949878ac7b056136f324e0d426a91d3bdb95e0d990e4de1979337f95c3",
+    "roles": [
+      "attorney",
+      "provider",
+      "biller",
+      "client",
+      "firm_admin"
+    ],
+    "real_money_movement": false,
+    "external_provider_calls": false,
+    "pharmacy_screens_included": "foundational ordinary records only; seeded through tested request workflow",
+    "pharmacy_billing_integration_demonstrated": false
+  }
+}
