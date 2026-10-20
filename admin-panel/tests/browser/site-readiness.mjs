@@ -14,8 +14,10 @@ try{
   await button.click();const dialog=page.getByRole('dialog');await dialog.getByText('Operational release: disabled.',{exact:false}).waitFor();
   assert.equal(await dialog.getByText(/: release disabled$/).count(),4);
   await dialog.getByText('not verified',{exact:false}).first().waitFor();
-  if(role==='technician'){const box=await dialog.boundingBox();assert.ok(box.x>=0 && box.x+box.width<=390,'Narrow dialog fits viewport');}
+  if(role==='technician'){const box=await dialog.boundingBox();assert.ok(box.width>=320 && box.x>=0 && box.x+box.width<=390,'Narrow dialog fits viewport');}
   await page.screenshot({path:`${c.directory}/site-readiness-${role}.png`,fullPage:true});
+  await dialog.getByText('nonsterile compounding: release disabled',{exact:true}).scrollIntoViewIfNeeded();
+  if(role==='technician')await page.screenshot({path:`${c.directory}/site-readiness-technician-scrolled.png`,fullPage:true});
   await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});await page.waitForFunction(()=>document.activeElement?.textContent==='Site readiness');
  }
  const page=p.pharmacist;
