@@ -16,7 +16,7 @@ try{
   await dialog.getByText('not verified',{exact:false}).first().waitFor();
   if(role==='technician'){const box=await dialog.boundingBox();assert.ok(box.x>=0 && box.x+box.width<=390,'Narrow dialog fits viewport');}
   await page.screenshot({path:`${c.directory}/site-readiness-${role}.png`,fullPage:true});
-  await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});assert.equal(await button.evaluate(e=>e===document.activeElement),true);
+  await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});await page.waitForFunction(()=>document.activeElement?.textContent==='Site readiness');
  }
  const page=p.pharmacist;
  // Evict prior RTK cache through a real reload, then inject one bounded failure.

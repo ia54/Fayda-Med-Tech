@@ -31,7 +31,9 @@ Focused API tests cover role/organization/current-assignment/expiry/inactive-sit
 - Same command with fayda-cloud-mariadb: 3 tests / 36 assertions passed on isolated MariaDB 10.11.19.
 - `pnpm test:session`: 5/5 passed; `pnpm test:documents`: 2/2 passed.
 - `pnpm build`: optimized build passed all 120 routes. First browser replay used this default localhost build while the harness permits only 127.0.0.1; it failed before acceptance. A fresh build with NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api and NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 is used for final browser evidence. The test selector was also corrected to match the wrapped location label.
-- Final browser evidence: recorded below when complete.
+- A subsequent Chromium replay found a real missing focus return after closing the new readiness dialog. The component now restores focus explicitly and exposes dialog expanded state. Final browser evidence is recorded below when complete.
+- `php tests/Security/role-access-smoke.php`: 3,104 decisions passed.
+- `php tests/Security/route-boundaries-smoke.php`: initial exact-count assertion detected the added route; inventory updated from 190 to 191, with explicit readiness route presence assertion. Final result: 21 platform-only / 191 protected pharmacy / 434 total routes passed. Request-level tests remain separate.
 
 Raw logs are retained in /workspace/.cloud-tools/continuation-20261020. Browser sessions/signing material are excluded from review artifacts. No broad suite rerun is claimed here.
 
