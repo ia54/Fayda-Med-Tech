@@ -1,7 +1,7 @@
 {
   "date": "2026-10-21",
   "timezone": "America/New_York",
-  "artifact_source_commit": "0c5d7680894a18f0e802fb9fd165c0e3374b3b6b",
+  "artifact_source_commit": "bed4caa6a364db0dc975d2cbef0716ca277b8286",
   "deployed": false,
   "clinical_release_enabled": false,
   "real_patient_data_allowed": false,
@@ -13,7 +13,7 @@
     "available_slots": 9,
     "existing_app": "EMA, untouched",
     "node22_next_private_previews": "Confirmed on product page by owner",
-    "terms_or_app_creation": "not accepted/created by this task",
+    "terms_or_app_creation": "Owner approved terms and reached ZIP upload, North America, maximum100MB; no upload/deployment performed by this task",
     "cpanel_entry_limit": 250000,
     "cpanel_entries_used": 235306,
     "cpanel_entries_available": 14694,
@@ -24,28 +24,28 @@
   },
   "artifacts": {
     "managed_node_source": {
-      "archive": "/workspace/artifacts/fayda-godaddy-pilot-20261021/managed-node-admin-0c5d768.zip",
-      "commit": "0c5d7680894a18f0e802fb9fd165c0e3374b3b6b",
-      "files": 473,
-      "uncompressed_bytes": 5352258,
-      "zip_bytes": 3351855,
-      "sha256": "9cd85b12d97555b1501fc196593943ffea01a374bca0e8e780aa7baa7b9e7956",
+      "archive": "/workspace/artifacts/fayda-godaddy-pilot-20261021/managed-node-admin-bed4caa.zip",
+      "commit": "bed4caa6a364db0dc975d2cbef0716ca277b8286",
+      "files": 474,
+      "uncompressed_bytes": 5353492,
+      "zip_bytes": 3352691,
+      "sha256": "714b4cdae4499339ba2280f83f59f3ad861bef0c6c62e507df4e6cf6e49495bd",
       "node_modules_included": false,
       "secrets_included": false,
       "deployed": false
     },
     "cpanel_production_runtime": {
-      "archive": "/workspace/artifacts/fayda-godaddy-pilot-20261021/cpanel-api-static-0c5d768.tar.gz",
-      "archive_bytes": 37111922,
-      "sha256": "590f2eb4fee420ddcd755d4e8f700a29aadc17fa670f37e2407852559e1296db",
-      "source_commit": "0c5d7680894a18f0e802fb9fd165c0e3374b3b6b",
+      "archive": "/workspace/artifacts/fayda-godaddy-pilot-20261021/cpanel-api-static-bed4caa.tar.gz",
+      "archive_bytes": 37119766,
+      "sha256": "d31327800d1d5da1e459bf6df772be790ae18f1ac89b8153289e1010f9337090",
+      "source_commit": "bed4caa6a364db0dc975d2cbef0716ca277b8286",
       "manifest_verified": true,
       "no_runtime_keys_or_environment_files": true
     }
   },
   "cpanel_measurement": {
-    "output": "/workspace/.cloud-tools/godaddy-pilot-20261021/cpanel-bundle-final",
-    "commit": "0c5d7680894a18f0e802fb9fd165c0e3374b3b6b",
+    "output": "/workspace/.cloud-tools/godaddy-pilot-20261021/cpanel-bundle-handoff",
+    "commit": "bed4caa6a364db0dc975d2cbef0716ca277b8286",
     "origins": {
       "api": "https://api.pilot.invalid",
       "admin": "https://admin.pilot.invalid",
@@ -72,8 +72,8 @@
         "regular_files": 3,
         "directories": 1,
         "symlinks": 0,
-        "logical_bytes": 12533,
-        "allocated_bytes": 20480,
+        "logical_bytes": 15280,
+        "allocated_bytes": 24576,
         "entries": 4
       }
     },
@@ -81,8 +81,8 @@
       "regular_files": 10112,
       "directories": 1453,
       "symlinks": 0,
-      "logical_bytes": 89484435,
-      "allocated_bytes": 122519552,
+      "logical_bytes": 89487182,
+      "allocated_bytes": 122523648,
       "entries": 11565
     },
     "available_slots": 14694,
@@ -111,7 +111,7 @@
     "node": "22.23.3",
     "npm": "11.9.0",
     "startup": "passed with injected PORT=3000 in cloud, requested over loopback; binds 0.0.0.0 for managed-host contract, not GoDaddy",
-    "source_zip_tested_before_final_metadata_refresh": "0b7c353; final 0c5d768 ZIP is byte-identical except SOURCE-MANIFEST.json commit metadata, verified entry-by-entry",
+    "source_zip_tested_before_final_metadata_refresh": "0b7c353 npm-ci/build/start/browser candidate; bed4caa ZIP verified byte-identical for all common files except SOURCE-MANIFEST metadata, plus non-executable BRACES-LICENSE",
     "patch_tests": 3,
     "npm_audit": {
       "info": 0,
@@ -149,7 +149,7 @@
     "dependency_warning": "doctrine/annotations abandoned; retained locked dependency, no replacement falsely claimed",
     "publication_and_fresh_task_restore": "unverified; no environment publication action performed",
     "host_gates": [
-      "owner terms/app-creation approval",
+      "Owner completes new-app upload/build/private-preview acceptance; agent upload is not authorized",
       "private preview and isolated cPanel API/static routing without DNS changes",
       "managed build/start/PORT and resource/quota behavior",
       "web/CLI PHP extensions, MySQL/version/grants/migrations",
