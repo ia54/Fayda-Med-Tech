@@ -32,7 +32,7 @@ export function packagePilot({repo,apiRuntime,output,origins,withoutAdmin=false,
  }
  for(const p of ['tests','database/factories','database/seeders','storage/oauth-private.key','storage/oauth-public.key','.env'])if(fs.existsSync(path.join(apiRuntime,p)))throw Error(`Excluded API runtime path present: ${p}`);
  const buildRoot=path.join(repo,'admin-panel/.next'),server=path.join(buildRoot,'standalone/server.js');
- if(!fs.existsSync(server))throw Error('Next standalone build required');
+ if(!withoutAdmin && !fs.existsSync(server))throw Error('Next standalone build required');
  fs.mkdirSync(output,{recursive:true});
  fs.cpSync(apiRuntime,path.join(output,'api'),{recursive:true,verbatimSymlinks:true});
  if(!withoutAdmin) fs.cpSync(path.join(buildRoot,'standalone'),path.join(output,'admin'),{recursive:true,verbatimSymlinks:true});
