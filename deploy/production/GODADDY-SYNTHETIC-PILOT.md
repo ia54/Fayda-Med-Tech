@@ -1,4 +1,6 @@
-# GoDaddy synthetic demonstration pilot — October 21, 2026
+# Earlier Passenger rehearsal proposal — superseded October 21, 2026
+
+**Primary deployment path is now [managed Node admin + cPanel API/static](GODADDY-SPLIT-PILOT.md). Passenger below is a retained, unverified alternative assessment, not the selected deployment path. Latest confirmed account headroom is 14,694 slots and nine available managed Node slots; see the newer document.**
 
 This is preparation for the owner's existing GoDaddy Deluxe account. It is not deployment authorization or host validation. Production hosting is deferred until handover. Synthetic data only; clinical release, real patient data, provider transactions and external delivery remain disabled. Do not change DNS, buy services, add host ports, touch unrelated sites, or deploy to the old server.
 

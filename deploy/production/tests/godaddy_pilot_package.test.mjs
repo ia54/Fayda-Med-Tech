@@ -20,3 +20,8 @@ test('Passenger adapter refuses fallback ports and delegates only through the lo
  const calls=[];const sandbox={PhusionPassenger:{configure:c=>calls.push(c.autoInstall)},process:{env:{}},require:p=>calls.push(p)};sandbox.global=sandbox;
  vm.runInNewContext(source,sandbox);assert.deepEqual(calls,[true,'./server.js']);assert.equal(sandbox.process.env.NODE_ENV,'production');assert.equal(sandbox.process.env.PORT,undefined);
 });
+test('managed startup requires injected PORT and never invents a fallback listener',()=>{
+ const source=fs.readFileSync(new URL('../godaddy-node/scripts/start-managed.cjs',import.meta.url),'utf8');
+ for(const port of [undefined,'0','passenger','65536'])assert.throws(()=>vm.runInNewContext(source,{process:{env:{PORT:port}},require(){throw Error('No load allowed');}}),/injected PORT/);
+ const calls=[],process={env:{PORT:'3000'}};vm.runInNewContext(source,{process,require:p=>calls.push(p)});assert.deepEqual(calls,['../.next/standalone/server.js']);assert.equal(process.env.PORT,'3000');assert.equal(process.env.HOSTNAME,'0.0.0.0');
+});
