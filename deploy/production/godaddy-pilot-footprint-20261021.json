@@ -1,0 +1,186 @@
+{
+  "date": "2026-10-21",
+  "timezone": "America/New_York",
+  "artifact_source_commit": "0c5d7680894a18f0e802fb9fd165c0e3374b3b6b",
+  "deployed": false,
+  "clinical_release_enabled": false,
+  "real_patient_data_allowed": false,
+  "account_evidence": {
+    "source": "Owner signed-in GoDaddy dashboard observations, October 21",
+    "managed_node_included": true,
+    "total_slots": 10,
+    "used_slots": 1,
+    "available_slots": 9,
+    "existing_app": "EMA, untouched",
+    "node22_next_private_previews": "Confirmed on product page by owner",
+    "terms_or_app_creation": "not accepted/created by this task",
+    "cpanel_entry_limit": 250000,
+    "cpanel_entries_used": 235306,
+    "cpanel_entries_available": 14694,
+    "disk_used_gb": 21.29,
+    "disk_limit_gb": 50,
+    "shared_ram_limit_gb": 1,
+    "managed_build_runtime_limits_and_quota_accounting": "unverified"
+  },
+  "artifacts": {
+    "managed_node_source": {
+      "archive": "/workspace/artifacts/fayda-godaddy-pilot-20261021/managed-node-admin-0c5d768.zip",
+      "commit": "0c5d7680894a18f0e802fb9fd165c0e3374b3b6b",
+      "files": 473,
+      "uncompressed_bytes": 5352258,
+      "zip_bytes": 3351855,
+      "sha256": "9cd85b12d97555b1501fc196593943ffea01a374bca0e8e780aa7baa7b9e7956",
+      "node_modules_included": false,
+      "secrets_included": false,
+      "deployed": false
+    },
+    "cpanel_production_runtime": {
+      "archive": "/workspace/artifacts/fayda-godaddy-pilot-20261021/cpanel-api-static-0c5d768.tar.gz",
+      "archive_bytes": 37111922,
+      "sha256": "590f2eb4fee420ddcd755d4e8f700a29aadc17fa670f37e2407852559e1296db",
+      "source_commit": "0c5d7680894a18f0e802fb9fd165c0e3374b3b6b",
+      "manifest_verified": true,
+      "no_runtime_keys_or_environment_files": true
+    }
+  },
+  "cpanel_measurement": {
+    "output": "/workspace/.cloud-tools/godaddy-pilot-20261021/cpanel-bundle-final",
+    "commit": "0c5d7680894a18f0e802fb9fd165c0e3374b3b6b",
+    "origins": {
+      "api": "https://api.pilot.invalid",
+      "admin": "https://admin.pilot.invalid",
+      "public": "https://public.pilot.invalid"
+    },
+    "components": {
+      "api": {
+        "regular_files": 10034,
+        "directories": 1438,
+        "symlinks": 0,
+        "logical_bytes": 58296079,
+        "allocated_bytes": 91078656,
+        "entries": 11472
+      },
+      "public": {
+        "regular_files": 74,
+        "directories": 13,
+        "symlinks": 0,
+        "logical_bytes": 28763155,
+        "allocated_bytes": 28991488,
+        "entries": 87
+      },
+      "ops": {
+        "regular_files": 3,
+        "directories": 1,
+        "symlinks": 0,
+        "logical_bytes": 12533,
+        "allocated_bytes": 20480,
+        "entries": 4
+      }
+    },
+    "footprint": {
+      "regular_files": 10112,
+      "directories": 1453,
+      "symlinks": 0,
+      "logical_bytes": 89484435,
+      "allocated_bytes": 122519552,
+      "entries": 11565
+    },
+    "available_slots": 14694,
+    "single_release_regular_files_fit": true,
+    "single_release_all_entries_fit": true,
+    "two_releases_all_entries_fit": false,
+    "production_ready": false,
+    "host_validation": false
+  },
+  "quota_assessment": {
+    "single_release_all_entries": 11565,
+    "remaining_before_namespace_archives_runtime_growth": 3129,
+    "regular_file_only_remaining": 4582,
+    "two_extracted_releases_entries": 23130,
+    "two_extracted_releases_fit": false,
+    "safe_deployment_approved": false,
+    "next_action": "Verify managed Node quota accounting and reserve extraction/runtime/shared-product growth; validate archive-based coordinated rollback, not side-by-side releases; delete no unrelated files"
+  },
+  "npm_workflow": {
+    "source_pnpm_manifests_unchanged": true,
+    "direct_pinned_dependencies": 71,
+    "promoted_build_dependencies": 11,
+    "transitive_version_set_differences": 34,
+    "npm_ci": "passed on extracted ZIP",
+    "npm_build": "passed, 120 routes, existing lint skip not a pass",
+    "node": "22.23.3",
+    "npm": "11.9.0",
+    "startup": "passed with injected PORT=3000 in cloud, requested over loopback; binds 0.0.0.0 for managed-host contract, not GoDaddy",
+    "source_zip_tested_before_final_metadata_refresh": "0b7c353; final 0c5d768 ZIP is byte-identical except SOURCE-MANIFEST.json commit metadata, verified entry-by-entry",
+    "patch_tests": 3,
+    "npm_audit": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 5,
+      "critical": 0,
+      "total": 5
+    },
+    "underlying_advisory": "GHSA-vfj7-8cjw-p6xm, five high affected packages in same chain",
+    "braces_registry_latest": "3.0.3",
+    "audit_suppressed": false
+  },
+  "focused_tests": {
+    "api_tests": 13,
+    "api_assertions": 105,
+    "scope": [
+      "SyntheticPilotBoundaryTest",
+      "SigningAuthenticationTest",
+      "PharmacySiteReadinessTest"
+    ],
+    "package_tests": 4
+  },
+  "runtime_checks": {
+    "managed_browser": "evidence/godaddy-pilot-20261021/managed-browser.json; hydrated login and static assets, no login submitted",
+    "api": "evidence/godaddy-pilot-20261021/api-runtime-http.json; new separate synthetic SQLite, production mode, fresh rehearsal-only keys",
+    "api_config": "production, synthetic=true, mail=array, queue=sync, broadcast=null, documents disk, secure cookies",
+    "memory": "local Next VmHWM 168488 KiB; 16 unauthenticated login requests at concurrency 4, not a workload/host capacity acceptance",
+    "initial_api_rehearsal_failures": "Host wrapper did not forward environment; corrected with explicit Docker env. Fresh-key-free HTTP failed closed; generated new keys only in separate rehearsal. Neither rehearsal state was packaged.",
+    "private_storage": "local direct-read paths denied; actual GoDaddy web/CLI privacy still unverified"
+  },
+  "external_blockers": {
+    "current_source_head_hosted_ci": "CONNECT 403 to api.github.com, exact source 0c5d768 checked; unknown, not failed or passed",
+    "composer_advisory_audit": "exit100 CONNECT403 to packagist.org; unknown",
+    "dependency_warning": "doctrine/annotations abandoned; retained locked dependency, no replacement falsely claimed",
+    "publication_and_fresh_task_restore": "unverified; no environment publication action performed",
+    "host_gates": [
+      "owner terms/app-creation approval",
+      "private preview and isolated cPanel API/static routing without DNS changes",
+      "managed build/start/PORT and resource/quota behavior",
+      "web/CLI PHP extensions, MySQL/version/grants/migrations",
+      "private file denial and host backup/restore/rollback capacity",
+      "fresh pilot secrets/users/MFA provisioning",
+      "owner walkthrough and feedback"
+    ],
+    "clinical": "separate sterile/nonsterile/site/device/professional acceptance remains outstanding; production pharmacy remains 503"
+  },
+  "download_directory": "/workspace/artifacts/fayda-godaddy-pilot-20261021",
+  "retrieval": "Download the named ZIP, tar.gz and SHA256SUMS via task workspace file download; files were not uploaded to GoDaddy",
+  "evidence_files": {
+    "api-effective-config.json": "b5e33a5333131323553c27038cdfc9d356dbdfb367a5eca6a50689ade14295ab",
+    "api-production-migrate-final.log": "1ada09cb55098721bd8db206f06c7d7c3db569c4a214ab15ea2bbed201f4ee79",
+    "api-runtime-http.json": "995f89687575826d6a93e44e104b33ab56957bfe8b2a5b56a2311f131e9ab5cd",
+    "braces-registry-version.txt": "db65b7b653f7c33a2c1f9fd381f5fbe089a389f063567831785baf4b2e1497e9",
+    "cloud-php-preflight.json": "dea929ab2df0b75c5a1b1ddc999b3f022ef80ea47572bbed1c2193e2d1df9034",
+    "composer-audit.log": "df132c0eb6f2d4c7367fccaeb8ce636e02f70dc9bff0d4df12eed4e1b75dc751",
+    "composer-production-final.log": "ef6a23de8367f8833628dc2076d71527514916c1e6f5db10fd6e8260d2742139",
+    "current-head-ci.log": "115ac061d5c11b9f88bc706341277e549679986ec53ba237026722b790803312",
+    "focused-api.log": "73e396002228c85db9783383811ec41f6c9fc9c1430d6c3847f95337113a4fbd",
+    "managed-browser-runner.mjs": "9cf67f80cbf067d2344851300f025ff19cfbcda03d5e5d09c3cc13074e5dee91",
+    "managed-browser.json": "b785b274bc16ce4d76598dbac3013ee7f98ae6ffaa8d02540dc144cf528f7768",
+    "managed-login.png": "0be2331d26c0a8c3f0e96c0872a4f7c64ab347f36b3abef76e25a221d3aa6b24",
+    "managed-memory.json": "6c45d90aeea98382151b4f2671df9aba18203e1cfb8c27a72fce3d38beb984f2",
+    "npm-audit.json": "d688c08e92df8c81d0500e83000ee531949651d54e9dd3f1ba49c7c593207d29",
+    "npm-build.log": "32cd42d99da959122afeacdcce00f70733f3742b97e44c89b174adb481f47f5c",
+    "npm-ci.log": "6f809f269054f3a4c0906196a87095be116a0e944d4c5360d890ddbfd57e5b5a",
+    "npm-lock-comparison.json": "57cd7253fa4fe479ab8a0214ccfea3ecd20309cfd7e4a889d70d5e77886078fa",
+    "package-discovery.log": "dab618497670f24552803cd94679a1d1d3986a8c05de996c6bb2b7265cc839fd",
+    "package-unit-accepted.log": "a98375f94311ed705f7488adf8f05542807b829773f1320305e9548e5c4c1d4f",
+    "php-platform.log": "c2c57df35b521533e87040fae63d6565e9756611a2e439f850665d5531b17aef"
+  }
+}

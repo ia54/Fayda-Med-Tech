@@ -1,0 +1,9 @@
+{
+    "environment": "production",
+    "pilot": true,
+    "mail": "array",
+    "queue": "sync",
+    "broadcast": "null",
+    "filesystem": "documents",
+    "secure_cookie": true
+}

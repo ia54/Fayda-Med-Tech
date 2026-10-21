@@ -32,3 +32,7 @@ These remain closed. Synthetic pilot acceptance cannot authorize patient data, p
 ## Current evidence and boundaries
 
 See SYNTHETIC-PILOT-CLOSEOUT-20261019.md for retained browser coverage and remaining accessibility/device limits, CODEX-CLOUD-HANDOFF.md for setup boundaries, and SECURITY-CONTINUATION-20261020.md for this change's exact commands/results. The site readiness inventory is read-only and always returns operational_release_enabled=false for ordinary, controlled, sterile and nonsterile workflows. No PHI, production credentials, hosting access, live dispensing, real financial movement or external provider calls are needed for this engineering work.
+
+## October 21 split-hosting evidence
+
+Owner confirmed managed Node included with Deluxe, EMA uses1/10 slots (nine free), latest cPanel usage235,306/250,000. Primary prep is managed Node22 admin + cPanel PHP/MySQL/API/static; see deploy/production/GODADDY-SPLIT-PILOT.md and its footprint JSON. Single cPanel release fits11,565/14,694 entries; two extracted releases do not fit. This does not pass hosting/readiness gates: terms/app creation, isolated preview origins without DNS change, managed quota accounting/runtime, actual PHP/MySQL/private storage and rollback proof, synthetic user/MFA provisioning and owner acceptance still required. No old-server, DNS, EMA, live-data or clinical changes occurred.
