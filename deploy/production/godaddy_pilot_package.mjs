@@ -45,7 +45,7 @@ export function packagePilot({repo,apiRuntime,output,origins,withoutAdmin=false,
  fs.copyFileSync(path.join(repo,withoutAdmin?'deploy/production/GODADDY-SPLIT-PILOT.md':'deploy/production/GODADDY-SYNTHETIC-PILOT.md'),path.join(output,'ops/README.md'));
  // These tests are explicitly autoload-dev-only, absent from production classmaps,
  // and contain published test private keys. Never ship them as runtime material.
- const pruned=['api/vendor/adhocore/jwt/tests','api/vendor/docusign/esign-client/test'];
+ const pruned=['api/vendor/adhocore/jwt/tests','api/vendor/docusign/esign-client/test','api/vendor/firebase/php-jwt/README.md'];
  for(const p of pruned)fs.rmSync(path.join(output,p),{recursive:true,force:true});
  for(const name of (withoutAdmin?['public']:['admin','public'])){
   let found=false;
@@ -54,7 +54,7 @@ export function packagePilot({repo,apiRuntime,output,origins,withoutAdmin=false,
  }
  const files=inventory(output);
  const components=Object.fromEntries((withoutAdmin?['api','public','ops']:['api','admin','public','ops']).map(k=>[k,footprint(path.join(output,k))]));
- const manifest={kind:withoutAdmin?'godaddy-cpanel-php-static-pilot':'godaddy-synthetic-pilot-rehearsal',commit,origins,production_ready:false,host_validation:false,clinical_release:false,synthetic_only:true,requires_origin_rebuild:Object.values(origins).some(o=>new URL(o).hostname.endsWith('.invalid')),production_composer_packages:installed.packages.length,pruned_autoload_dev_fixtures:pruned,platform:{os:process.platform,arch:process.arch,node:process.versions.node},components,files};
+ const manifest={kind:withoutAdmin?'godaddy-cpanel-php-static-pilot':'godaddy-synthetic-pilot-rehearsal',commit,origins,production_ready:false,host_validation:false,clinical_release:false,synthetic_only:true,requires_origin_rebuild:Object.values(origins).some(o=>new URL(o).hostname.endsWith('.invalid')),production_composer_packages:installed.packages.length,pruned_nonruntime_vendor_fixtures:pruned,platform:{os:process.platform,arch:process.arch,node:process.versions.node},components,files};
  fs.writeFileSync(path.join(output,'PILOT-MANIFEST.json'),JSON.stringify(manifest,null,2)+'\n');
  const counts=footprint(output),available=availableSlots;
  return {output,commit,origins,components,footprint:counts,available_slots:available,single_release_regular_files_fit:counts.regular_files<=available,single_release_all_entries_fit:counts.entries<=available,two_releases_all_entries_fit:counts.entries*2<=available,production_ready:false,host_validation:false};
