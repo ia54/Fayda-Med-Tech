@@ -29,5 +29,5 @@ test('deployment manifest preserves production commands', () => {
   const { scripts } = JSON.parse(readFileSync(new URL('../godaddy-node/package.json', import.meta.url)));
   assert.equal(scripts.dev, 'node scripts/dev-managed.cjs');
   assert.equal(scripts.start, 'node scripts/start-managed.cjs');
-  assert.equal(scripts.build, 'node scripts/apply-braces-guard.cjs && node --test tests/braces-depth.test.mjs && next build && node scripts/prepare-standalone.cjs');
+  assert.equal(scripts.build, 'node scripts/build-managed.cjs');
 });
