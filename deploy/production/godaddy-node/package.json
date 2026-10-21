@@ -9,7 +9,8 @@
   "packageManager": "npm@11.9.0",
   "scripts": {
     "build": "node scripts/apply-braces-guard.cjs && node --test tests/braces-depth.test.mjs && next build && node scripts/prepare-standalone.cjs",
-    "start": "node scripts/start-managed.cjs"
+    "start": "node scripts/start-managed.cjs",
+    "dev": "node scripts/dev-managed.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "3.10.0",
