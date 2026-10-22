@@ -2,6 +2,7 @@
 // Copy only this entrypoint and the accompanying .htaccess to the pilot web root.
 // Private configuration is outside every served root. Fail closed before Laravel loads.
 declare(strict_types=1);
+ini_set('display_errors', '0');
 header('Cache-Control: no-store');
 $configPath = dirname(__DIR__).'/fayda-synthetic-pilot/gateway.json';
 $config = is_readable($configPath) ? json_decode(file_get_contents($configPath), true) : null;
@@ -18,6 +19,7 @@ if (!is_string($path) || !preg_match('~^/api/[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+)*/
     http_response_code(404); exit;
 }
 unset($_SERVER['HTTP_X_FAYDA_PILOT_KEY'], $_SERVER['HTTP_X_FORWARDED_HOST'], $_SERVER['HTTP_X_FORWARDED_FOR'], $_SERVER['HTTP_X_FORWARDED_PROTO']);
+try {
 define('LARAVEL_START', microtime(true));
 require $root.'/vendor/autoload.php';
 $app = require $root.'/bootstrap/app.php';
@@ -30,3 +32,8 @@ $request = Illuminate\Http\Request::capture();
 $response = $kernel->handle($request);
 $response->send();
 $kernel->terminate($request, $response);
+} catch (Throwable $error) {
+    http_response_code(503);
+    header('Content-Type: application/json');
+    echo '{"message":"Pilot request unavailable."}';
+}
