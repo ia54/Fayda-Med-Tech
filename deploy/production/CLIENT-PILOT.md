@@ -1,5 +1,9 @@
 # Shared-platform client pilot
 
+## October 22 pharmacy-first hosted demonstration
+
+The [pharmacy owner walkthrough](../../docs/PHARMACY-OWNER-WALKTHROUGH-20261022.md) is the current demonstration entry point. The private hosted pilot has verified email-code sign-in, one synthetic pharmacy and patient/case, three prescription intakes, and a pending ordinary fill with stock reservation. Pharmacy is the central product workflow. The shared-role sequence below is historical and is not a fresh hosted acceptance claim. Clinical release and external integrations remain disabled or unverified.
+
 ## October 19 synthetic pilot verification update
 
 The [current closeout](../../docs/SYNTHETIC-PILOT-CLOSEOUT-20261019.md) supersedes earlier pilot evidence gaps and the original audit work status. Billing access/data-truth fixes, EOB pagination, cross-tab refresh repair and five source-bound browser replays pass. Full SQLite: **458 tests / 9,339 assertions**. Dependency disposition, exact hosted checks, owner pilot acceptance and cloud publication/restoration remain open. Full product and clinical release are not approved.
@@ -16,7 +20,7 @@ Scope authorized September 30, 2026. Purpose: demonstrate the existing shared PI
 | 4 | Patient/client | View own case, invoice, recorded payments and authorized private document | Own-record scope, authenticated document access, staff-only notes absent |
 | 5 | Attorney | View assigned case and financial information | Assignment boundary and supported case views |
 | 6 | Firm Admin | Record settlement, preserve original on correction, view reports | Current versus replaced totals and saved report result |
-| 7 | Pharmacist, optional separate preview | Show location-scoped intake and retained source-linked review | Clearly label preview-only; no provider call or final restricted dispensing |
+| 7 | Pharmacist, central preview | Show location-scoped intake and retained source-linked review | Clearly label preview-only; no provider call or final restricted dispensing |
 
 Prior evidence: workspace audit-evidence/role-browser-20260924/acceptance.md, financial-browser-20260924/acceptance.md and legal-browser-20260924/acceptance.md. Those observations are historical, not a fresh pilot pass. CSV generation is tested but browser-to-disk persistence was not established. Mobile acceptance is also outstanding.
 

@@ -1,0 +1,40 @@
+# Pharmacy owner walkthrough — October 22, 2026
+
+Pharmacy is the central demonstration. This guide covers the private GoDaddy synthetic pilot, not a clinical launch. Email-code sign-in and the records below were verified in Chrome on October 22. The deployed frontend package is `115ddef`; subsequent source changes require a new deployment before they can be demonstrated.
+
+## Ten-minute owner demonstration
+
+| Step | Open | What the owner can see | Verified boundary |
+| --- | --- | --- | --- |
+| 1 | Pharmacy Operations | Three prescriptions linked to one patient, accident case and pharmacy | Ordinary fill pending; controlled and compounded records remain intake only |
+| 2 | Patient records → Synthetic Demo Patient | Location enrollment, retained history and clinical chart | Allergies and medications remain unknown; no clinical review invented |
+| 3 | Open SYN-RX-001 | Prescription, patient/case linkage, original-source section and actionable missing-record checks | AI is unconfigured; checks are deterministic, not interaction screening |
+| 4 | Fills and billing on that prescription | Pending pharmacist review, reservation, label-proof requirements and action history | No approval, label print, dispensing, handover or claim submission completed |
+| 5 | Locations and inventory | SYN-LOT-001: 100 on hand, 10 reserved, 90 unreserved | Synthetic stock; product verification outstanding |
+| 6 | Worklist → select SYNTHETIC — Michigan Demo Pharmacy → Site readiness | Outstanding credentials, interfaces, physical acceptance and release decisions | Operational release disabled for all four displayed categories |
+| 7 | Worklist controlled and compound rows | Dedicated classifications and linked intake records | These rows demonstrate intake, not complete controlled or compounded workflows |
+
+Use fictional records only. Do not tick professional-review checkboxes merely to move the demonstration forward. An owner can review the screens without granting clinical acceptance.
+
+## Exact demonstration records
+
+- Patient 2: SYN-PAT-001, Synthetic Demo Patient.
+- Accident case reference: SYN-PIP-001.
+- Prescription 4: SYN-RX-001, ordinary training tablet; pending fill.
+- Prescription 5: SYN-RX-002, controlled intake.
+- Prescription 6: SYN-RX-003, nonsterile compound intake.
+- Stock receipt 2: SYN-LOT-001; 100/10/90 on-hand/reserved/unreserved.
+- One assigned pharmacist; no technician or additional role accounts created for this demonstration.
+
+Browser evidence is retained in the workspace `launch/backend-preflight-20261022/pharmacy-demo-evidence.json` and the worklist, inventory and readiness PNGs under `launch/`. These are observations of this dataset, not general acceptance of every pharmacy feature.
+
+## Next delivery sequence
+
+1. **Presentation and navigation:** simplify worklist follow-up filters and preserve explicit accessible filter names. Validate the source, package a new preview build, then verify in Chrome. Source completion alone is not deployment.
+2. **Evidence rehearsal:** exercise synthetic source attachment, persistence and retrieval on the hosted pilot. Record results before advancing the ordinary-fill rehearsal; professional-review decisions remain explicit.
+3. **Hosted resilience:** verify current session denial boundaries, backup and restoration in an isolated destination, plus upload/download persistence. Do not overwrite the demonstrated database to test restoration.
+4. **Provider decisions:** select prescription exchange, licensed clinical drug data, payer route, MAPS reporting mechanism and AI provider. No account/provider selection is established by a code adapter.
+5. **Pharmacy acceptance:** Dr. Ghadeh approves site and professional credentials, controlled/compounding scope, SOPs and physical label/scanner workflow. Keep unresolved items visible.
+6. **Clinical hosting and release:** select the operational host and required agreements, verify integration behavior and recovery, and obtain site-specific professional release acceptance before real patient use.
+
+The six shared-platform role journeys have historical local evidence; they have not been freshly reverified in this one-account hosted pharmacy pilot. Payment scope remains recording receipts only, not collecting money.
