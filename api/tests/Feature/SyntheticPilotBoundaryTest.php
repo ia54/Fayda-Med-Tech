@@ -68,4 +68,29 @@ class SyntheticPilotBoundaryTest extends TestCase
         Http::fake(['https://provider.example.invalid/*' => Http::response(['synthetic' => true])]);
         $this->assertTrue(Http::get('https://provider.example.invalid/read')->json('synthetic'));
     }
+
+    public function test_hosted_pharmacy_preview_requires_server_verified_gateway_attribute(): void
+    {
+        $this->enablePilot();
+        config(['pilot.pharmacy_preview'=>true, 'app.debug'=>false,
+            'app.url'=>'https://pilot-api.faydamed.tech', 'database.default'=>'mysql',
+            'database.connections.mysql.host'=>'localhost',
+            'database.connections.mysql.database'=>'faydamed_pilot']);
+        $original=$this->app['env'];
+        $this->app['env']='production';
+        try {
+            $request=\Illuminate\Http\Request::create('/api/pharmacy/prescriptions');
+            $request->attributes->set('fayda_pilot_gateway_verified', true);
+            $response=(new \App\Http\Middleware\PharmacyPreviewOnly)->handle($request, fn () => response('synthetic preview'));
+            $this->assertSame('synthetic preview', $response->getContent());
+
+            // Client-controlled inputs cannot grant the server-side attribute.
+            $spoofed=\Illuminate\Http\Request::create('/api/pharmacy/prescriptions', 'POST',
+                ['fayda_pilot_gateway_verified'=>true], [], [], ['HTTP_FAYDA_PILOT_GATEWAY_VERIFIED'=>'true']);
+            $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+            (new \App\Http\Middleware\PharmacyPreviewOnly)->handle($spoofed, fn () => $this->fail('Spoofed gateway accepted.'));
+        } finally {
+            $this->app['env']=$original;
+        }
+    }
 }

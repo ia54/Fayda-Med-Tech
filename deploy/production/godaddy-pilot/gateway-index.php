@@ -29,6 +29,7 @@ if (!config('pilot.synthetic') || config('app.debug') || config('database.connec
     http_response_code(503); exit;
 }
 $request = Illuminate\Http\Request::capture();
+$request->attributes->set('fayda_pilot_gateway_verified', true);
 $response = $kernel->handle($request);
 $response->send();
 $kernel->terminate($request, $response);
