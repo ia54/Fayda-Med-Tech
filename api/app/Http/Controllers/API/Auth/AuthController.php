@@ -24,6 +24,10 @@ class AuthController extends Controller
         if (!$user || !Hash::check($data['password'], $user->password) || $user->status !== 'active') {
             return response()->json(['status' => false, 'message' => 'Invalid login credentials'], 401);
         }
+        $emailCodes = app(\App\Services\PilotEmailCode::class);
+        if ($emailCodes->enabled($user)) {
+            return response()->json($emailCodes->challenge($user))->header('Cache-Control', 'no-store');
+        }
         if ($user->two_factor_enabled || $mfa->required($user) || ($data['enroll_mfa'] ?? false)) {
             return response()->json($mfa->challenge($user))->header('Cache-Control', 'no-store');
         }

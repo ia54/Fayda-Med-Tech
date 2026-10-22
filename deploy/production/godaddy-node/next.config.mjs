@@ -8,6 +8,7 @@ export default {
   // The gateway key remains server-only and is deliberately absent here.
   env: {
     NEXT_PUBLIC_API_BASE_URL: '/api',
+    NEXT_PUBLIC_PILOT_EMAIL_LOGIN: 'true',
     NEXT_PUBLIC_API_URL: 'https://z1izdz2qau.preview.c36.airoapp.ai',
   },
 };

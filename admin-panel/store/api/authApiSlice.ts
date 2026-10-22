@@ -11,6 +11,7 @@ export interface RegisterRequest {
 }
 
 export interface MfaRequiredResponse {
+  method?: 'email';
   status: true;
   mfa_required: true;
   enrollment_required: boolean;
