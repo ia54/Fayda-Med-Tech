@@ -1,0 +1,5 @@
+DISPOSABLE ENGINE: fayda-cloud-mysql
+
+   INFO  Nothing to migrate.
+
+FAIL: SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'upgrade@example.invalid' for key 'organizations.organizations_email_unique' (Connection: mysql, Host: 127.0.0.1, Port: 3306, Database: faydamed_ci, SQL: insert into `organizations` (`org_name`, `org_type`, `subscription_plan`, `email`) values (Synthetic upgrade, law_firm, test, upgrade@example.invalid))

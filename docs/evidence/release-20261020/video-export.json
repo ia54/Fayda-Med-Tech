@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-20",
+  "duration_seconds": 216.04,
+  "resolution": "1440x1100",
+  "codec": "H.264/yuv420p",
+  "audio": "none; burned-in captions and title cards",
+  "sha256": "0c367f2d63ff2cfc8ef5a53cb3f006c4b245c2e3c26762b3971d935f69e22aa3",
+  "bytes": 4428606,
+  "library_file_id": "libfile_f2d14bea87e88191862b5cf18c7426f2",
+  "library_download_url": "https://chatgpt.com/api/library/files/libfile_f2d14bea87e88191862b5cf18c7426f2/download",
+  "validation": {
+    "ffmpeg_full_decode": "passed",
+    "chromium_playback_started": true,
+    "chromium_media_error": null,
+    "browser_seek": "not established; loopback static server did not support seeking",
+    "visual_review": "PDF segment and pharmacy screenshot reviewed; actual retake replaces blocked-viewer segment"
+  },
+  "sharing": "private owner-review Library file; not shared with partners",
+  "source_commit": "ce839f40d36656c147166d63c88689071ee40617",
+  "edit_decisions": [
+    {
+      "take": "main",
+      "start": 0,
+      "end": 106.2
+    },
+    {
+      "take": "actual PDF retake",
+      "start": 4.5,
+      "end": "end"
+    },
+    {
+      "take": "main",
+      "start": 125.5,
+      "end": "end"
+    }
+  ]
+}

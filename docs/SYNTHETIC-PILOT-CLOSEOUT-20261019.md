@@ -1,5 +1,7 @@
 # Synthetic pilot candidate — October 19, 2026
 
+**October 20 addendum:** Ibrahim accepted this synthetic pilot at 08:05:46 UTC. Exact hosted checks and fresh-environment replay are verified; see [dated release preparation](RELEASE-PREPARATION-20261020.md) and [11/12 evidence-gate snapshot](BUILD-PILOT-CLOSEOUT-20261020.json). The October 19 pending-owner/hosted/restore statements below are historical. Residual dependency disposition, draft-12 publication and operational acceptance remain separate.
+
 The owner's delivery order is synthetic pilot first, then the full multi-location pharmacy product. This increment closes pilot engineering findings; it does not authorize production, real dispensing, clinical release, provider calls, hosting access or funds movement. Both sterile and nonsterile compounding remain full-product scope, with per-site clinical acceptance outstanding.
 
 ## Repairs
