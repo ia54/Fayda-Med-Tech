@@ -568,3 +568,11 @@ body > * {
   text-overflow: clip;
   vertical-align: top;
 }
+
+/* Keep the readiness review readable despite the generic shrink-to-content modal rule. */
+[data-slot="dialog-content"][data-site-readiness="true"] {
+  width: min(90vw, 42rem) !important;
+  max-width: 90vw !important;
+  max-height: 85dvh;
+  overflow-y: auto;
+}

@@ -226,3 +226,7 @@ const rehearsalApi=pharmacyApi.injectEndpoints({endpoints:b=>({
  getHandoverRehearsalContext:b.query<{data:{snapshot:HandoverRehearsalSnapshot;source_hash:string}},number>({query:id=>`/pharmacy/executions/${id}/handover-rehearsal-context`,providesTags:[TAG_TYPES.PHARMACY]})
 })});
 export const {useGetHandoverRehearsalsQuery,useGetHandoverRehearsalContextQuery}=rehearsalApi;
+
+export type SiteReadiness={site:{id:number;name:string;active:boolean};recorded:{facility_license_reference_present:boolean;active_pharmacist_assignments:number;active_technician_assignments:number};requirements:{id:string;label:string;status:string}[];workflows:{kind:string;operational_release_enabled:false;clinical_acceptance_verified:false}[];synthetic_preview_only:true;operational_release_enabled:false;basis:string};
+const readinessApi=pharmacyApi.injectEndpoints({endpoints:b=>({getSiteReadiness:b.query<{data:SiteReadiness},number>({query:id=>`/pharmacy/locations/${id}/readiness`,providesTags:[TAG_TYPES.PHARMACY]})})});
+export const {useGetSiteReadinessQuery}=readinessApi;

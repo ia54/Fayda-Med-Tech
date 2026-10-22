@@ -1,0 +1,39 @@
+{
+  "observed_date": "2026-10-20",
+  "original_package": {
+    "name": "braces",
+    "version": "3.0.3",
+    "integrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
+    "matches_locked_registry_integrity": true,
+    "reproduction": "compile: RangeError: Maximum call stack size exceeded\nexpand: returned\nstringify: returned"
+  },
+  "local_patch_sha256": "3d857c3d76cc5c6a762599ba26d522b234f01fba5ae3548b49615f5700a252dc",
+  "registry_audit": {
+    "exit_code": 1,
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 1,
+      "critical": 0
+    },
+    "advisories": [
+      {
+        "name": "braces",
+        "severity": "high",
+        "id": "GHSA-vfj7-8cjw-p6xm",
+        "vulnerable_versions": "<=3.0.3",
+        "patched_versions": ">=3.0.4"
+      }
+    ]
+  },
+  "composer_audit": {
+    "exit_code": 100,
+    "status": "unknown_network_denied",
+    "destination": "https://packagist.org/api/security-advisories/",
+    "error": "CONNECT tunnel failed, response 403",
+    "audit_suppressed": false
+  },
+  "quill_removed": true,
+  "local_patch_does_not_clear_registry_finding": true
+}

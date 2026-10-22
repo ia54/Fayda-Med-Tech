@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "database": "separate fresh synthetic SQLite for cloud rehearsal only; host MySQL unverified",
+  "fresh_signing_keys": "generated only in separate rehearsal, never packaged",
+  "app_env": "production",
+  "synthetic_pilot": true,
+  "results": {
+    "/api/faqs": 200,
+    "/api/pharmacy/prescriptions": 401,
+    "/.env": 404,
+    "/vendor/autoload.php": 404,
+    "/storage/documents/pilot-private-check.txt": 404,
+    "/storage/app/private/documents/pilot-private-check.txt": 404
+  },
+  "host_validation": false
+}

@@ -1,0 +1,184 @@
+(node:141557) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ next build
+(node:141570) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+   ▲ Next.js 15.5.27
+
+   Creating an optimized production build ...
+(node:141588) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:141724) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:141741) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ Compiled successfully in 26.6s
+   Skipping linting
+   Checking validity of types ...
+(node:141762) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+   Collecting page data ...
+(node:141861) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:141860) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:141862) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:141859) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+   Generating static pages (0/120) ...
+(node:141895) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:141896) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:141907) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:141908) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+   Generating static pages (30/120) 
+   Generating static pages (60/120) 
+   Generating static pages (90/120) 
+ ✓ Generating static pages (120/120)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                                           Size  First Load JS
+┌ ○ /                                                                202 B         102 kB
+├ ○ /_not-found                                                      996 B         103 kB
+├ ○ /auth/forgot-password                                          4.71 kB         122 kB
+├ ○ /auth/login                                                    6.76 kB         159 kB
+├ ○ /auth/reset-password                                           5.82 kB         124 kB
+├ ○ /auth/signup                                                     191 B         106 kB
+├ ○ /dashboard                                                       663 B         107 kB
+├ ○ /dashboard/account-security                                    3.53 kB         125 kB
+├ ○ /dashboard/admin                                               5.61 kB         150 kB
+├ ○ /dashboard/admin/application                                     202 B         102 kB
+├ ○ /dashboard/admin/application/about/aboutBanner                 2.88 kB         267 kB
+├ ○ /dashboard/admin/application/about/aboutUs                     2.81 kB         267 kB
+├ ○ /dashboard/admin/application/about/ourMission                  2.72 kB         267 kB
+├ ○ /dashboard/admin/application/about/ourStory                    2.73 kB         267 kB
+├ ○ /dashboard/admin/application/about/problemSolving              3.08 kB         267 kB
+├ ○ /dashboard/admin/application/about/whoWeServe                  2.73 kB         267 kB
+├ ○ /dashboard/admin/application/about/whyFAYDAMEDDifferent        5.01 kB         269 kB
+├ ○ /dashboard/admin/application/contact/contactBanner             2.61 kB         266 kB
+├ ○ /dashboard/admin/application/contact/qna                       2.42 kB         266 kB
+├ ○ /dashboard/admin/application/global-settings/cta               3.26 kB         267 kB
+├ ○ /dashboard/admin/application/global-settings/faq               3.21 kB         278 kB
+├ ○ /dashboard/admin/application/global-settings/footer            2.99 kB         267 kB
+├ ○ /dashboard/admin/application/global-settings/newsletter-cta     3.1 kB         267 kB
+├ ○ /dashboard/admin/application/global-settings/testimonials      2.74 kB         278 kB
+├ ○ /dashboard/admin/application/home/appIntegration               2.57 kB         266 kB
+├ ○ /dashboard/admin/application/home/banner                       2.73 kB         267 kB
+├ ○ /dashboard/admin/application/home/circleTypewritting           1.39 kB         265 kB
+├ ○ /dashboard/admin/application/home/ourSolution                    202 B         102 kB
+├ ○ /dashboard/admin/application/home/whyNow                        2.9 kB         267 kB
+├ ○ /dashboard/admin/application/home/whyWeDifferent               93.9 kB         439 kB
+├ ○ /dashboard/admin/application/pricing/plan                      2.75 kB         267 kB
+├ ○ /dashboard/admin/application/pricing/pricingBanner             2.77 kB         267 kB
+├ ○ /dashboard/admin/application/privacy-policy/banner             2.62 kB         266 kB
+├ ○ /dashboard/admin/application/privacy-policy/content            2.37 kB         266 kB
+├ ○ /dashboard/admin/application/solutions/smarterClaimProcessing  2.67 kB         266 kB
+├ ○ /dashboard/admin/application/solutions/solutionsBanner         2.66 kB         266 kB
+├ ○ /dashboard/admin/application/terms-condition/banner            2.61 kB         266 kB
+├ ○ /dashboard/admin/application/terms-condition/content           2.39 kB         266 kB
+├ ○ /dashboard/admin/audit                                         4.07 kB         337 kB
+├ ○ /dashboard/admin/billing                                       2.07 kB         367 kB
+├ ○ /dashboard/admin/blog                                          15.7 kB         360 kB
+├ ○ /dashboard/admin/document-categories                           1.96 kB         143 kB
+├ ○ /dashboard/admin/features                                      8.88 kB         122 kB
+├ ○ /dashboard/admin/hipaa-authorizations                          2.04 kB         143 kB
+├ ○ /dashboard/admin/integrations                                  8.79 kB         215 kB
+├ ○ /dashboard/admin/legal                                           202 B         102 kB
+├ ○ /dashboard/admin/legal/cases                                   2.99 kB         382 kB
+├ ○ /dashboard/admin/medical-history                               1.71 kB         143 kB
+├ ○ /dashboard/admin/medical-record-requests                          2 kB         143 kB
+├ ○ /dashboard/admin/organizations                                   808 B         366 kB
+├ ○ /dashboard/admin/reports                                       7.48 kB         148 kB
+├ ○ /dashboard/admin/roles                                         12.1 kB         167 kB
+├ ○ /dashboard/admin/security                                      8.17 kB         188 kB
+├ ○ /dashboard/admin/settings                                      9.46 kB         164 kB
+├ ○ /dashboard/admin/signatures/send                                 153 B         181 kB
+├ ○ /dashboard/admin/users                                         6.96 kB         380 kB
+├ ○ /dashboard/billing                                                4 kB         152 kB
+├ ○ /dashboard/billing/analytics                                   2.83 kB         144 kB
+├ ○ /dashboard/billing/appeals                                     5.17 kB         161 kB
+├ ○ /dashboard/billing/appeals/create                              5.75 kB         176 kB
+├ ○ /dashboard/billing/eobs                                         8.1 kB         183 kB
+├ ○ /dashboard/billing/invoices                                    8.59 kB         178 kB
+├ ○ /dashboard/billing/ocr-queue                                   5.82 kB         147 kB
+├ ○ /dashboard/billing/payments                                      195 B         178 kB
+├ ○ /dashboard/billing/queue                                       5.19 kB         149 kB
+├ ○ /dashboard/billing/reports                                     2.81 kB         147 kB
+├ ○ /dashboard/billing/signatures/send                               153 B         181 kB
+├ ○ /dashboard/billing/upload                                      3.52 kB         148 kB
+├ ○ /dashboard/billing/validation                                  5.36 kB         146 kB
+├ ○ /dashboard/client                                              6.27 kB         150 kB
+├ ○ /dashboard/client/cases                                        4.86 kB         149 kB
+├ ƒ /dashboard/client/cases/[id]                                   5.05 kB         149 kB
+├ ƒ /dashboard/client/cases/[id]/timeline                          4.45 kB         155 kB
+├ ○ /dashboard/client/documents                                    6.93 kB         168 kB
+├ ○ /dashboard/client/documents/upload                             6.85 kB         177 kB
+├ ○ /dashboard/client/invoices                                      5.1 kB         149 kB
+├ ƒ /dashboard/client/invoices/[id]                                4.58 kB         149 kB
+├ ○ /dashboard/client/payments                                     4.06 kB         145 kB
+├ ○ /dashboard/client/signatures                                    178 kB         350 kB
+├ ○ /dashboard/insurance                                           2.52 kB         153 kB
+├ ○ /dashboard/legal                                                114 kB         258 kB
+├ ○ /dashboard/legal/billing                                       3.27 kB         146 kB
+├ ○ /dashboard/legal/cases                                            3 kB         382 kB
+├ ƒ /dashboard/legal/cases/[id]                                    16.7 kB         253 kB
+├ ○ /dashboard/legal/cases/new                                     3.45 kB         213 kB
+├ ○ /dashboard/legal/demand-letters                                7.91 kB         190 kB
+├ ƒ /dashboard/legal/documents/upload                              10.5 kB         186 kB
+├ ○ /dashboard/legal/integrations                                  3.94 kB         210 kB
+├ ○ /dashboard/legal/liens                                         3.13 kB         194 kB
+├ ○ /dashboard/legal/notifications                                  2.6 kB         138 kB
+├ ○ /dashboard/legal/reports                                       7.05 kB         166 kB
+├ ○ /dashboard/legal/security                                      6.05 kB         159 kB
+├ ○ /dashboard/legal/settings                                      7.07 kB         156 kB
+├ ○ /dashboard/legal/settlements                                   10.4 kB         187 kB
+├ ○ /dashboard/legal/signatures/send                                 152 B         181 kB
+├ ○ /dashboard/legal/users                                         3.37 kB         370 kB
+├ ○ /dashboard/liens                                               1.76 kB         149 kB
+├ ○ /dashboard/notifications                                       5.41 kB         176 kB
+├ ○ /dashboard/pharmacy                                            5.18 kB         165 kB
+├ ƒ /dashboard/pharmacy/[id]                                       27.9 kB         180 kB
+├ ○ /dashboard/pharmacy/compounding                                  38 kB         186 kB
+├ ○ /dashboard/pharmacy/ingredients                                5.91 kB         154 kB
+├ ○ /dashboard/pharmacy/new                                        3.91 kB         152 kB
+├ ○ /dashboard/pharmacy/patients                                   2.27 kB         151 kB
+├ ƒ /dashboard/pharmacy/patients/[id]                              5.08 kB         153 kB
+├ ○ /dashboard/pharmacy/prescription-transfers                      1.4 kB         150 kB
+├ ƒ /dashboard/pharmacy/prescription-transfers/[id]                 3.4 kB         155 kB
+├ ○ /dashboard/pharmacy/recalls                                    3.26 kB         152 kB
+├ ƒ /dashboard/pharmacy/recalls/[id]                               4.68 kB         153 kB
+├ ƒ /dashboard/pharmacy/recalls/[id]/fills                           202 B         102 kB
+├ ƒ /dashboard/pharmacy/recalls/[id]/fills/[fillId]                3.31 kB         152 kB
+├ ○ /dashboard/pharmacy/staff                                      2.36 kB         151 kB
+├ ○ /dashboard/pharmacy/stock                                      3.79 kB         152 kB
+├ ƒ /dashboard/pharmacy/stock/[id]                                 8.35 kB         157 kB
+├ ○ /dashboard/pharmacy/transfers                                   1.6 kB         150 kB
+├ ƒ /dashboard/pharmacy/transfers/[id]                             6.52 kB         155 kB
+├ ○ /dashboard/profile                                             7.31 kB         120 kB
+├ ○ /dashboard/provider                                             4.3 kB         152 kB
+├ ○ /dashboard/provider/appeals                                    5.46 kB         146 kB
+├ ○ /dashboard/provider/claims                                     8.23 kB         178 kB
+├ ○ /dashboard/provider/claims/create                              7.29 kB         174 kB
+├ ○ /dashboard/provider/communications                             5.41 kB         114 kB
+├ ○ /dashboard/provider/cpt-library                                4.86 kB         114 kB
+├ ○ /dashboard/provider/documents                                    191 B         165 kB
+├ ○ /dashboard/provider/documents/upload                             244 B         165 kB
+├ ○ /dashboard/provider/liens                                      7.97 kB         152 kB
+├ ○ /dashboard/provider/payments                                     246 B         178 kB
+├ ○ /dashboard/provider/reports                                    2.68 kB         147 kB
+├ ○ /dashboard/providers                                           1.61 kB         149 kB
+└ ○ /test-table                                                    6.37 kB         304 kB
++ First Load JS shared by all                                       102 kB
+  ├ chunks/1212-a3dff5b295af9e9a.js                                  46 kB
+  ├ chunks/2c8baa69-de5297f450f08426.js                            54.2 kB
+  └ other shared chunks (total)                                    2.03 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

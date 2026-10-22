@@ -15,6 +15,9 @@
             <file>tests/Feature/InsuranceClaimWorkflowTest.php</file>
             <file>tests/Feature/PharmacyWorkflowTest.php</file>
             <file>tests/Feature/PaymentReconciliationTest.php</file>
+            <file>tests/Feature/BillingAnalyticsBoundaryTest.php</file>
+            <file>tests/Feature/PharmacySiteReadinessTest.php</file>
+            <file>tests/Feature/SyntheticPilotBoundaryTest.php</file>
             <file>tests/Feature/SigningWorkflowTest.php</file>
             <file>tests/Feature/SignedDocumentArchiveTest.php</file>
             <file>tests/Feature/SigningRecoveryTest.php</file>

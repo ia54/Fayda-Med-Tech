@@ -1,0 +1,34 @@
+Diagnostic assertions below deliberately verify the observed unsafe behavior, not the required correct behavior. This is not a passing security-regression claim. Executed only with phpunit.xml in-memory synthetic configuration; no production data.
+
+Audited source: c6d0db736440cb4646d57f2103eaaaedad4213ba
+
+<?php
+namespace Tests\Feature;
+use App\Models\Invoice;
+class BillingAnalyticsAuditTest extends InvoiceCaseBoundaryTest
+{
+ public function test_audit_client_analytics_exposes_unassigned_aggregate_and_fabricated_metrics(): void
+ {
+  $actor=(new \ReflectionProperty(InvoiceCaseBoundaryTest::class,'actor'))->getValue($this);
+  $cases=(new \ReflectionProperty(InvoiceCaseBoundaryTest::class,'cases'))->getValue($this);
+  foreach (['denied','sent'] as $status) Invoice::withoutEvents(fn()=>Invoice::create(['organization_id'=>1,'case_id'=>$cases[1]->id,'invoice_number'=>'SYN-AUDIT-'.$status,'amount'=>100,'status'=>$status]));
+  $actor->role='client';
+  $this->getJson('/api/invoices')->assertOk()->assertJsonPath('data.total',0);
+  $this->getJson('/api/billing/analytics')->assertOk()->assertJsonPath('data.metrics.denial_rate',50)
+   ->assertJsonPath('data.metrics.avg_process_time',14.5)->assertJsonPath('data.metrics.appeal_success_rate',78.4)
+   ->assertJsonPath('data.payer_trends.0.claims',234);
+ }
+}
+
+
+Observed output:
+PHPUnit 11.5.56 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.3.35
+Configuration: /workspace/Fayda-Med-Tech/api/phpunit.xml
+
+.                                                                   1 / 1 (100%)
+
+Time: 00:00.727, Memory: 46.50 MB
+
+OK (1 test, 7 assertions)

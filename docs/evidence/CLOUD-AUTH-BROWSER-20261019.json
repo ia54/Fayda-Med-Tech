@@ -1,0 +1,403 @@
+{
+  "source": "a84538f09211f0cb2d73fdfb6a7faffa8e815dcd",
+  "source_file_count": 723,
+  "full_result_sha256": "8f5622fe723ec37fe6aa391aa2acba22f139c915085ef5470d3d63029a66c1c1",
+  "database_sha256": "90fe1f90a2f8a81e68eb32a4fc8bf1c8f30f75bf6afc24434f30d1bb3c410cc2",
+  "artifacts": {
+    "/workspace/.cloud-tools/auth-browser-final-pinned/auth.sqlite": "90fe1f90a2f8a81e68eb32a4fc8bf1c8f30f75bf6afc24434f30d1bb3c410cc2",
+    "/workspace/.cloud-tools/auth-browser-final-pinned/auth-session-result.json": "8f5622fe723ec37fe6aa391aa2acba22f139c915085ef5470d3d63029a66c1c1",
+    "/workspace/.cloud-tools/auth-browser-final-pinned/seed.log": "83a93ad5c16124a3ea2dc5450bc603236d891f60f43566e3a67e09564b486c1a",
+    "/workspace/.cloud-tools/auth-browser-final-pinned/browser.log": "a9aae6fb99be0866bd0019f6baf1a479f57ecd3418c08f3b1652ad61d55411f8",
+    "/workspace/.cloud-tools/auth-browser-final-pinned/auth-session-complete.png": "9591227e57c799017d44f1e11d5a6e11424f77c1d3c44b0929276f116cf3faa2",
+    "/workspace/.cloud-tools/auth-browser-final-pinned/auth-session-mobile-login-complete.png": "dca04b71adefa69074e852a8d4c44469ce0adbe32ae87b26fd0d1c00ce4f4d09",
+    "/workspace/.cloud-tools/evidence/auth-full-sqlite.log": "d91b2a2cab8d2fd08a82f85b90edca12d8ce5f44513a6f209bcd23824b8d3fcc",
+    "/workspace/.cloud-tools/evidence/auth-focused-after.log": "c815df61b343b4c2d8778bdc92b03a2527111e5ab6e02e12fd3b53434f8e626a",
+    "/workspace/.cloud-tools/evidence/auth-expiry-before.log": "a1f56bc45bd61b4038dbe6ddf93be90898413d7177ef15a0261d2a9ab643465c",
+    "/workspace/.cloud-tools/evidence/auth-session-ui.log": "372e3e950fb4601821819a34604e22c77805b17cc9493d7a3c09691d140e9502",
+    "/workspace/.cloud-tools/evidence/auth-recovery-ui.log": "5b57b444adc05f2030a88e310f30ac1d039757e6f392b744cdfa26349f5d333c",
+    "/workspace/.cloud-tools/evidence/auth-mysql-focused.log": "4c4a3c0fb3e20596608d582ae1251d7015ba0500f88f2905cf813a1af162b20d",
+    "/workspace/.cloud-tools/evidence/auth-mariadb-focused.log": "b3430cb6bc5bc9a61700e68b942463e0455d222106a1af3cdbe2afd5fdc9e520"
+  },
+  "archive": {
+    "path": "/workspace/.cloud-tools/evidence/cloud-auth-browser-a84538f.tar.gz",
+    "sha256": "b35f05921345ec6ce2e498755f8ad3e89391648aea13d28fb857d0bf98f1e52d",
+    "size_bytes": 1429849,
+    "excludes": "sessions.json, private signing key, plaintext passwords, MFA setup secret and recovery codes; database contains synthetic credential hashes and encrypted synthetic MFA secret"
+  },
+  "result": {
+    "git_head": "a84538f09211f0cb2d73fdfb6a7faffa8e815dcd",
+    "browser": "154.0.8037.57",
+    "seeded_authentication": false,
+    "login_mfa_verified": true,
+    "blocked_external_hosts": [
+      "va.vercel-scripts.com"
+    ],
+    "responses": [
+      {
+        "role": "visitor",
+        "path": "/api/login",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/login",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/auth/mfa/setup",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/auth/mfa/verify",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/auth/mfa/verify",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/firm/stats",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/cases",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/logout",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/auth/mfa/status",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/refresh-token",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/login",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/auth/mfa/verify",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/firm/stats",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/cases",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/logout",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/login",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/auth/mfa/verify",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/auth/mfa/verify",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/firm/stats",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/cases",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/invoices",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/cases",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/refresh-token",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/invoices",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/cases",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/refresh-token",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/payments",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/invoices",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/refresh-token",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/forgot-password",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/forgot-password",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/login",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/client/stats",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/reset-password",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/client/invoices",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/refresh-token",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/client/invoices",
+        "method": "GET",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/refresh-token",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/login",
+        "method": "POST",
+        "status": 401
+      },
+      {
+        "role": "visitor",
+        "path": "/api/login",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/client/stats",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/logout",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/login",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/notifications",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/client/stats",
+        "method": "GET",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/logout",
+        "method": "POST",
+        "status": 200
+      },
+      {
+        "role": "visitor",
+        "path": "/api/reset-password",
+        "method": "POST",
+        "status": 400
+      }
+    ],
+    "steps": [
+      "Unauthenticated protected navigation redirects to login",
+      "Password alone grants no session; MFA setup rejects wrong code and confirms recovery-code retention before dashboard",
+      "UI logout revokes access and refresh credentials",
+      "Recovery code works once; replay fails and a different unused code succeeds",
+      "Server-expired access triggers actual browser refresh and rotates the single-use refresh token",
+      "Expired access plus revoked refresh clears the browser session and returns to login",
+      "A controlled past browser expiry deadline blocks protected rendering and redirects to login",
+      "Fixture-issued reset link changes password, strips URL token, revokes all old credentials, rejects old password and link replay"
+    ],
+    "protected_table_hashes": {
+      "invoices": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "payments": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "pharmacy_stock_lots": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "pharmacy_stock_events": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "pharmacy_fills": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "case_settlements": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "external_email_delivery_verified": false,
+    "mobile_evidence": "login layout only at 390x844; no physical-device or full mobile workflow acceptance",
+    "expiry_method": "controlled synthetic database expiry; no one-hour wall-clock claim",
+    "recovery_remaining": 8,
+    "clinical_release": false
+  }
+}

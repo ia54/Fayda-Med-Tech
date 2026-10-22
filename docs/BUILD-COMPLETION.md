@@ -1,6 +1,14 @@
 # Build completion worklist
 
+## October 19 synthetic pilot verification update
+
+The [current closeout](SYNTHETIC-PILOT-CLOSEOUT-20261019.md) supersedes earlier pilot evidence gaps and the original audit work status. Billing access/data-truth fixes, EOB pagination, cross-tab refresh repair and five source-bound browser replays pass. Full SQLite: **458 tests / 9,339 assertions**. Dependency disposition, exact hosted checks, owner pilot acceptance and cloud publication/restoration remain open. Full product and clinical release are not approved.
+
 Updated October 18, 2026. The owner has directed build work to proceed while server access is deferred. This is a software worklist, not a launch approval or a percentage-complete claim.
+
+## October 19 audit and agreed delivery order
+
+The owner selected **synthetic pilot first, then full product**. The reconciled [completion audit and finish plan](BUILD-COMPLETION-AUDIT-20261019.md), [sized backlog](BUILD-FINISH-BACKLOG-20261019.csv) and [dependency/acceptance model](BUILD-FINISH-BACKLOG-20261019.json) now define remaining work. Historical increments below retain their original evidence; they are not current completion percentages. The audit reproduces an uncovered client analytics disclosure, identifies fabricated analytics/subscription displays and records new dependency advisories. These are prioritized pilot repairs; the full confirmed clinical/operational scope remains open.
 
 ## Workflow navigation baseline
 
@@ -88,3 +96,13 @@ Synthetic acceptance journey: open a pending transfer with a deliberately damage
 ## Recall follow-up overview
 
 Recall detail now summarizes all affected fills at the requesting staff member's current assigned locations, before display filtering or pagination. It separates unfinished follow-up from unresolved fulfillment and provides filters for not-started, open and completed follow-up. It does not count other locations/tenants or imply recall termination, patient communication or stock release. Read-only aggregate regressions cover pagination, status filters, assignment revocation, inconsistent location links, foreign-tenant rows, zero matches and follow-up transitions. Rendered UI checks cover scope language, counts and refresh-disabled controls. Browser and operational acceptance remain separate.
+
+## Independent cloud continuation — October 19
+
+Cloud development continues from handoff `5d18293` on `codex/cloud-pharmacy-acceptance`, reviewed through draft PR #2. A morning-run authentication failure in the compounding dating fixture is corrected without changing application authentication or clinical gates. The existing dispatch-loss API journey now explicitly verifies all three separate quarantined receipts after independent 2.125/3.875 recovery reviews; the original six-unit loss, available source stock of 40, cancelled fill and invoice absence remain preserved.
+
+The corrected cloud SQLite regression passes 453 tests / 9,255 assertions. See [cloud validation evidence](CODEX-CLOUD-VALIDATION-20261019.md) for exact runtime, database, build, configuration and publication status. A fresh Chromium journey also independently applied both recovery quantities and verified reload persistence plus SQL invariants; the old local pending review was not imported. The selected compounded handover and shared-role browser journeys now pass; see [fresh browser/database evidence](CODEX-CLOUD-BROWSER-ACCEPTANCE-20261019.md) for source pins, fixes, exact focused checks, remaining browser limits and publication status. The cloud report distinguishes seeded authentication from login/MFA acceptance. Both sterile and nonsterile scope is confirmed; per-site clinical, physical-device and real release acceptance remain separate.
+
+### Cloud authentication continuation — October 19, 2026
+
+Actual browser login/MFA enrollment, one-use recovery, logout, controlled refresh/expiry and fixture-link password reset now have fresh source-bound evidence. A global middleware defect that revoked valid refresh capability during access-expiry rejection is repaired. The final full SQLite suite passes 454 tests / 9,263 assertions; focused authentication passes 23 tests / 221 assertions on SQLite, MySQL and MariaDB. See [authentication acceptance](CODEX-CLOUD-AUTH-ACCEPTANCE-20261019.md) for exact commands, preserved synthetic database/browser artifacts and remaining email, concurrency, wall-clock, mobile/device and operational limits. This is not production or per-site clinical acceptance.

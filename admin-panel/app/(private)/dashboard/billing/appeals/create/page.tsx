@@ -87,9 +87,9 @@ export default function CreateAppealPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Select Denied Invoice</label>
+              <label htmlFor="appeal-invoice" className="text-sm font-medium">Select Denied Invoice</label>
               <Select value={selectedInvoice} onValueChange={setSelectedInvoice}>
-                <SelectTrigger>
+                <SelectTrigger id="appeal-invoice">
                   <SelectValue placeholder="Choose an invoice" />
                 </SelectTrigger>
                 <SelectContent>
@@ -106,9 +106,9 @@ export default function CreateAppealPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Denial Reason Category</label>
+              <label htmlFor="appeal-reason" className="text-sm font-medium">Denial Reason Category</label>
               <Select value={reason} onValueChange={setReason}>
-                <SelectTrigger>
+                <SelectTrigger id="appeal-reason">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -122,8 +122,8 @@ export default function CreateAppealPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Additional Context (Optional)</label>
-              <Textarea
+              <label htmlFor="appeal-context" className="text-sm font-medium">Additional Context (Optional)</label>
+              <Textarea id="appeal-context"
                 placeholder="Add verified details and references for the reviewer..."
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}

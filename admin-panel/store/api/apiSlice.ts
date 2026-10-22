@@ -1,6 +1,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { logout, setCredentials } from '../slices/authSlice';
+import { refreshBrowserSession, browserSessionStorage } from '../browser-session.mjs';
 import { sessionIdentity } from '../session-boundary.mjs';
 import type { RootState } from '../store';
 
@@ -147,16 +148,17 @@ const baseQueryWithErrorHandling: BaseQueryFn<string | FetchArgs, unknown, Fetch
       const refreshToken = state.token.refresh_token;
       let refreshInFlight = refreshesInFlight.get(refreshToken);
       if (!refreshInFlight) {
-        refreshInFlight = (async () => {
-          const refreshed = await rawBaseQuery({ url: '/refresh-token', method: 'POST', body: { refresh_token: refreshToken } }, api, extraOptions);
-          const data = refreshed.data as RefreshPayload | undefined;
-          if (!data?.access_token || !data.refresh_token) return null;
-          const current = (api.getState() as RootState).auth;
-          // Never resurrect a signed-out or switched account.
-          if (!current.user || sessionIdentity(current) !== requestIdentity || current.token?.refresh_token !== refreshToken) return null;
-          api.dispatch(setCredentials({ token: data, user: current.user }));
-          return data;
-        })().finally(() => { refreshesInFlight.delete(refreshToken); });
+        refreshInFlight = refreshBrowserSession({
+          getAuth: () => (api.getState() as RootState).auth,
+          accept: (token: RefreshPayload, user: RootState['auth']['user']) => api.dispatch(setCredentials({ token, user: user! })),
+          refresh: async () => {
+            const refreshed = await rawBaseQuery({ url: '/refresh-token', method: 'POST', body: { refresh_token: refreshToken } }, api, extraOptions);
+            return (refreshed.data as RefreshPayload | undefined) ?? null;
+          },
+          identity: requestIdentity, refreshToken,
+          storage: browserSessionStorage(),
+          locks: typeof navigator !== 'undefined' ? navigator.locks : null,
+        }).finally(() => { refreshesInFlight.delete(refreshToken); });
         refreshesInFlight.set(refreshToken, refreshInFlight);
       }
       const refreshed = await refreshInFlight;

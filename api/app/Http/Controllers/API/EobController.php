@@ -37,7 +37,7 @@ class EobController extends Controller
             });
         }
 
-        $eobs = $query->orderBy('created_at', 'desc')
+        $eobs = $query->orderBy('created_at', 'desc')->orderByDesc('id')
             ->paginate($request->get('per_page', 15));
 
         return response()->json([

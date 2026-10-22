@@ -3133,6 +3133,16 @@ class PharmacyWorkflowTest extends TestCase
         $f = $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => $this->dispatchReturnEvidence($f, ['quantity' => '3.875'])]);
         $this->actingAs($reviewer, 'api'); $review['transport']['recovery_id'] = $f['dispatch']['latest_recovery']['id'];
         $f = $this->act($rx, $f, 'review_dispatch_recovery', $review);
+        $secondReceipt = $f['dispatch']['latest_recovery']['returned_lot_id'];
+        $this->assertNotSame($receipt, $secondReceipt);
+        $this->assertNotSame($originalLoss['returned_lot_id'], $receipt);
+        $this->assertNotSame($originalLoss['returned_lot_id'], $secondReceipt);
+        foreach ([$originalLoss['returned_lot_id'] => '4.000', $receipt => '2.125', $secondReceipt => '3.875'] as $receiptId => $quantity) {
+            $recovered = DB::table('pharmacy_stock_lots')->find($receiptId);
+            $this->assertSame('quarantined', $recovered->status);
+            $this->assertEquals($quantity, $recovered->on_hand);
+        }
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
         $this->assertSame('0.000', $f['dispatch']['remaining_loss_quantity']);
         $this->assertEquals(50, DB::table('pharmacy_stock_lots')->sum('on_hand'));
         $this->act($rx, $f, 'recover_dispatch_loss', ['transport' => $this->dispatchReturnEvidence($f, ['quantity' => '0.001'])], 422);
@@ -5303,15 +5313,23 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame(2, DB::table('pharmacy_batch_quality_records')->count());
     }
 
+    protected function beyondUseFixtureClock(): \DateTimeInterface
+    {
+        return now()->startOfDay()->addHours(12);
+    }
+
     private function beyondUseFixture(?string $yieldQuantity = null): array
     {
-        $this->travelTo(now()->startOfDay()->addHours(12));
+        $this->travelTo($this->beyondUseFixtureClock());
+        // Authenticate the synthetic actor at the chosen fixture time so the
+        // deterministic dating clock cannot expire its setup token.
+        $this->actor->withAccessToken(new Token(['expires_at' => now()->addHour()]));
         [$execution, $lot, $protocol, $reviewer, $body, $quality] = $this->batchQualityFixture($yieldQuantity);
         $body['results'][0]['outcome'] = 'pass';
         $id = $quality->retain($this->actor, $execution->id, $protocol, $body);
         $quality->decide($reviewer, $id, 'reviewed', 'SYNTHETIC documentary review');
         $source = app(\App\Services\PharmacyReviewedQualityContext::class)->inspect($this->actor, $execution->id);
-        $proposal = ['prepared_at' => now()->subHour()->format('Y-m-d\TH:i:sP'), 'proposed_bud_at' => now()->addDay()->format('Y-m-d\TH:i:sP'),
+        $proposal = ['prepared_at' => now()->subHour()->max(now()->startOfDay())->format('Y-m-d\TH:i:sP'), 'proposed_bud_at' => now()->addDay()->format('Y-m-d\TH:i:sP'),
             'timezone' => now()->timezoneName, 'preparation_time_reference' => 'SYNTHETIC exact timestamp',
             'container_reference' => 'SYNTHETIC container', 'storage_conditions' => 'SYNTHETIC storage',
             'basis_reference' => 'SYNTHETIC supplied limit', 'rationale' => 'SYNTHETIC no clinical date selected',
@@ -5319,6 +5337,17 @@ class PharmacyWorkflowTest extends TestCase
         return [$execution, $lot, $reviewer, ['request_id' => (string) Str::uuid(), 'previous_id' => null,
             'source_hash' => app(\App\Services\PharmacyCompoundingIncident::class)->digest($source), 'proposal' => $proposal],
             app(\App\Services\PharmacyBeyondUseLedger::class)];
+    }
+
+    public function test_beyond_use_fixture_accepts_a_morning_synthetic_session_after_clock_advance(): void
+    {
+        $this->travelTo(now()->startOfDay()->addHours(8));
+        $this->actor->withAccessToken(new Token(['expires_at' => now()->addHour()]));
+
+        [$execution] = $this->beyondUseFixture();
+
+        $this->getJson("/api/pharmacy/executions/{$execution->id}/beyond-use-context")->assertOk();
+        $this->assertSame(12, now()->hour);
     }
 
     public function test_beyond_use_proposals_retain_dates_and_independent_review_without_stock_movement(): void

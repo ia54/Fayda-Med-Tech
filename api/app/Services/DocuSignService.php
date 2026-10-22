@@ -47,6 +47,9 @@ class DocuSignService
 
     public function getAccessToken(?int $organizationId = null)
     {
+        if (config('pilot.synthetic')) {
+            throw new \LogicException('Signing is disabled in the synthetic pilot.');
+        }
         if (func_num_args() > 0) $this->organizationId = $organizationId;
         $this->accountId = $this->credential('ACCOUNT_ID', config('services.docusign.account_id'));
         $this->baseUri = self::validateBaseUri((string) $this->credential('BASE_URI', config('services.docusign.base_uri', 'https://demo.docusign.net')));

@@ -15,7 +15,8 @@ class AppealTemplateTest extends TestCase
         $user=User::create(['first_name'=>'Synthetic','last_name'=>'Biller','email'=>'biller@example.invalid','password'=>'test-only','role'=>'medical_biller','organization_id'=>1,'status'=>'active']);
         $user->withAccessToken(new Token(['expires_at'=>now()->addHour()]));
         $this->actingAs($user,'api');
-        $invoice=Invoice::create(['organization_id'=>1,'invoice_number'=>'SYN-APPEAL','amount'=>125.50,'status'=>'denied']);
+        $case=\App\Models\CaseModel::withoutEvents(fn () => \App\Models\CaseModel::create(['organization_id'=>1,'case_number'=>'SYN-APPEAL-CASE','title'=>'SYNTHETIC appeal case','created_by'=>$user->id]));
+        $invoice=Invoice::create(['organization_id'=>1,'case_id'=>$case->id,'invoice_number'=>'SYN-APPEAL','amount'=>125.50,'status'=>'denied']);
         $response=$this->postJson('/api/billing/appeals/generate',['invoice_id'=>$invoice->id,'reason_category'=>'Documentation','additional_details'=>'Synthetic supporting reference']);
         $response->assertStatus(210)->assertJsonPath('data.status','draft')->assertJsonPath('data.metadata.generation_method','template')->assertJsonPath('data.metadata.requires_human_review',true);
         $content=$response->json('data.content');

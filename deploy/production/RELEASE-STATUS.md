@@ -1,6 +1,14 @@
 # Current release status — October 18, 2026
 
+## October 19 synthetic pilot verification update
+
+The [current closeout](../../docs/SYNTHETIC-PILOT-CLOSEOUT-20261019.md) supersedes earlier pilot evidence gaps and the original audit work status. Billing access/data-truth fixes, EOB pagination, cross-tab refresh repair and five source-bound browser replays pass. Full SQLite: **458 tests / 9,339 assertions**. Dependency disposition, exact hosted checks, owner pilot acceptance and cloud publication/restoration remain open. Full product and clinical release are not approved.
+
 This is the current launch checklist. `OUTSTANDING.md` retains the historical evidence and older increments; older counts and statements there are not current acceptance claims.
+
+## October 19 completion audit
+
+For current engineering scope, remaining effort and pilot-first sequencing, use [the reconciled completion audit](../../docs/BUILD-COMPLETION-AUDIT-20261019.md) and [sized backlog](../../docs/BUILD-FINISH-BACKLOG-20261019.json). Audited source `c6d0db7` has 454-test cloud evidence; earlier source pins below remain historical. Fresh dependency findings supersede the old low-only note. The launch-readiness JSON is a historical gate snapshot at `914ae750`, not a current code-completion percentage. No production/site gate is cleared by this planning audit.
 
 ## September 30 client pilot and dependency work
 
@@ -145,3 +153,7 @@ Independent-chart prescription intake now requires explicit patient-to-case evid
 The pharmacy record checklist now exposes missing source/clinical evidence and approvals made stale by new patient/source records, with scoped navigation links. It is read-only deterministic guidance and explicitly not complete dispensing clearance or connected AI. No dispensing or production gate is relaxed.
 
 Controlled intake now records explicit schedule/received-format/evidence with unresolved values preserved and historical fields left null. This is the prerequisite data foundation only; schedule-specific rules, credentials, EPCS/MAPS and controlled dispensing acceptance remain incomplete. Source-backed documentary classification corrections are implemented in the current increment; operational acceptance remains outstanding.
+
+## October 20 conditional launch follow-up
+
+The owner independently confirmed all six hosted checks SUCCESS at exact ce839f40d36656c147166d63c88689071ee40617. Later heads need separate verification. The October 27 America/New_York conditional target, assigned owners, acceptance evidence and blockers are tracked in [the launch checklist](../../docs/LAUNCH-CHECKLIST-20261027.md); synthetic pilot and live operations have separate gates. [Security continuation](../../docs/SECURITY-CONTINUATION-20261020.md) records dependency remediation and remaining audit/network risks. Publication/fresh-task restoration and live operations remain unverified/unapproved.

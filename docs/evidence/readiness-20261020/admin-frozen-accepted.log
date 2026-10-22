@@ -1,0 +1,13 @@
+(node:141655) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Already up to date
+Done in 622ms using pnpm v11.19.0
+
+   ╭───────────────────────────────────────────────╮
+   │                                               │
+   │     Update available! 11.19.0 → 12.14.0.      │
+   │     Changelog: https://pnpm.io/v/12.14.0      │
+   │   To update, run: corepack use pnpm@12.14.0   │
+   │                                               │
+   ╰───────────────────────────────────────────────╯
+

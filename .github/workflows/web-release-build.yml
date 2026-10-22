@@ -28,7 +28,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Verify asset packaging boundaries
-        run: node --test deploy/production/tests/web_asset_package.test.mjs
+        run: node --test deploy/production/tests/web_asset_package.test.mjs deploy/production/tests/godaddy_pilot_package.test.mjs
       - name: Install locked admin dependencies
         working-directory: admin-panel
         run: |

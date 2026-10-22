@@ -216,6 +216,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::get('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/prints', [$labels, 'prints']);
         Route::post('/prescriptions/{id}/fills/{fillId}/labels/{labelId}/prints', [$labels, 'recordPrint']);
         Route::get('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'locations']);
+        Route::get('/locations/{id}/readiness', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'siteReadiness']);
         Route::post('/locations', [\App\Http\Controllers\API\PharmacyInventoryController::class, 'storeLocation']);
         Route::get('/recall-notices', [\App\Http\Controllers\API\PharmacyRecallController::class, 'index']);
         Route::post('/recall-notices', [\App\Http\Controllers\API\PharmacyRecallController::class, 'store']);
@@ -371,7 +372,7 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
     // 3. Medical Biller, Firm Admin & Provider Staff (Billing Management)
     // PDF Roles: medical_biller, firm_admin, provider_staff can access billing
     Route::middleware(['role:admin,firm_admin,medical_biller,provider_staff,client'])->group(function () {
-        Route::get('/billing/stats', [\App\Http\Controllers\API\BillingDashboardController::class, 'index']);
+        Route::get('/billing/stats', [\App\Http\Controllers\API\BillingDashboardController::class, 'index'])->middleware('role:admin,firm_admin,medical_biller,provider_staff');
         
         // Invoices - All can view, only biller/firm_admin can create/edit
         Route::get('/invoices', [InvoiceController::class, 'index']);
@@ -389,11 +390,11 @@ Route::middleware(['auth:api', 'tenant', '2fa'])->group(function () {
         Route::delete('/payments/{id}', [PaymentController::class, 'destroy'])->middleware('role:admin,firm_admin,medical_biller');
 
         // AI Appeals
-        Route::get('/billing/appeals', [AppealController::class, 'index']);
+        Route::get('/billing/appeals', [AppealController::class, 'index'])->middleware('role:admin,firm_admin,medical_biller,provider_staff');
         Route::post('/billing/appeals/generate', [AppealController::class, 'generate'])->middleware('role:admin,firm_admin,medical_biller');
 
         // Validation Issues
-        Route::get('/billing/validation', [ValidationController::class, 'index']);
+        Route::get('/billing/validation', [ValidationController::class, 'index'])->middleware('role:admin,firm_admin,medical_biller,provider_staff');
         Route::put('/billing/validation/{id}', [ValidationController::class, 'update'])->middleware('role:admin,firm_admin,medical_biller');
 
         // Analytics
