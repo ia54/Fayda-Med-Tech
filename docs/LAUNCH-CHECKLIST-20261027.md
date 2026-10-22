@@ -36,3 +36,15 @@ See SYNTHETIC-PILOT-CLOSEOUT-20261019.md for retained browser coverage and remai
 ## October 21 split-hosting evidence
 
 Owner confirmed managed Node included with Deluxe, EMA uses1/10 slots (nine free), latest cPanel usage235,306/250,000. Primary prep is managed Node22 admin + cPanel PHP/MySQL/API/static; see deploy/production/GODADDY-SPLIT-PILOT.md and its footprint JSON. Single cPanel release fits11,565/14,694 entries; two extracted releases do not fit. This does not pass hosting/readiness gates: terms/app creation, isolated preview origins without DNS change, managed quota accounting/runtime, actual PHP/MySQL/private storage and rollback proof, synthetic user/MFA provisioning and owner acceptance still required. No old-server, DNS, EMA, live-data or clinical changes occurred.
+
+## October 22 isolated backend preparation
+
+Owner-observed managed app z1izdz2qau is Healthy/InfraOK/SiteOK and Chrome rendered `/auth/login` using source5192aba archive SHA25670a3d1b7bb08a0cc642e448beb752a6bedff7f0d32512ce9f70f0da9f5fd47d1. This supersedes the preceding managed-app startup unknown only; no backend or clinical gate passes from this result.
+
+| Item | Owner | Acceptance evidence | Blocker | Next action |
+| --- | --- | --- | --- | --- |
+| Existing managed preview startup | Owner, observed | Healthy/InfraOK/SiteOK and Chrome login from exact5192aba ZIP | Backend still .invalid | Retain app, no duplicate deployment |
+| Native backend packaging | Engineering / local operator | Committed staging helper, locked production Composer recipe, repeated archive hashes and readonly verification | Local native PHP/Composer availability not yet verified | Follow deploy/production/GODADDY-BACKEND-HANDOFF.md; use existing immutable bed4caa artifact if rebuilding is unnecessary |
+| Private backend routing | Owner / hosting | Not yet verified | No confirmed protected upstream reachable from managed Node | Inspect cPanel isolated routing/TLS/access restrictions before proxy implementation; do not expose public endpoint |
+| Host/private-storage/MySQL acceptance | Owner / hosting, engineering tooling | CLI-only readonly probe and tests; no host execution claimed | Actual web PHP, least privilege DB, private HTTP denial, current quota | Run approved read-only checks on selected isolated namespace |
+| Rollback / full browser acceptance | Owner + engineering | Archive verifier creates zero extracted entries; historical role tests remain source-bound | DB/private-file restore and integrated hosted login/MFA/documents untested | Rehearse restore and selected synthetic journeys only after isolated backend gates |

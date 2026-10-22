@@ -25,3 +25,17 @@ test('managed startup requires injected PORT and never invents a fallback listen
  for(const port of [undefined,'0','passenger','65536'])assert.throws(()=>vm.runInNewContext(source,{process:{env:{PORT:port}},require(){throw Error('No load allowed');}}),/injected PORT/);
  const calls=[],process={env:{PORT:'3000'}};vm.runInNewContext(source,{process,require:p=>calls.push(p)});assert.deepEqual(calls,['../.next/standalone/server.js']);assert.equal(process.env.PORT,'3000');assert.equal(process.env.HOSTNAME,'0.0.0.0');
 });
+test('pruning preserves runtime code/licenses and refuses production autoload references',async()=>{
+ const {pruneNonRuntime}=await import('../godaddy_pilot_package.mjs');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'pilot-prune-'));
+ try{
+  for(const p of ['api/vendor/laravel/ui/tests','api/vendor/laravel/ui/src','api/vendor/composer'])fs.mkdirSync(path.join(root,p),{recursive:true});
+  fs.writeFileSync(path.join(root,'api/vendor/laravel/ui/tests/Test.php'),'test-only');
+  fs.writeFileSync(path.join(root,'api/vendor/laravel/ui/src/Runtime.php'),'runtime');
+  fs.writeFileSync(path.join(root,'api/vendor/laravel/ui/LICENSE'),'license');
+  const map=path.join(root,'api/vendor/composer/autoload_classmap.php');fs.writeFileSync(map,"/laravel/ui/tests/Test.php");
+  assert.throws(()=>pruneNonRuntime(root),/Production autoload references/);assert.equal(fs.existsSync(path.join(root,'api/vendor/laravel/ui/tests/Test.php')),true);
+  fs.writeFileSync(map,"/laravel/ui/src/Runtime.php");const removed=pruneNonRuntime(root);assert.equal(removed[0].entries,2);
+  assert.equal(fs.readFileSync(path.join(root,'api/vendor/laravel/ui/src/Runtime.php'),'utf8'),'runtime');assert.equal(fs.readFileSync(path.join(root,'api/vendor/laravel/ui/LICENSE'),'utf8'),'license');
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

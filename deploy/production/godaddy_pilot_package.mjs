@@ -11,6 +11,15 @@ export function footprint(root) {
   if(s.isSymbolicLink())counts.symlinks++;else if(s.isDirectory()){counts.directories++;walk(p);}else if(s.isFile()){counts.regular_files++;counts.logical_bytes+=s.size;}else throw Error('Unsupported entry');}}
  walk(root);return {...counts,entries:counts.regular_files+counts.directories+counts.symlinks};
 }
+export function pruneNonRuntime(root) {
+ const paths=['api/vendor/adhocore/jwt/tests','api/vendor/docusign/esign-client/test','api/vendor/firebase/php-jwt/README.md',
+  'api/vendor/swagger-api/swagger-ui/.github','api/vendor/adhocore/jwt/.github','api/vendor/laravel/ui/tests'];
+ const metadata=['autoload_classmap.php','autoload_static.php','autoload_psr4.php','autoload_files.php'].map(p=>path.join(root,'api/vendor/composer',p)).filter(p=>fs.existsSync(p)).map(p=>fs.readFileSync(p,'utf8'));
+ for(const item of paths){const stem=item.slice('api/vendor'.length);if(metadata.some(text=>text.includes(stem)))throw Error(`Production autoload references proposed prune: ${item}`);}
+ const removed=[];
+ for(const item of paths){const p=path.join(root,item);if(fs.existsSync(p)){const stat=fs.lstatSync(p);if(stat.isSymbolicLink())throw Error('Prune target must not be a symlink');removed.push({path:item,...(stat.isDirectory()?footprint(p):{regular_files:1,directories:0,symlinks:0,entries:1,logical_bytes:stat.size})});fs.rmSync(p,{recursive:true});}}
+ return removed;
+}
 export function validateOrigin(value){const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.port||u.pathname!=='/'||u.search||u.hash)throw Error('Bare HTTPS origin required');return u.origin;}
 const inside=(a,b)=>b===a||b.startsWith(a+path.sep);
 export function packagePilot({repo,apiRuntime,output,origins,withoutAdmin=false,availableSlots=14694}){
@@ -43,18 +52,17 @@ export function packagePilot({repo,apiRuntime,output,origins,withoutAdmin=false,
  if(!withoutAdmin) fs.copyFileSync(path.join(output,'ops/app.cjs'),path.join(output,'admin/app.cjs'));
  else fs.rmSync(path.join(output,'ops/app.cjs'));
  fs.copyFileSync(path.join(repo,withoutAdmin?'deploy/production/GODADDY-SPLIT-PILOT.md':'deploy/production/GODADDY-SYNTHETIC-PILOT.md'),path.join(output,'ops/README.md'));
- // These tests are explicitly autoload-dev-only, absent from production classmaps,
- // and contain published test private keys. Never ship them as runtime material.
- const pruned=['api/vendor/adhocore/jwt/tests','api/vendor/docusign/esign-client/test','api/vendor/firebase/php-jwt/README.md'];
- for(const p of pruned)fs.rmSync(path.join(output,p),{recursive:true,force:true});
+ // Explicit non-runtime fixtures/CI metadata only; retain runtime code and licenses.
+ const pruned=pruneNonRuntime(output);
  for(const name of (withoutAdmin?['public']:['admin','public'])){
   let found=false;
   const scan=p=>{for(const e of fs.readdirSync(p,{withFileTypes:true})){const f=path.join(p,e.name);if(e.isDirectory())scan(f);else if(e.isFile()&&/\.(js|html)$/.test(e.name)){const text=fs.readFileSync(f,'utf8');if(text.includes(origins.api))found=true;if(/https?:\/\/(localhost|127\.0\.0\.1):8000/.test(text))throw Error('Local API origin in served build');}}};
   scan(path.join(output,name,name==='admin'?'.next/static':'.'));if(!found)throw Error(`Expected API build origin absent from ${name}`);
  }
  const files=inventory(output);
+ const directories=[];const dirs=p=>{for(const e of fs.readdirSync(p,{withFileTypes:true}))if(e.isDirectory()){const full=path.join(p,e.name);directories.push(path.relative(output,full).split(path.sep).join('/'));dirs(full);}};dirs(output);directories.sort();
  const components=Object.fromEntries((withoutAdmin?['api','public','ops']:['api','admin','public','ops']).map(k=>[k,footprint(path.join(output,k))]));
- const manifest={kind:withoutAdmin?'godaddy-cpanel-php-static-pilot':'godaddy-synthetic-pilot-rehearsal',commit,origins,production_ready:false,host_validation:false,clinical_release:false,synthetic_only:true,requires_origin_rebuild:Object.values(origins).some(o=>new URL(o).hostname.endsWith('.invalid')),production_composer_packages:installed.packages.length,pruned_nonruntime_vendor_fixtures:pruned,platform:{os:process.platform,arch:process.arch,node:process.versions.node},components,files};
+ const manifest={kind:withoutAdmin?'godaddy-cpanel-php-static-pilot':'godaddy-synthetic-pilot-rehearsal',commit,origins,production_ready:false,host_validation:false,clinical_release:false,synthetic_only:true,requires_origin_rebuild:Object.values(origins).some(o=>new URL(o).hostname.endsWith('.invalid')),production_composer_packages:installed.packages.length,pruned_nonruntime_vendor_fixtures:pruned,platform:{os:process.platform,arch:process.arch,node:process.versions.node},components,directories,files};
  fs.writeFileSync(path.join(output,'PILOT-MANIFEST.json'),JSON.stringify(manifest,null,2)+'\n');
  const counts=footprint(output),available=availableSlots;
  return {output,commit,origins,components,footprint:counts,available_slots:available,single_release_regular_files_fit:counts.regular_files<=available,single_release_all_entries_fit:counts.entries<=available,two_releases_all_entries_fit:counts.entries*2<=available,production_ready:false,host_validation:false};

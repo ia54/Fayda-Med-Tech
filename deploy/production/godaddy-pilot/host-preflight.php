@@ -9,5 +9,5 @@ $ok = $versionOk && !in_array(false, $extensions, true);
 echo json_encode(['php_version'=>PHP_VERSION,'php_83'=>$versionOk,'sapi'=>PHP_SAPI,'extensions'=>$extensions,
     'memory_limit'=>ini_get('memory_limit'),'upload_max_filesize'=>ini_get('upload_max_filesize'),
     'post_max_size'=>ini_get('post_max_size'),'max_execution_time'=>ini_get('max_execution_time'),
-    'passed'=>$ok,'not_verified'=>['web PHP matches CLI','MySQL version and grants','cron and worker availability','private storage access denial','Passenger Node 22 and memory','TLS and approved origins']], JSON_PRETTY_PRINT), "\n";
+    'passed'=>$ok,'not_verified'=>['web PHP matches CLI','MySQL version and grants','cron and worker availability','private storage access denial','managed Node 22, injected PORT and memory','TLS and approved origins']], JSON_PRETTY_PRINT), "\n";
 exit($ok ? 0 : 1);
