@@ -38,3 +38,9 @@ Browser evidence is retained in the workspace `launch/backend-preflight-20261022
 6. **Clinical hosting and release:** select the operational host and required agreements, verify integration behavior and recovery, and obtain site-specific professional release acceptance before real patient use.
 
 The six shared-platform role journeys have historical local evidence; they have not been freshly reverified in this one-account hosted pharmacy pilot. Payment scope remains recording receipts only, not collecting money.
+
+## Hosted source-document check
+
+October 22: SYN-SOURCE-001 was uploaded to prescription 4, retained after a full page reload, and recorded as a source-document-added history event at 22:56:06. Authenticated retrieval exposed a download link. A saved browser download and byte comparison remain unverified; browser policy prevented inspection of Chrome download history. Review and fulfillment remain pending, and claims remain not prepared. The fictional PDF contains no clinical directions or prescriber authorization.
+
+October 23: the follow-up filter change in `9f67e00` was deployed to the private preview and browser-verified. Pending-stage filtering selected SYN-RX-001 and clearing filters restored all three prescriptions. Server-side source retrieval returned all 1,989 original bytes with matching SHA-256; browser-to-disk download integrity remains unverified.
