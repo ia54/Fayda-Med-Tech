@@ -99,6 +99,35 @@ class ReleasePackageTest(unittest.TestCase):
         with self.assertRaises(package.PackageError): package.build(self.repo, self.commit, self.root / 'incomplete.tar.gz')
         self.assertFalse((self.root / 'incomplete.tar.gz').exists())
 
+    def test_managed_pilot_npmrc_is_excluded_but_other_npmrc_is_refused(self):
+        path = 'deploy/production/godaddy-node/.npmrc'
+        marker = b'SYNTHETIC_MANAGED_NPM_CONFIG_MUST_NOT_SHIP'
+        self.write(path, marker.decode())
+        self.commit = self.commit_all()
+        result = self.build()
+        self.assertTrue(package.verify(self.output, result['sha256'], self.commit)['verified'])
+        with tarfile.open(self.output, 'r:gz') as archive:
+            self.assertNotIn('source/' + path, archive.getnames())
+            for member in archive:
+                self.assertNotIn(marker, archive.extractfile(member).read())
+        # The verifier must also reject an attacker adding the excluded path
+        # to both the manifest and tar, even with a matching archive checksum.
+        def inject_config(rows):
+            manifest = json.loads(rows[0][1])
+            manifest['files'].append({'path': path, 'mode': 0o644,
+                                      'size': len(marker), 'sha256': package.digest(marker)})
+            return [(rows[0][0], json.dumps(manifest).encode(), rows[0][2], rows[0][3])] + rows[1:] + [
+                ('source/' + path, marker, 0o644, tarfile.REGTYPE)]
+        target, checksum = self.mutate_archive(inject_config)
+        with self.assertRaises(package.PackageError):
+            package.verify(target, checksum, self.commit)
+        self.output.unlink()
+        self.write('admin-panel/.npmrc', 'SYNTHETIC_UNAPPROVED_NPM_CONFIG')
+        self.commit = self.commit_all()
+        with self.assertRaises(package.PackageError):
+            self.build()
+        self.assertFalse(self.output.exists())
+
     def test_symlinks_submodules_and_credential_material_are_refused(self):
         (self.repo / 'api/app').mkdir()
         (self.repo / 'api/app/linked.php').symlink_to('/etc/passwd')
