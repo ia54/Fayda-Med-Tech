@@ -13,6 +13,7 @@ class MfaService
 {
     public function required(User $user): bool
     {
+        if (app(PilotEmailCode::class)->enabled($user)) { return true; }
         $settings = SecuritySetting::first();
         return (bool) ($settings?->enforce_2fa_all ||
             (($settings?->enforce_2fa_admin ?? true) && in_array($user->role, ['admin', 'firm_admin'], true)));

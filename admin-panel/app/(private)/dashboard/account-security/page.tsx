@@ -13,10 +13,10 @@ import { Label } from '@/components/ui/label';
 export default function AccountSecurityPage() {
   const token = useSelector((state: RootState) => state.auth.token?.access_token);
   const dispatch = useDispatch(); const router = useRouter();
-  const [status, setStatus] = useState<{ enabled: boolean; required: boolean } | null>(null);
+  const [status, setStatus] = useState<{ enabled: boolean; required: boolean; method?: 'email' | 'authenticator' } | null>(null);
   const [password, setPassword] = useState(''); const [code, setCode] = useState('');
   const [codes, setCodes] = useState<string[]>([]); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  useEffect(() => { if (token) mfaRequest<{ enabled: boolean; required: boolean }>('status', undefined, token).then(setStatus).catch(() => setError('Unable to load account security. Sign in again if your session expired.')); }, [token]);
+  useEffect(() => { if (token) mfaRequest<{ enabled: boolean; required: boolean; method?: 'email' | 'authenticator' }>('status', undefined, token).then(setStatus).catch(() => setError('Unable to load account security. Sign in again if your session expired.')); }, [token]);
   async function manage(action: 'recovery' | 'disable') {
     setBusy(true); setError(''); setCodes([]);
     try {
@@ -31,6 +31,7 @@ export default function AccountSecurityPage() {
     {error && <p role="alert" className="text-destructive">{error}</p>}
     {!status && !error && <p role="status">Loading account security…</p>}
     {status && <>
+      {status.method === 'email' ? <p>Your pilot account uses your password and a six-digit email code. Each code expires after five minutes. Authenticator setup is not required.</p> : <>
       <p>Authenticator: <strong>{status.enabled ? 'Enabled' : 'Not enabled'}</strong>{status.required && '. Required by your organization.'}</p>
       {!status.enabled ? <><p>To add an authenticator, return to sign in and select “Set up an authenticator for my account”.</p><Button onClick={() => { dispatch(logout()); router.push('/auth/login'); }}>Return to sign in</Button></> : <form className="space-y-4" onSubmit={e => { e.preventDefault(); void manage('recovery'); }}>
         <p className="text-sm text-muted-foreground">Verify your password and an authenticator or unused recovery code before making changes. Generating new recovery codes replaces all previous codes.</p>
@@ -39,6 +40,7 @@ export default function AccountSecurityPage() {
         <Button disabled={busy || !password || !code}>Generate new recovery codes</Button>
         {!status.required && <div className="space-y-2"><p className="text-sm">Disabling the authenticator signs out all sessions and removes its recovery codes.</p><Button type="button" variant="outline" disabled={busy || !password || !code} onClick={() => void manage('disable')}>Disable authenticator and sign out</Button></div>}
       </form>}
+      </>}
       {codes.length > 0 && <section className="space-y-3"><h2 className="font-semibold">Save these new recovery codes</h2><p className="text-sm">Each code works once. Store them in your password manager; they will not be shown again.</p><pre className="border rounded p-3 select-all overflow-auto">{codes.join('\n')}</pre><Button variant="outline" onClick={() => setCodes([])}>I have saved these codes</Button></section>}
     </>}
   </main>;

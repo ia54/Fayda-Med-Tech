@@ -3630,6 +3630,10 @@ class PharmacyWorkflowTest extends TestCase
         $lot = $this->lot();
         $f = $this->fill($rx, $lot);
         $this->assertEquals(10, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('reserved'));
+        $this->actor->role = 'medical_biller';
+        $this->act($rx, $f, 'prepare_claim', ['amount' => '123.45', 'reference' => 'Synthetic premature billing'], 422);
+        $this->assertSame(0, DB::table('invoices')->count());
+        $this->actor->role = 'pharmacist';
         $this->act($rx, $f, 'ready', ['checks' => ['label' => true]], 422);
         $this->act($rx, $f, 'approve', [], 422);
         foreach (['pharmacy_technician', 'medical_biller', 'admin'] as $role) {
@@ -3658,6 +3662,20 @@ class PharmacyWorkflowTest extends TestCase
         $this->assertSame('denied', $f['claim_status']);
         $this->getJson("/api/pharmacy/prescriptions/$rx/assistant")->assertOk()->assertJsonPath('data.ai_connected', false)->assertJsonPath('data.mode', 'rules_only');
         $this->assertSame(1, DB::table('invoices')->count());
+        // Record money already received; this workflow must never collect funds.
+        $receipt = ['invoice_id' => $invoice, 'amount' => '23.45', 'payment_method' => 'check',
+            'transaction_id' => 'SYN-PARTIAL', 'payment_date' => now()->toDateString(),
+            'notes' => 'Synthetic previously received funds; no transfer'];
+        $this->postJson('/api/payments', $receipt)->assertCreated();
+        $this->assertSame('sent', DB::table('invoices')->where('id', $invoice)->value('status'));
+        $this->postJson('/api/payments', $receipt)->assertStatus(409);
+        $this->postJson('/api/payments', array_replace($receipt, ['amount' => '100.01', 'transaction_id' => 'SYN-OVER']))->assertStatus(422);
+        $this->postJson('/api/payments', array_replace($receipt, ['amount' => '100.00', 'transaction_id' => 'SYN-FINAL']))->assertCreated();
+        $this->assertSame('paid', DB::table('invoices')->where('id', $invoice)->value('status'));
+        $this->assertEquals(123.45, DB::table('payments')->where('invoice_id', $invoice)->sum('amount'));
+        $this->assertSame(2, DB::table('payments')->where('invoice_id', $invoice)->count());
+        $this->assertSame(1, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+        $this->assertEquals(40, DB::table('pharmacy_stock_lots')->where('id', $lot)->value('on_hand'));
         Http::assertNothingSent();
     }
 
@@ -5047,15 +5065,20 @@ class PharmacyWorkflowTest extends TestCase
         $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", $review)->assertOk();
         $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", $review)->assertConflict();
         $f = $this->act($rx, $f, 'approve', $this->checks());
+        $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", array_replace($review, ['version' => 2, 'medications_status' => 'documented', 'medications' => 'SYNTHETIC changed medication history']))->assertOk();
+        $this->act($rx, $f, 'ready', ['checks' => ['label' => true]], 422);
+        $this->assertEquals(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
+        $f = $this->act($rx, $f, 'approve', $this->checks());
+        $this->assertSame(3, $f['review']['patient_version']);
         $f = $this->act($rx, $f, 'ready', ['checks' => ['label' => true]]);
-        $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", array_replace($review, ['version' => 2, 'allergies_status' => 'documented', 'allergies' => 'Synthetic new allergy']))->assertOk();
+        $this->putJson("/api/pharmacy/patients/{$p['id']}/clinical", array_replace($review, ['version' => 3, 'allergies_status' => 'documented', 'allergies' => 'Synthetic new allergy']))->assertOk();
         $this->assertContains('review_stale', array_column($this->getJson("/api/pharmacy/prescriptions/$rx/assistant")->assertOk()->json('data.checks'), 'code'));
         $this->act($rx, $f, 'collected', ['occurred_on' => now()->toDateString(), 'reference' => 'Synthetic', 'counseling' => 'provided'], 422);
         $this->assertEquals(0, DB::table('pharmacy_stock_events')->where('action', 'dispensed')->count());
         DB::table('pharmacy_staff_assignments')->where('location_id', $this->location)->update(['active' => false]);
         $this->getJson("/api/pharmacy/patients/{$p['id']}")->assertNotFound();
         $this->getJson('/api/pharmacy/patients')->assertOk()->assertJsonPath('data.total', 0);
-        $this->assertSame(3, DB::table('pharmacy_patient_events')->count());
+        $this->assertSame(4, DB::table('pharmacy_patient_events')->count());
     }
 
     public function test_compounded_intake_requires_explicit_sterility_without_enabling_dispensing(): void

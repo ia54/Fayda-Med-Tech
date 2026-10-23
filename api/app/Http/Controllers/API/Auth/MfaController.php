@@ -36,6 +36,17 @@ class MfaController extends Controller
             $challenge = $mfa->findChallenge($data['challenge_token']);
             if (!$challenge || !($user = $mfa->validUser($challenge))) { return null; }
             DB::table('auth_challenges')->where('id', $challenge->id)->increment('attempts');
+            if ($challenge->purpose === 'email') {
+                if (!app(\App\Services\PilotEmailCode::class)->verify($user, $challenge, $data['challenge_token'], $data['code'])) { return null; }
+                $user->two_factor_enabled = true;
+                $user->two_factor_confirmed_at = now();
+                $user->email_verified_at = now();
+                $user->last_login = now();
+                $user->save();
+                $tokens->revokeAll($user);
+                DB::table('auth_challenges')->where('user_id', $user->id)->delete();
+                return ['status'=>true, 'message'=>'Signed in', 'user'=>$user] + $tokens->issue($user, true);
+            }
             $enrolling = $challenge->purpose === 'enroll';
             if ($enrolling && ($user->two_factor_enabled || !$challenge->enrollment_secret)) { return null; }
             $secret = $enrolling ? Crypt::decryptString($challenge->enrollment_secret) : null;
@@ -59,11 +70,12 @@ class MfaController extends Controller
 
     public function status(Request $request, MfaService $mfa)
     {
-        return response()->json(['enabled' => (bool) $request->user()->two_factor_enabled, 'required' => $mfa->required($request->user())]);
+        return response()->json(['enabled' => (bool) $request->user()->two_factor_enabled, 'required' => $mfa->required($request->user()), 'method' => app(\App\Services\PilotEmailCode::class)->enabled($request->user()) ? 'email' : 'authenticator']);
     }
 
     public function manage(Request $request, MfaService $mfa, ApiTokenService $tokens)
     {
+        abort_if(app(\App\Services\PilotEmailCode::class)->enabled($request->user()), 403, 'This pilot account uses email sign-in codes.');
         $data = $request->validate(['password' => 'required|string', 'code' => 'required|string|max:100', 'action' => 'required|in:disable,recovery']);
         $result = DB::transaction(function () use ($data, $request, $mfa, $tokens) {
             $user = User::lockForUpdate()->findOrFail($request->user()->id);

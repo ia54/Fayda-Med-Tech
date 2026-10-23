@@ -17,6 +17,7 @@ export function MfaChallenge({ challenge, onComplete, onCancel }: {
   const [busy, setBusy] = useState(false);
   const [completed, setCompleted] = useState<AuthResponse | null>(null);
   const [saved, setSaved] = useState(false);
+  const emailCode = challenge.method === 'email';
 
   async function setup() {
     setBusy(true); setError('');
@@ -43,18 +44,19 @@ export function MfaChallenge({ challenge, onComplete, onCancel }: {
     <Button className="w-full" disabled={!saved} onClick={() => onComplete(completed)}>Continue to dashboard</Button>
   </section>;
   return <section className="space-y-4" aria-labelledby="mfa-title">
-    <h2 id="mfa-title" className="font-semibold">{challenge.enrollment_required ? 'Set up your authenticator' : 'Verify your sign-in'}</h2>
-    <p className="text-sm text-muted-foreground">{challenge.enrollment_required ? 'Add a time-based account named FaydaMedTech in your authenticator app, then enter its six-digit code.' : recovery ? 'Enter one of your unused recovery codes.' : 'Enter the six-digit code from your authenticator app.'} This sign-in expires after five minutes.</p>
+    <h2 id="mfa-title" className="font-semibold">{emailCode ? 'Check your email' : challenge.enrollment_required ? 'Set up your authenticator' : 'Verify your sign-in'}</h2>
+    <p className="text-sm text-muted-foreground">{emailCode ? 'Enter the six-digit sign-in code sent to your email. Check your spam folder if needed.' : challenge.enrollment_required ? 'Add a time-based account named FaydaMedTech in your authenticator app, then enter its six-digit code.' : recovery ? 'Enter one of your unused recovery codes.' : 'Enter the six-digit code from your authenticator app.'} This sign-in expires after five minutes.</p>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {challenge.enrollment_required && !secret ? <Button className="w-full" disabled={busy} onClick={setup}>{busy ? 'Preparing…' : 'Get setup key'}</Button> : <>
       {secret && <div className="space-y-2"><Label htmlFor="setup-key">Setup key — keep this private</Label><Input id="setup-key" readOnly value={secret} className="font-mono" /><p className="text-xs text-muted-foreground">Choose “Enter setup key” in your authenticator and select time-based codes.</p></div>}
       <form className="space-y-3" onSubmit={verify}>
-        <Label htmlFor="mfa-code">{recovery ? 'Recovery code' : 'Authenticator code'}</Label>
+        <Label htmlFor="mfa-code">{emailCode ? 'Email code' : recovery ? 'Recovery code' : 'Authenticator code'}</Label>
         <Input id="mfa-code" autoFocus autoComplete="one-time-code" inputMode={recovery ? 'text' : 'numeric'} value={code} onChange={e => setCode(e.target.value)} maxLength={recovery ? 40 : 6} required />
         <Button className="w-full" disabled={busy || !code.trim()}>{busy ? 'Verifying…' : 'Verify and sign in'}</Button>
       </form>
     </>}
-    {!challenge.enrollment_required && <Button variant="link" onClick={() => { setRecovery(!recovery); setCode(''); setError(''); }}>{recovery ? 'Use authenticator code' : 'Use a recovery code'}</Button>}
+    {!emailCode && !challenge.enrollment_required && <Button variant="link" onClick={() => { setRecovery(!recovery); setCode(''); setError(''); }}>{recovery ? 'Use authenticator code' : 'Use a recovery code'}</Button>}
+    {emailCode && <p className="text-sm text-muted-foreground">Need another code? Return to sign in after one minute. Only the newest code works.</p>}
     <Button variant="outline" className="w-full" disabled={busy} onClick={onCancel}>Back to sign in</Button>
   </section>;
 }

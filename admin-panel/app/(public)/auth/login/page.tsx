@@ -167,7 +167,7 @@ export default function LoginPage() {
               </Link>
             </div>
 
-            <label className="flex gap-2 text-sm"><input type="checkbox" checked={enrollMfa} onChange={e => setEnrollMfa(e.target.checked)} />Set up an authenticator for my account</label>
+            {process.env.NEXT_PUBLIC_PILOT_EMAIL_LOGIN !== 'true' && <label className="flex gap-2 text-sm"><input type="checkbox" checked={enrollMfa} onChange={e => setEnrollMfa(e.target.checked)} />Set up an authenticator for my account</label>}
 
             <Button
               type="submit"
