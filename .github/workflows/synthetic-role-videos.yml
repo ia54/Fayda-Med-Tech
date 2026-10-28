@@ -1,0 +1,125 @@
+name: Synthetic role walkthrough evidence
+on:
+  pull_request:
+    paths: ['docs/evidence/biller-legal-walkthroughs-20261028/**', '.github/workflows/synthetic-role-videos.yml']
+permissions:
+  contents: read
+concurrency:
+  group: synthetic-role-videos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  record:
+    name: Record actual synthetic biller and legal UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      FAYDAMED_BROWSER_FIXTURE_DIR: /workspace/.cloud-tools/ci-shared-role-video
+      FAYDAMED_PLAYWRIGHT_MODULE: /workspace/.cloud-tools/browser-tools/node_modules/playwright-core
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DB_CONNECTION: sqlite
+      CACHE_DRIVER: array
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      QUEUE_CONNECTION: sync
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.3'
+      - uses: shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45 # v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, pdo_sqlite, curl, zip, bcmath, intl, sodium
+          coverage: none
+          tools: composer:v2
+      - name: Prepare disposable runner tools and private namespace
+        run: |
+          test ! -e /workspace/.cloud-tools
+          test ! -e /workspace/Fayda-Med-Tech
+          sudo mkdir -p /workspace
+          sudo chown "$(id -u):$(id -g)" /workspace
+          mkdir -m 700 /workspace/.cloud-tools
+          ln -s "$GITHUB_WORKSPACE" /workspace/Fayda-Med-Tech
+          mkdir -m 700 "$FAYDAMED_BROWSER_FIXTURE_DIR"
+          if ! command -v chromium >/dev/null; then
+            browser=$(command -v google-chrome)
+            sudo ln -s "$browser" /usr/bin/chromium
+          fi
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y ffmpeg
+          fi
+          npm install --prefix /workspace/.cloud-tools/browser-tools --ignore-scripts --no-audit --no-fund playwright-core@1.56.1
+      - name: Install locked application dependencies and build loopback UI
+        run: |
+          cd api
+          composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins
+          cd ../admin-panel
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+          NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 corepack pnpm build
+          cp -a public .next/standalone/
+          cp -a .next/static .next/standalone/.next/
+      - name: Seed only the existing opted-in synthetic shared fixture
+        run: |
+          umask 077
+          cd api
+          test ! -e storage/oauth-private.key
+          test ! -e storage/oauth-public.key
+          mkdir -p storage/framework/{cache/data,sessions,views} storage/logs
+          openssl genrsa -out storage/oauth-private.key 2048 2>/dev/null
+          openssl rsa -in storage/oauth-private.key -pubout -out storage/oauth-public.key 2>/dev/null
+          sha256sum storage/oauth-public.key | cut -d ' ' -f 1 > /workspace/.cloud-tools/synthetic-passport-public.sha256
+          DB_DATABASE=:memory: FAYDAMED_BROWSER_FIXTURE=1 php vendor/bin/phpunit --colors=never --filter test_seed_cloud_shared_role_browser_fixture tests/Browser/CloudSharedRoleFixtureTest.php
+          mkdir -p "$FAYDAMED_BROWSER_FIXTURE_DIR/storage/framework/"{cache/data,sessions,views} "$FAYDAMED_BROWSER_FIXTURE_DIR/storage/logs" "$FAYDAMED_BROWSER_FIXTURE_DIR/storage/app/private/documents"
+          cp storage/oauth-private.key storage/oauth-public.key "$FAYDAMED_BROWSER_FIXTURE_DIR/storage/"
+      - name: Run loopback-only built app and record real role screens
+        run: |
+          export DB_DATABASE="$FAYDAMED_BROWSER_FIXTURE_DIR/shared.sqlite"
+          export FAYDAMED_VIDEO_OUTPUT="$RUNNER_TEMP/role-walkthrough-output"
+          export FAYDAMED_VIDEO_BUILD_SOURCE="$(git rev-parse HEAD)"
+          python3 - <<'PY'
+          import os, pathlib
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          (root / 'synthetic-router.php').write_text('''<?php
+          if (getenv('APP_ENV') !== 'testing' || getenv('DB_CONNECTION') !== 'sqlite' || getenv('DB_DATABASE') !== '/workspace/.cloud-tools/ci-shared-role-video/shared.sqlite') { http_response_code(503); exit; }
+          require '/workspace/Fayda-Med-Tech/api/vendor/autoload.php';
+          $app = require '/workspace/Fayda-Med-Tech/api/bootstrap/app.php';
+          $app->useStoragePath(getenv('FAYDAMED_BROWSER_FIXTURE_DIR').'/storage');
+          $kernel = $app->make(Illuminate\\Contracts\\Http\\Kernel::class);
+          $kernel->bootstrap();
+          Illuminate\\Support\\Facades\\Http::preventStrayRequests();
+          $response = $kernel->handle($request = Illuminate\\Http\\Request::capture());
+          $response->send(); $kernel->terminate($request, $response);
+          ''')
+          PY
+          php -S 127.0.0.1:8000 "$RUNNER_TEMP/synthetic-router.php" > "$RUNNER_TEMP/role-api.txt" 2>&1 &
+          api_pid=$!
+          HOSTNAME=127.0.0.1 PORT=3000 node admin-panel/.next/standalone/server.js > "$RUNNER_TEMP/role-ui.txt" 2>&1 &
+          ui_pid=$!
+          trap 'kill "$api_pid" "$ui_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            status=$(curl --max-time 2 -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/profile || true)
+            if [ "$status" = 401 ]; then break; fi
+            sleep 1
+          done
+          test "$status" = 401
+          curl --fail --max-time 10 --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/auth/login > /dev/null
+          node docs/evidence/biller-legal-walkthroughs-20261028/record.mjs
+          test -s "$FAYDAMED_VIDEO_OUTPUT/provenance.json"
+      - name: Retain only videos, real screenshots and sanitized proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: faydamed-role-walkthroughs-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/role-walkthrough-output/*
+          if-no-files-found: error
+          retention-days: 14
