@@ -1,0 +1,10 @@
+{
+  "admin-panel/components/pharmacy/prescription-section-links.tsx": "aacc221a30f483abf5a7bf1bc031d621af85a6215d60d30e94993e5e8ed0d510",
+  "admin-panel/components/pharmacy/prescription-worklist.tsx": "af574a1eff4d4705e7f31a32632e7b36a7ebe3e2ef5ee054e77372f2d198c371",
+  "admin-panel/tests/browser/pharmacy-worklist-responsive.mjs": "857444d469d651304b6e89279b22d188676f5aae69af75074e044e288d5a5c23",
+  "admin-panel/tests/pharmacy-worklist.test.mjs": "8667f516eb14396c931d7b72d40070b4804ac8e5548afd5df93ba140fab6d05e",
+  "admin-panel/app/(private)/dashboard/pharmacy/[id]/page.tsx": "c2c4dbf05da21de473944afb8461288549b79e2039d928618632effe8c876231",
+  "admin-panel/app/(private)/dashboard/pharmacy/page.tsx": "d2af07a637b740ca4e5296db944cde18d57178b3087bf291a10df6234a679bba",
+  "admin-panel/package.json": "fc52a650ae655ce11b1b0dc6697c3f9d9f319f0b194022a4c37b6c251b3a486c",
+  "admin-panel/store/api/pharmacyApiSlice.ts": "98e9c6f9914655b986f262884ba80727ef490976d71453ea7b17602a73b62218"
+}
