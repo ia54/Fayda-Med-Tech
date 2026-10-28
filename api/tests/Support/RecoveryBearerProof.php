@@ -65,6 +65,16 @@ trait RecoveryBearerProof
         $this->recoveryBearerRequest($url, $session['bearer'])->assertUnauthorized();
         config(['passport.public_key' => $public]); app()->forgetInstance(ResourceServer::class);
         $this->assertSame($bytes, $this->recoveryBearerRequest($url, $session['bearer'])->assertOk()->streamedContent());
+        // Restored client/token tables must also support NEW issuance with the matching private key.
+        $private = config('passport.private_key'); $this->assertTrue(openssl_pkey_export($wrong, $wrongPrivate));
+        config(['passport.private_key' => $wrongPrivate]); app()->forgetInstance(AuthorizationServer::class);
+        $badIssued = User::findOrFail($userId)->createToken('SYNTHETIC wrong restored signing key', ['api']);
+        $badIssued->token->forceFill(['mfa_verified_at' => now()])->save();
+        $this->recoveryBearerRequest($url, $badIssued->accessToken)->assertUnauthorized();
+        config(['passport.private_key' => $private]); app()->forgetInstance(AuthorizationServer::class);
+        $issued = User::findOrFail($userId)->createToken('SYNTHETIC restored key issuance', ['api']);
+        $issued->token->forceFill(['mfa_verified_at' => now()])->save();
+        $this->assertSame($bytes, $this->recoveryBearerRequest($url, $issued->accessToken)->assertOk()->streamedContent());
         $ciphertext = User::findOrFail($userId)->two_factor_secret;
         $encrypter = Crypt::getFacadeRoot();
         try {
