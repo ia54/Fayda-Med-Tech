@@ -102,20 +102,22 @@ jobs:
           $response->send(); $kernel->terminate($request, $response);
           ''')
           PY
-          php -S 127.0.0.1:8000 "$RUNNER_TEMP/synthetic-router.php" > "$RUNNER_TEMP/role-api.txt" 2>&1 &
+          php -d display_errors=0 -S 127.0.0.1:8000 "$RUNNER_TEMP/synthetic-router.php" > "$RUNNER_TEMP/role-api.txt" 2>&1 &
           api_pid=$!
           HOSTNAME=127.0.0.1 PORT=3000 node admin-panel/.next/standalone/server.js > "$RUNNER_TEMP/role-ui.txt" 2>&1 &
           ui_pid=$!
           trap 'kill "$api_pid" "$ui_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 30); do
-            status=$(curl --max-time 2 -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/profile || true)
+            status=$(curl --max-time 2 -s -H 'Accept: application/json' -o "$RUNNER_TEMP/role-health.json" -w '%{http_code}' http://127.0.0.1:8000/api/profile || true)
             if [ "$status" = 401 ]; then break; fi
             sleep 1
           done
           if [ "$status" != 401 ]; then
+            export FAYDAMED_HEALTH_STATUS="$status"
             python3 - <<'PY'
           import os, pathlib, re
-          paths = [pathlib.Path(os.environ['RUNNER_TEMP']) / 'role-api.txt', pathlib.Path(os.environ['FAYDAMED_BROWSER_FIXTURE_DIR']) / 'storage/logs/laravel.log']
+          print('::error title=Synthetic API health status::' + os.environ['FAYDAMED_HEALTH_STATUS'])
+          paths = [pathlib.Path(os.environ['RUNNER_TEMP']) / 'role-health.json', pathlib.Path(os.environ['RUNNER_TEMP']) / 'role-api.txt', pathlib.Path(os.environ['FAYDAMED_BROWSER_FIXTURE_DIR']) / 'storage/logs/laravel.log']
           detail = '\n'.join(p.read_text()[-5000:] for p in paths if p.exists())
           detail = re.sub(r'Bearer [A-Za-z0-9_.-]+', 'Bearer [REDACTED]', detail)
           print('::error title=Synthetic API startup failed::' + detail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
