@@ -86,10 +86,16 @@ jobs:
       - name: Package exact committed private UI source
         run: |
           mkdir "$RUNNER_TEMP/fayda-managed-candidate"
-          python3 deploy/production/managed_node_source_package.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/fayda-managed-candidate/ui-source.zip" > "$RUNNER_TEMP/fayda-managed-candidate/package.json"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           python3 - <<'PY'
-          import os, pathlib, zipfile
+          import os, pathlib, subprocess, zipfile
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          result = subprocess.run(['python3', 'deploy/production/managed_node_source_package.py', '--repo', os.environ['GITHUB_WORKSPACE'], '--output', str(root / 'fayda-managed-candidate/ui-source.zip')], text=True, capture_output=True)
+          if result.returncode:
+              detail = (result.stderr + result.stdout)[-8000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=Managed source packaging failed::' + detail)
+              raise SystemExit(result.returncode)
+          (root / 'fayda-managed-candidate/package.json').write_text(result.stdout)
           with zipfile.ZipFile(root / 'fayda-managed-candidate/ui-source.zip') as archive:
               archive.extractall(root / 'fayda-managed-build')
           PY
