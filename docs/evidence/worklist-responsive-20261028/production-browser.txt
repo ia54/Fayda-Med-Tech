@@ -1,0 +1,104 @@
+(node:24877) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:24877) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+{
+  "measurements": [
+    {
+      "width": 320,
+      "layout": "cards",
+      "row": {
+        "x": 41,
+        "y": 1513,
+        "width": 238,
+        "height": 459,
+        "top": 1513,
+        "right": 279,
+        "bottom": 1972,
+        "left": 41
+      },
+      "document_width": 320,
+      "viewport": 320,
+      "scroll_containers": [],
+      "keyboard_open_reachable": true
+    },
+    {
+      "width": 390,
+      "layout": "cards",
+      "row": {
+        "x": 41,
+        "y": 1357,
+        "width": 308,
+        "height": 427,
+        "top": 1357,
+        "right": 349,
+        "bottom": 1784,
+        "left": 41
+      },
+      "document_width": 390,
+      "viewport": 390,
+      "scroll_containers": [],
+      "keyboard_open_reachable": true
+    },
+    {
+      "width": 960,
+      "layout": "cards",
+      "row": {
+        "x": 345,
+        "y": 1111,
+        "width": 558,
+        "height": 323,
+        "top": 1111,
+        "right": 903,
+        "bottom": 1434,
+        "left": 345
+      },
+      "document_width": 960,
+      "viewport": 960,
+      "scroll_containers": [],
+      "keyboard_open_reachable": true
+    },
+    {
+      "width": 1280,
+      "layout": "table",
+      "row": {
+        "x": 345,
+        "y": 795.5,
+        "width": 878,
+        "height": 100.5,
+        "top": 795.5,
+        "right": 1223,
+        "bottom": 896,
+        "left": 345
+      },
+      "document_width": 1280,
+      "viewport": 1280,
+      "scroll_containers": [],
+      "keyboard_open_reachable": true
+    },
+    {
+      "width": 1440,
+      "layout": "table",
+      "row": {
+        "x": 345,
+        "y": 805.5,
+        "width": 1038,
+        "height": 80.5,
+        "top": 805.5,
+        "right": 1383,
+        "bottom": 886,
+        "left": 345
+      },
+      "document_width": 1440,
+      "viewport": 1440,
+      "scroll_containers": [],
+      "keyboard_open_reachable": true
+    }
+  ],
+  "search_and_empty_filter": true,
+  "keyboard_section_jumps_and_return": true,
+  "biller_evidence_link_absent": true,
+  "writes": [],
+  "protected_tables_unchanged": true,
+  "browser": "154.0.8037.57",
+  "blocked_external_hosts": []
+}

@@ -12,7 +12,7 @@
     "test:recovery": "node --test tests/password-recovery.test.mjs",
     "test:documents": "node --test tests/protected-document.test.mjs",
     "test:reports": "node --test tests/report-export.test.mjs",
-    "test:pharmacy": "node --test tests/pharmacy-evidence-recovery.test.mjs tests/pharmacy-transfer-recovery.test.mjs tests/pharmacy-recall-summary.test.mjs tests/pharmacy-handover-rehearsal.test.mjs",
+    "test:pharmacy": "node --test tests/pharmacy-evidence-recovery.test.mjs tests/pharmacy-transfer-recovery.test.mjs tests/pharmacy-recall-summary.test.mjs tests/pharmacy-handover-rehearsal.test.mjs tests/pharmacy-worklist.test.mjs",
     "test:dependencies": "node --test tests/braces-depth.test.mjs tests/schema-validation.test.mjs"
   },
   "dependencies": {
