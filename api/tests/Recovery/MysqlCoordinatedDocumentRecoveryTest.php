@@ -13,6 +13,8 @@ use Tests\Support\SyntheticMysqlDocumentRecovery;
 /** Explicit --filter test_mysql_coordinated_; synthetic CI service only. */
 class MysqlCoordinatedDocumentRecoveryTest extends PharmacyWorkflowTest
 {
+    use \Tests\Support\RecoveryBearerProof;
+
     private SyntheticMysqlDocumentRecovery $recovery;
     private array $actors = [];
     private array $source;
@@ -73,6 +75,23 @@ class MysqlCoordinatedDocumentRecoveryTest extends PharmacyWorkflowTest
         }
         app('auth')->forgetGuards(); $this->getJson($url)->assertUnauthorized();
     }
+    public function test_mysql_coordinated_real_bearer_mfa_and_encryption_survive_restore(): void
+    {
+        $sessions = $this->recoveryBearerSessions($this->actors);
+        $url = "/api/pharmacy/prescriptions/{$this->rx}/sources/{$this->source['id']}/file";
+        $this->assertRecoveryBearerBoundaries($sessions, $url, self::BYTES);
+        $before = $this->digest('mysql'); $trusted = $this->recovery->snapshot();
+        $this->assertStringNotContainsString('SYNTHETIC-RECOVERY-MFA-STATE', file_get_contents($this->recovery->root().'/backup/database.sql'));
+        $target = $this->recovery->restore($trusted);
+        config(['database.default' => 'document_restore']); $this->storage($target);
+        $this->assertRecoveryBearerBoundaries($sessions, $url, self::BYTES);
+        $this->assertRecoveryBearerFailureModes($sessions, $url, self::BYTES, $this->actors['pharmacist']);
+        config(['database.default' => 'mysql']); $this->storage($this->recovery->sourceRoot());
+        $this->recovery->rollback(); $this->assertFalse($this->recovery->targetExists());
+        $this->assertSame($before, $this->digest('mysql'));
+        $this->assertRecoveryBearerBoundaries($sessions, $url, self::BYTES); Http::assertNothingSent();
+    }
+
     public function test_mysql_coordinated_restore_retrieval_boundaries_and_failure_cleanup(): void
     {
         $before = $this->digest('mysql'); $this->boundaries(); $trusted = $this->recovery->snapshot();
