@@ -66,3 +66,56 @@ jobs:
           path: ${{ steps.package.outputs.directory }}/*.*
           if-no-files-found: error
           retention-days: 14
+
+  managed-pilot-ui:
+    name: Locked private pilot UI package
+    runs-on: ubuntu-latest
+    container: node:22-bookworm
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify managed dependency and startup contracts
+        run: |
+          python3 -m unittest discover -s deploy/production/tests -p test_managed_dependency_contract.py -v
+          node --test deploy/production/tests/managed_build.test.mjs deploy/production/tests/managed_preview.test.mjs admin-panel/tests/pilot-gateway.test.mjs
+      - name: Package exact committed private UI source
+        run: |
+          mkdir "$RUNNER_TEMP/fayda-managed-candidate"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import os, pathlib, subprocess, zipfile
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          result = subprocess.run(['python3', 'deploy/production/managed_node_source_package.py', '--repo', os.environ['GITHUB_WORKSPACE'], '--output', str(root / 'fayda-managed-candidate/ui-source.zip')], text=True, capture_output=True)
+          if result.returncode:
+              detail = (result.stderr + result.stdout)[-8000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=Managed source packaging failed::' + detail)
+              raise SystemExit(result.returncode)
+          (root / 'fayda-managed-candidate/package.json').write_text(result.stdout)
+          with zipfile.ZipFile(root / 'fayda-managed-candidate/ui-source.zip') as archive:
+              archive.extractall(root / 'fayda-managed-build')
+          PY
+      - name: Install and audit locked managed dependencies
+        run: |
+          cd "$RUNNER_TEMP/fayda-managed-build"
+          npm exec --yes --package=npm@11.9.0 -- npm ci --ignore-scripts --no-audit --no-fund
+          npm exec --yes --package=npm@11.9.0 -- npm audit
+      - name: Build managed source without gateway credentials or listener
+        run: |
+          cd "$RUNNER_TEMP/fayda-managed-build"
+          npm exec --yes --package=npm@11.9.0 -- npm run build
+          test -s .next/standalone/server.js
+          test -d .next/standalone/.next/static
+          test -d .next/standalone/public
+          cp .next/BUILD_ID "$RUNNER_TEMP/fayda-managed-candidate/BUILD_ID"
+      - name: Retain secret-free private UI source candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: faydamed-private-ui-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/fayda-managed-candidate/*
+          if-no-files-found: error
+          retention-days: 14

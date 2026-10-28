@@ -12,7 +12,7 @@ def build(repo, output):
     allowed_root={'.eslintrc.json','next.config.mjs','postcss.config.mjs','tsconfig.json','components.json','tailwind.config.ts','tailwind.config.js'}
     for raw in git('ls-tree','-r','--name-only','HEAD','admin-panel').decode().splitlines():
         p=pathlib.PurePosixPath(raw);rel=str(p.relative_to('admin-panel'));first=rel.split('/')[0]
-        if first in allowed_dirs or rel in allowed_root or rel in ['tests/braces-depth.test.mjs','patches/braces@3.0.3.patch']:
+        if first in allowed_dirs or rel in allowed_root or rel in ['tests/braces-depth.test.mjs','tests/schema-validation.test.mjs','patches/braces@3.0.3.patch']:
             files[rel]=git('show',f'{commit}:{raw}')
     prefix='deploy/production/godaddy-node/'
     for raw in git('ls-tree','-r','--name-only','HEAD',prefix).decode().splitlines():

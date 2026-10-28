@@ -1,0 +1,223 @@
+{
+  "head_sha": "d9a371a4f711592bd9a280ae27eb7080bc51c8e3",
+  "run_id": 40655389362,
+  "raw_logs": "Blocked redirect to results-receiver.actions.githubusercontent.com; no network policy change or bypass attempted.",
+  "jobs": [
+    {
+      "name": "PHP 8.3 regression tests",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run composer validate --no-check-publish --no-interaction",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run composer audit --locked --abandoned=report --no-interaction",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins",
+          "conclusion": "success"
+        },
+        {
+          "name": "MySQL recovery isolation guards",
+          "conclusion": "success"
+        },
+        {
+          "name": "Coordinated synthetic database and private-source recovery",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run php vendor/bin/phpunit --colors=never --testdox",
+          "conclusion": "success"
+        },
+        {
+          "name": "Declaration regression checks",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "MariaDB 10.11 schema, finance and recovery",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run php artisan migrate --force --no-interaction",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run php artisan migrate:status --no-interaction",
+          "conclusion": "success"
+        },
+        {
+          "name": "Legacy data upgrade rehearsal",
+          "conclusion": "success"
+        },
+        {
+          "name": "Synthetic database and private-file restore rehearsal",
+          "conclusion": "success"
+        },
+        {
+          "name": "Coordinated private-source restore and authenticated retrieval",
+          "conclusion": "success"
+        },
+        {
+          "name": "MySQL financial workflow regression",
+          "conclusion": "success"
+        },
+        {
+          "name": "Disposable database diagnostics on failure",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "Pinned source release package",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "conclusion": "success"
+        },
+        {
+          "name": "Archive integrity and isolation tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare and verify the exact checked-out source",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "MySQL 8 schema, finance and recovery",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Initialize containers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run shivammathur/setup-php@b604ade2a87db23f8871b7182e69ec5e75effb45",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run php artisan migrate --force --no-interaction",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run php artisan migrate:status --no-interaction",
+          "conclusion": "success"
+        },
+        {
+          "name": "Legacy data upgrade rehearsal",
+          "conclusion": "success"
+        },
+        {
+          "name": "Synthetic database and private-file restore rehearsal",
+          "conclusion": "success"
+        },
+        {
+          "name": "Coordinated private-source restore and authenticated retrieval",
+          "conclusion": "success"
+        },
+        {
+          "name": "MySQL financial workflow regression",
+          "conclusion": "success"
+        },
+        {
+          "name": "Disposable database diagnostics on failure",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stop containers",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}
