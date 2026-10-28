@@ -112,7 +112,16 @@ jobs:
             if [ "$status" = 401 ]; then break; fi
             sleep 1
           done
-          test "$status" = 401
+          if [ "$status" != 401 ]; then
+            python3 - <<'PY'
+          import os, pathlib, re
+          paths = [pathlib.Path(os.environ['RUNNER_TEMP']) / 'role-api.txt', pathlib.Path(os.environ['FAYDAMED_BROWSER_FIXTURE_DIR']) / 'storage/logs/laravel.log']
+          detail = '\n'.join(p.read_text()[-5000:] for p in paths if p.exists())
+          detail = re.sub(r'Bearer [A-Za-z0-9_.-]+', 'Bearer [REDACTED]', detail)
+          print('::error title=Synthetic API startup failed::' + detail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          PY
+            exit 1
+          fi
           curl --fail --max-time 10 --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/auth/login > /dev/null
           node docs/evidence/biller-legal-walkthroughs-20261028/record.mjs
           test -s "$FAYDAMED_VIDEO_OUTPUT/provenance.json"
