@@ -102,7 +102,7 @@ jobs:
           $response->send(); $kernel->terminate($request, $response);
           ''')
           PY
-          php -d display_errors=0 -S 127.0.0.1:8000 "$RUNNER_TEMP/synthetic-router.php" > "$RUNNER_TEMP/role-api.txt" 2>&1 &
+          php -d display_errors=0 -S 127.0.0.1:8000 -t api/public "$RUNNER_TEMP/synthetic-router.php" > "$RUNNER_TEMP/role-api.txt" 2>&1 &
           api_pid=$!
           HOSTNAME=127.0.0.1 PORT=3000 node admin-panel/.next/standalone/server.js > "$RUNNER_TEMP/role-ui.txt" 2>&1 &
           ui_pid=$!
