@@ -37,6 +37,8 @@ jobs:
       - run: composer validate --no-check-publish --no-interaction
       - run: composer audit --locked --abandoned=report --no-interaction
       - run: composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins
+      - name: MySQL recovery isolation guards
+        run: php vendor/bin/phpunit --colors=never tests/Recovery/MysqlRecoveryGuardTest.php
       - name: Coordinated synthetic database and private-source recovery
         run: php vendor/bin/phpunit --colors=never --filter test_coordinated_ tests/Recovery/CoordinatedDocumentRecoveryTest.php
       - run: php vendor/bin/phpunit --colors=never --testdox
@@ -107,6 +109,10 @@ jobs:
         env:
           FAYDAMED_CI_DB_CONTAINER: ${{ job.services.mysql.id }}
         run: bash tests/Security/database-restore-smoke.sh
+      - name: Coordinated private-source restore and authenticated retrieval
+        env:
+          FAYDAMED_CI_DB_CONTAINER: ${{ job.services.mysql.id }}
+        run: php vendor/bin/phpunit -c phpunit.mysql.xml --colors=never --filter test_mysql_coordinated_ tests/Recovery/MysqlCoordinatedDocumentRecoveryTest.php
       - name: MySQL financial workflow regression
         run: timeout --signal=TERM --kill-after=15s 8m php vendor/bin/phpunit -c phpunit.mysql.xml --colors=never --debug
       - name: Disposable database diagnostics on failure
