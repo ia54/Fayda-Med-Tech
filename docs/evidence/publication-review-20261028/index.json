@@ -1,0 +1,26 @@
+{
+  "composer-audit.txt": {
+    "bytes": 611,
+    "sha256": "ca5c11d64de9b9486502ac0ef208f4ed13d343bc73eba9e15410cec5e3188164"
+  },
+  "environment-observation.json": {
+    "bytes": 1264,
+    "sha256": "4a2cc01fb06e345724d6aca4c4527b84a43c81aaafe089bf93f57cb0655976b0"
+  },
+  "release-boundaries.txt": {
+    "bytes": 687,
+    "sha256": "7abd169bad7119ba5bc0573711d412d739183228f902dc123d83b66041f59858"
+  },
+  "restore-guard.json": {
+    "bytes": 248,
+    "sha256": "11795ff31a2be4a6bd7144f048b7e98e613ce528f10b9c5a8c5185e3a2158630"
+  },
+  "source-package.json": {
+    "bytes": 358,
+    "sha256": "4dda5675a8dc7970b2324d1306d85b44b558bd492426fc35834ba386e5dbde4a"
+  },
+  "source-verify.json": {
+    "bytes": 214,
+    "sha256": "907766331cf45b0a8ef4497ef44faa926553724672e6e06d4b6276b1301bfeb3"
+  }
+}

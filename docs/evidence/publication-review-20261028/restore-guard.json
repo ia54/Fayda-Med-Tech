@@ -1,0 +1,6 @@
+{
+  "exit_code": 1,
+  "message": "Refusing restore rehearsal outside the disposable CI database.",
+  "database_operations_executed": false,
+  "scope": "Invalid/missing disposable CI preconditions rejected before any Docker or database operation"
+}
