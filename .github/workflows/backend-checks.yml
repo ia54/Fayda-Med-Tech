@@ -37,6 +37,8 @@ jobs:
       - run: composer validate --no-check-publish --no-interaction
       - run: composer audit --locked --abandoned=report --no-interaction
       - run: composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins
+      - name: Coordinated synthetic database and private-source recovery
+        run: php vendor/bin/phpunit --colors=never --filter test_coordinated_ tests/Recovery/CoordinatedDocumentRecoveryTest.php
       - run: php vendor/bin/phpunit --colors=never --testdox
       - name: Declaration regression checks
         run: |
