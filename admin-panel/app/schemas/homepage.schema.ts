@@ -20,6 +20,7 @@ const bannerValidationSchema = z.object({
 });
 
 const whyNowValidationSchema = z.object({
+  whyNowRightList: z.array(z.object({ value: z.string() })).optional(),
   homeWhyNowLeftTitle1: z.string().trim().min(1, { message: "Why Now left title 1 is required!" }),
 
   homeWhyNowLeftTitle2: z.string().trim().min(1, { message: "Why Now left title 2 is required!" }),

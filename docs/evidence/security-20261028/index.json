@@ -1,0 +1,86 @@
+{
+  "admin-audit.json": {
+    "bytes": 281,
+    "sha256": "88c1f1b4227aeac1fdd97a0a1aaa86e7c56476c968058252005bbacbe6895256"
+  },
+  "admin-build.txt": {
+    "bytes": 15730,
+    "sha256": "1a94f55bcb88fc90d1a1450184f25c2c3025ac48681502a9f3ff9e8508a09348"
+  },
+  "admin-dependencies-final.txt": {
+    "bytes": 2407,
+    "sha256": "9e654cb1de9b61dc29aeb695e9aa068c7b89c19b3485a33c3d81d983f369cbb2"
+  },
+  "admin-documents.txt": {
+    "bytes": 1191,
+    "sha256": "6c9081ad8e4363547de4b68420cd1cff5ea079925ddcb48e9c4c1073d600d42c"
+  },
+  "admin-frozen-install.txt": {
+    "bytes": 821,
+    "sha256": "6427a61e61a08f7d136cbb4aaadf70d3e4ae21b33c162e49ef526cb2873fe59c"
+  },
+  "admin-session.txt": {
+    "bytes": 2071,
+    "sha256": "2aa24f7b28babc2b7b6142d8fe353d8db127cacd490baf7c39466812e70096f5"
+  },
+  "admin-standalone.txt": {
+    "bytes": 321,
+    "sha256": "60ac127ad8e077912f445455104fc4eef14a48edd42ee44a06df42902c418324"
+  },
+  "advisory-dispositions.json": {
+    "bytes": 13531,
+    "sha256": "c195b61a2f9967675266b354e28cf696e3df51f211eabf38dd209621b4e4351f"
+  },
+  "browser-start.txt": {
+    "bytes": 365,
+    "sha256": "4f1d24ef8cb6b62e9f42d009eb9282c29dfab2d6c7087507b41d9c56f73b2cb2"
+  },
+  "candidate-files.json": {
+    "bytes": 1508,
+    "sha256": "5e0b962dd2b63913aabfbe3f4ba900b20c270603981d45c5841919de75467fe8"
+  },
+  "composer-audit.txt": {
+    "bytes": 289,
+    "sha256": "5bc2ed098c1dcfe70b507a427e4c5e80229dd56f519c52b5669bb965bcbdcda1"
+  },
+  "downloaded-SYN-prescription.pdf": {
+    "bytes": 77,
+    "sha256": "56d3c3138205d882a3499a87511ce49c1895f1d5a332d9b51700c9783471c792"
+  },
+  "frontend-audit-final.json": {
+    "bytes": 365,
+    "sha256": "0a198e06f9b4fa1a8162b5fc8d497614ad7347775ef25d33675424b99991027c"
+  },
+  "frontend-audit.json": {
+    "bytes": 7894,
+    "sha256": "53343edf7c799c4d85c144112b5448d15cbc9ba0418615822991c31508ae4660"
+  },
+  "frontend-build-final.txt": {
+    "bytes": 1606,
+    "sha256": "2e26d0b2732eabd899921b0017cf01b1847b0b74dd12ed2e8621972d1ec00270"
+  },
+  "frontend-frozen-install.txt": {
+    "bytes": 204,
+    "sha256": "464fc247b47a3731683935c340c72a1c127a33066018afb7b0d333f46c060d3d"
+  },
+  "frontend-security-final.txt": {
+    "bytes": 1370,
+    "sha256": "6752ed060705fab3d2f8883bb8f1476030e747baa94002ad2cd7f34991cfa58b"
+  },
+  "network-observation.json": {
+    "bytes": 872,
+    "sha256": "5084681844aaf8a9c650958cd3edde1e690c650f6e3a0f34e1ca78a5215e8540"
+  },
+  "prescription-source-mobile.png": {
+    "bytes": 430276,
+    "sha256": "0c68308b16ce6a0cf1ce342c131c1c488593412022dc9ceae4ae752664dfac4a"
+  },
+  "prescription-source-result.json": {
+    "bytes": 100802,
+    "sha256": "9bee3fe5918775406b1ff2f16c108f73f46d450e07889ff1336ed21fa4264960"
+  },
+  "typecheck.txt": {
+    "bytes": 193,
+    "sha256": "9d8636393adcf3aebb0555e227ce3b42633ec88677fc4dba15c09ab4e72eea51"
+  }
+}

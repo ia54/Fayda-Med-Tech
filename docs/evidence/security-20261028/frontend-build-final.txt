@@ -1,0 +1,30 @@
+(node:20216) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> fayda_medtech@0.0.0 build
+> vite build
+
+(node:20229) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20229) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 3618 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                           0.44 kB │ gzip:   0.30 kB
+dist/assets/slick-BlzDm7g2.svg            2.15 kB │ gzip:   0.91 kB
+dist/assets/ajax-loader-BcnMEykj.gif      4.18 kB
+dist/assets/Trap-Regular-DTdie16y.otf     9.80 kB
+dist/assets/Trap-SemiBold-BlhQqlfF.otf   10.15 kB
+dist/assets/Trap-Bold-CTx-lhvu.otf       10.31 kB
+dist/assets/LufgaRegular-DxIVXNDB.ttf   102.44 kB
+dist/assets/index-CK4_3HNj.css           68.93 kB │ gzip:  14.30 kB
+dist/assets/index-FIxsexEi.js           727.20 kB │ gzip: 234.48 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 10.81s

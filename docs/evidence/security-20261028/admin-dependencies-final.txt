@@ -1,0 +1,61 @@
+(node:20427) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node --test tests/braces-depth.test.mjs tests/schema-validation.test.mjs
+(node:20440) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:20447) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: deep balanced and unbalanced patterns reject explicitly before stack exhaustion
+ok 1 - deep balanced and unbalanced patterns reject explicitly before stack exhaustion
+  ---
+  duration_ms: 8.399659
+  type: 'test'
+  ...
+# Subtest: direct deep AST traversals also reject with the bounded nesting error
+ok 2 - direct deep AST traversals also reject with the bounded nesting error
+  ---
+  duration_ms: 15.922254
+  type: 'test'
+  ...
+# Subtest: ordinary Next lint globs, ranges, escaped literals and nested alternatives retain results
+ok 3 - ordinary Next lint globs, ranges, escaped literals and nested alternatives retain results
+  ---
+  duration_ms: 27.400817
+  type: 'test'
+  ...
+# (node:20448) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: user resolver maps valid data and required/type/password failures
+ok 4 - user resolver maps valid data and required/type/password failures
+  ---
+  duration_ms: 6.719367
+  type: 'test'
+  ...
+# Subtest: organization enums and testimonial boolean retain validation
+ok 5 - organization enums and testimonial boolean retain validation
+  ---
+  duration_ms: 2.287687
+  type: 'test'
+  ...
+# Subtest: CMS list schemas retain edited entries and reject invalid entries
+ok 6 - CMS list schemas retain edited entries and reject invalid entries
+  ---
+  duration_ms: 2.495031
+  type: 'test'
+  ...
+# Subtest: oversized constrained collections fail before validating every element
+ok 7 - oversized constrained collections fail before validating every element
+  ---
+  duration_ms: 1.229901
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 936.231782

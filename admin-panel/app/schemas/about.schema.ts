@@ -80,6 +80,7 @@ const whyFaydaIsDifferentSchema = z.object({
 });
 
 const problemWeSolveSchema = z.object({
+    aboutProblemWeSolveRightList: z.array(z.object({ value: z.string() })).optional(),
     aboutProblemWeSolveSectionTitle: z.string().trim().min(1, { message: "Problem We Solve title is required!" }),
     aboutProblemWeSolveSectionDescription: z.string().trim().min(1, { message: "Problem We Solve description is required!" }),
     aboutProblemWeSolveLeftImage: z

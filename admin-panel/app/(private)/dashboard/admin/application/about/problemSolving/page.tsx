@@ -60,6 +60,7 @@ export default function ProblemSolvingPage() {
     const formData = new FormData();
 
     Object.entries(form).forEach(([key, value]) => {
+      if (key === "aboutProblemWeSolveRightList") return; // The list is serialized once as JSON below.
       if (value instanceof File) {
         formData.append(key, value);
       } else if (value !== null && value !== undefined) {
