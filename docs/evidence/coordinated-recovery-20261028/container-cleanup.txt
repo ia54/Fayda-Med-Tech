@@ -1,0 +1,3 @@
+PASS: default ordinary seed (1 test / 19 assertions) starts and returns expected anonymous readiness status.
+PASS: stopped --rm container removal confirmed after asynchronous cleanup; ordinary.sqlite fixture retained.
+Only recorded exited synthetic containers were removed to recover disk space; original bind-mounted fixtures retained.
