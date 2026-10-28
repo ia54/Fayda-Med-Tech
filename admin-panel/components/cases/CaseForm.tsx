@@ -45,7 +45,7 @@ export function CaseForm({ initialData, onSuccess, onCancel }: CaseFormProps) {
   const [createCase, { isLoading: isCreating }] = useCreateCaseMutation()
   const [updateCase, { isLoading: isUpdating }] = useUpdateCaseMutation()
 
-  const form = useForm<z.infer<typeof caseSchema>>({
+  const form = useForm<z.input<typeof caseSchema>, unknown, z.output<typeof caseSchema>>({
     resolver: zodResolver(caseSchema),
     defaultValues: {
       title: initialData?.title || "",

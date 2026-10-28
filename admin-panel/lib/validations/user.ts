@@ -48,8 +48,7 @@ export const userSchema = z.object({
 
   organization_id: z
     .number({
-      required_error: 'Organization is required',
-      invalid_type_error: 'Organization must be selected',
+      error: issue => issue.input === undefined ? 'Organization is required' : 'Organization must be selected',
     })
     .positive('Organization is required'),
 

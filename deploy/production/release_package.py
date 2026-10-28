@@ -51,6 +51,10 @@ def safe_path(path):
 
 
 def include(path):
+    # Managed Node uses its own source packager. Never ship its npm policy
+    # through the legacy-server archive, even if that file later gains secrets.
+    if path == 'deploy/production/godaddy-node/.npmrc':
+        return False
     parts = PurePosixPath(path).parts
     if not parts or (parts[0] not in ROOTS and parts[:2] != ('deploy', 'production')):
         return False

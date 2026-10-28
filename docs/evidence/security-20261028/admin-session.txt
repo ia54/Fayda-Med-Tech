@@ -1,0 +1,49 @@
+(node:19836) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node --test tests/session-boundary.test.mjs tests/browser-session.test.mjs
+(node:19850) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:19857) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: two browser realms rotate once and both retain the single-use replacement
+ok 1 - two browser realms rotate once and both retain the single-use replacement
+  ---
+  duration_ms: 2.026935
+  type: 'test'
+  ...
+# Subtest: logout in another tab wins over an already running refresh response
+ok 2 - logout in another tab wins over an already running refresh response
+  ---
+  duration_ms: 0.460756
+  type: 'test'
+  ...
+# Subtest: different organization or malformed persisted state cannot be adopted or refreshed
+ok 3 - different organization or malformed persisted state cannot be adopted or refreshed
+  ---
+  duration_ms: 1.70555
+  type: 'test'
+  ...
+# (node:19858) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: switching accounts clears cached locations immediately and late responses cannot replace new account data
+ok 4 - switching accounts clears cached locations immediately and late responses cannot replace new account data
+  ---
+  duration_ms: 22.180874
+  type: 'test'
+  ...
+# Subtest: token rotation preserves cache but organization and role changes clear it
+ok 5 - token rotation preserves cache but organization and role changes clear it
+  ---
+  duration_ms: 3.646402
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 639.739721
