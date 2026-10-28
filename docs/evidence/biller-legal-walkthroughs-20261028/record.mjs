@@ -10,7 +10,7 @@ for(const [role,page] of Object.entries(c.pages))await page.route('**/*',route=>
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 let recorder=null,active=null;
 async function begin(name){
- const path=`${output}/${name}.mp4`;let error='';const ff=spawn('/usr/bin/ffmpeg',['-hide_banner','-loglevel','error','-f','image2pipe','-framerate','10','-vcodec','mjpeg','-i','pipe:0','-an','-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart','-n',path],{stdio:['pipe','ignore','pipe']});
+ const path=`${output}/${name}.mp4`;let error='';const ff=spawn('/usr/bin/ffmpeg',['-hide_banner','-loglevel','error','-f','image2pipe','-framerate','10','-vcodec','mjpeg','-i','pipe:0','-an','-vf','pad=1440:1000:0:0:black','-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart','-n',path],{stdio:['pipe','ignore','pipe']});
  ff.stderr.on('data',b=>error=(error+b.toString()).slice(-3000));ff.stdin.on('error',()=>{});
  const exited=new Promise((resolve,reject)=>{ff.on('error',reject);ff.on('exit',code=>code===0?resolve():reject(Error(error)));});exited.catch(()=>{});
  recorder={name,path,ff,exited,start:Date.now(),latest:null,frames:0};const r=recorder;
