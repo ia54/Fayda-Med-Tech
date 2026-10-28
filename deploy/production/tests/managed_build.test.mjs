@@ -11,7 +11,7 @@ function run(status=0) {
 }
 test('build overrides inherited development mode for all four required steps',()=>{
  const {process,calls}=run();assert.equal(process.env.NODE_ENV,'production');assert.equal(calls.length,4);
- assert.deepEqual(calls.map(c=>c.args),[['scripts/apply-braces-guard.cjs'],['--test','tests/braces-depth.test.mjs'],['/next-cli','build'],['scripts/prepare-standalone.cjs']]);
+ assert.deepEqual(calls.map(c=>c.args),[['scripts/apply-braces-guard.cjs'],['--test','tests/braces-depth.test.mjs','tests/schema-validation.test.mjs'],['/next-cli','build'],['scripts/prepare-standalone.cjs']]);
  for(const call of calls){assert.equal(call.exe,'/node');assert.equal(call.options.env.NODE_ENV,'production');assert.equal(call.options.env.NEXT_PUBLIC_API_URL,'https://api.pilot.invalid');assert.equal(call.options.stdio,'inherit')}
 });
 test('build fails immediately when a required step fails',()=>{assert.throws(()=>run(17),/exit:17/)});

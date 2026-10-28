@@ -5,7 +5,7 @@ process.env.NODE_ENV = 'production';
 const { spawnSync } = require('node:child_process');
 for (const args of [
   ['scripts/apply-braces-guard.cjs'],
-  ['--test', 'tests/braces-depth.test.mjs'],
+  ['--test', 'tests/braces-depth.test.mjs', 'tests/schema-validation.test.mjs'],
   [require.resolve('next/dist/bin/next'), 'build'],
   ['scripts/prepare-standalone.cjs'],
 ]) {
