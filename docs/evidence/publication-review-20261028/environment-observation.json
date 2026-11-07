@@ -1,0 +1,35 @@
+{
+  "observed_at_utc": "2026-10-28T06:00:54.330315+00:00",
+  "publication_attempts_reported_by_owner": 2,
+  "publication_ui_error": "Couldn\u2019t publish environment. Your settings are saved. Try publishing again.",
+  "agent_publication_retries": 0,
+  "duplicate_environments_created": 0,
+  "runtime_status": "running",
+  "connectivity": "connected",
+  "current_observations": true,
+  "spec_revision": "3",
+  "observed_spec_revision": "3",
+  "failure": null,
+  "network_policy_state": "unknown",
+  "custom_allowed_hosts": [
+    "api.github.com",
+    "packagist.org"
+  ],
+  "retained_diagnostics": {
+    "history_status": "not_found",
+    "records": 0,
+    "legacy_snapshot_available": false
+  },
+  "current_diagnostic_tool_result": "INVALID_ARGUMENT: Use environment_diagnostics to inspect retained network diagnostics.",
+  "github_api_http_status": 200,
+  "composer_audit_exit_code": 0,
+  "composer_advisories": 0,
+  "abandoned_packages": [
+    "doctrine/annotations"
+  ],
+  "draft_revision_preserved": 5,
+  "draft_commit_preserved": "7bce3ca7a10b47ac88a61e0a8273250b7ea9dfbf",
+  "publication_success_verified": false,
+  "fresh_task_restore_verified": false,
+  "root_cause": "Not exposed by supported status or retained diagnostics; no root cause established"
+}
