@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '22'
       - name: Update only packages with available non-breaking audit fixes
-        run: npm exec --yes --package=npm@11.9.0 -- npm audit fix --package-lock-only --no-fund
+        run: npm exec --yes --package=npm@11.9.0 -- npm update --package-lock-only --no-fund
       - run: npm exec --yes --package=npm@11.9.0 -- npm audit --package-lock-only --audit-level=moderate
       - name: Preserve generated lockfile for review
         if: always()
