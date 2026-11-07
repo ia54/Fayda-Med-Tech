@@ -14,6 +14,8 @@ use Tests\Support\SyntheticDocumentRecovery;
 /** Explicitly run with --filter test_coordinated_; reuses the existing synthetic pharmacy fixture. */
 class CoordinatedDocumentRecoveryTest extends PharmacyWorkflowTest
 {
+    use \Tests\Support\RecoveryBearerProof;
+
     private SyntheticDocumentRecovery $recovery;
     private PDO $original;
     private array $sources = [];
@@ -77,6 +79,22 @@ class CoordinatedDocumentRecoveryTest extends PharmacyWorkflowTest
             if ($status === 200) $this->assertSame(self::BYTES.'original', $response->streamedContent());
         }
         app('auth')->forgetGuards(); $this->getJson($url)->assertUnauthorized();
+    }
+
+    public function test_coordinated_real_bearer_mfa_and_encryption_survive_database_file_restore(): void
+    {
+        $sessions = $this->recoveryBearerSessions($this->actors);
+        $url = "/api/pharmacy/prescriptions/{$this->rx}/sources/{$this->sources[0]['id']}/file";
+        $this->assertRecoveryBearerBoundaries($sessions, $url, self::BYTES.'original');
+        $before = $this->digest($this->original); $snapshot = $this->recovery->snapshot();
+        $target = $this->recovery->restore('backup', 'restored', $snapshot['manifest_sha256']);
+        config(['database.connections.recovery_rehearsal' => array_replace(config('database.connections.sqlite'), ['database' => $target.'/database.sqlite']), 'database.default' => 'recovery_rehearsal']);
+        $this->storage($target.'/files');
+        $this->assertRecoveryBearerBoundaries($sessions, $url, self::BYTES.'original');
+        $this->assertRecoveryBearerFailureModes($sessions, $url, self::BYTES.'original', $this->actors['pharmacist']);
+        config(['database.default' => 'sqlite']); $this->storage($this->recovery->sourceRoot());
+        $this->assertRecoveryBearerBoundaries($sessions, $url, self::BYTES.'original');
+        $this->assertSame($before, $this->digest($this->original)); Http::assertNothingSent();
     }
 
     public function test_coordinated_complete_restore_preserves_every_table_file_and_role_boundary(): void
