@@ -11,10 +11,10 @@ import { useGetBillingStatsQuery } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function BillingDashboard() {
-  const { data: billingData, isLoading } = useGetBillingStatsQuery()
+  const { data: billingData, isLoading, isError, refetch } = useGetBillingStatsQuery()
 
   const statsData = billingData?.data?.stats || { work_queue: 0, appeals_generated: 0, claims_processed: 0, success_rate: "0%" }
-  
+
   const stats = [
     {
       title: "Work Queue Items",
@@ -69,6 +69,8 @@ export default function BillingDashboard() {
     )
   }
 
+  if (isError) return <p role="alert">Could not load billing totals. <Button onClick={() => refetch()}>Try again</Button></p>
+
   const getPriorityColor = (priority: string) => {
     switch (priority.toLowerCase()) {
       case "high": return "bg-red-100 text-red-700 border-red-200"
@@ -94,13 +96,13 @@ export default function BillingDashboard() {
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-primary">Billing Operations</h1>
-          <p className="text-muted-foreground">Process claims, handle denials, and generate AI-powered appeals</p>
+          <p className="text-muted-foreground">Process claims, handle denials, and generate appeal drafts</p>
         </div>
         <div className="flex gap-2">
           <Link href="/dashboard/billing/appeals/create">
             <Button variant="outline">
               <Bot className="h-4 w-4 mr-2" />
-              AI Appeal
+              Appeal Draft
             </Button>
           </Link>
           <Link href="/dashboard/billing/upload">
@@ -122,9 +124,7 @@ export default function BillingDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stat.value}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                <span className="text-emerald-500">{stat.change}</span> since yesterday
-              </p>
+
             </CardContent>
           </Card>
         ))}
@@ -142,9 +142,10 @@ export default function BillingDashboard() {
           </CardHeader>
           <CardContent className="space-y-3">
             {[
+              { label: "Review Invoices", icon: CheckCircle, href: "/dashboard/billing/invoices" },
               { label: "Work Queue", icon: AlertTriangle, href: "/dashboard/billing/queue" },
               { label: "Code Validation", icon: CheckCircle, href: "/dashboard/billing/validation" },
-              { label: "AI Appeals", icon: Bot, href: "/dashboard/billing/appeals" },
+              { label: "Appeal Drafts", icon: Bot, href: "/dashboard/billing/appeals" },
               { label: "Bulk Upload", icon: Upload, href: "/dashboard/billing/upload" },
               { label: "Billing Analytics", icon: BarChart3, href: "/dashboard/billing/analytics" },
             ].map((action, i) => (
@@ -201,9 +202,9 @@ export default function BillingDashboard() {
           <div>
             <CardTitle className="flex items-center gap-2 text-primary">
               <Bot className="h-5 w-5" />
-              Recent AI Appeals
+              Recent Appeal Drafts
             </CardTitle>
-            <CardDescription>Latest recovery efforts powered by AI</CardDescription>
+            <CardDescription>Saved drafts for human review</CardDescription>
           </div>
           <Link href="/dashboard/billing/appeals">
             <Button variant="ghost" size="sm">View History</Button>
@@ -274,6 +275,7 @@ export default function BillingDashboard() {
             <CardDescription>Claim acceptance success rates</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {payerPerformance.length === 0 && <p className="text-sm text-muted-foreground">Payer acceptance data is not available.</p>}
             {payerPerformance.map((item: any, i: number) => (
               <div key={i} className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/30 transition-colors">
                 <div className="flex items-center gap-3">

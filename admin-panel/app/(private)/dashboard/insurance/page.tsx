@@ -1,26 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useGetInsuranceCompaniesQuery, useCreateInsuranceCompanyMutation, useUpdateInsuranceCompanyMutation, useDeleteInsuranceCompanyMutation } from "@/store/api/apiSlice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { ROLES } from "@/lib/roleConstants";
+import Link from "next/link";
+import { ROLES, ROUTE_PERMISSIONS } from "@/lib/roleConstants";
 import { useHasAnyRole } from "@/hooks/usePermissions";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { ErrorMessage } from "@/components/error-message";
 
 export default function InsurancePage() {
-  const { data, isLoading, error, refetch } = useGetInsuranceCompaniesQuery({});
-  const [createInsurance] = useCreateInsuranceCompanyMutation();
-  const [updateInsurance] = useUpdateInsuranceCompanyMutation();
-  const [deleteInsurance] = useDeleteInsuranceCompanyMutation();
+  const canView = useHasAnyRole(ROUTE_PERMISSIONS["/dashboard/insurance"].roles);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const { currentData: data, isFetching: isLoading, error, refetch } = useGetInsuranceCompaniesQuery({ page, per_page: 10, search }, { skip: !canView });
+  const [createInsurance, { isLoading: creating }] = useCreateInsuranceCompanyMutation();
+  const [updateInsurance, { isLoading: updating }] = useUpdateInsuranceCompanyMutation();
+  const [deleteInsurance, { isLoading: deleting }] = useDeleteInsuranceCompanyMutation();
   const { toast } = useToast();
   
-  const canManage = useHasAnyRole([ROLES.ADMIN, ROLES.FIRM_ADMIN, ROLES.MEDICAL_BILLER, ROLES.ATTORNEY]);
+  const canManage = useHasAnyRole([ROLES.ADMIN, ROLES.FIRM_ADMIN]);
 
+  const saving = creating || updating;
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
@@ -46,9 +51,10 @@ export default function InsurancePage() {
         await createInsurance(formData).unwrap();
         toast({ title: "Success", description: "Insurance company created successfully" });
       }
+      setPage(1);
       resetForm();
     } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Operation failed", variant: "destructive" });
+      toast({ title: "Error", description: Object.values(error?.data?.errors || {}).flat().join(" ") || error?.data?.message || "Operation failed", variant: "destructive" });
     }
   };
 
@@ -84,19 +90,20 @@ export default function InsurancePage() {
       await deleteInsurance(id).unwrap();
       toast({ title: "Success", description: "Insurance company deleted successfully" });
     } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Delete failed", variant: "destructive" });
+      toast({ title: "Error", description: error?.data?.message || "Delete failed", variant: "destructive" });
     }
   };
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error) return <ErrorMessage message="Failed to load insurance companies" />;
+
+
+  if (!canView) return <div className="p-6 space-y-4"><h1 className="text-2xl font-bold">Insurance access</h1><p>Your role does not have access to insurance company management.</p><Link href="/dashboard" className="underline">Return to your dashboard</Link></div>;
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-wrap gap-3 justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Insurance Companies</h1>
         {canManage && (
-          <Button onClick={() => { resetForm(); setShowForm(true); }}>
+          <Button disabled={saving} onClick={() => { resetForm(); setShowForm(true); }}>
             {editingId ? "Editing Insurance" : "Add Insurance Company"}
           </Button>
         )}
@@ -108,56 +115,60 @@ export default function InsurancePage() {
             <CardTitle>{editingId ? "Edit Insurance Company" : "New Insurance Company"}</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleSubmit} className="space-y-4"><fieldset disabled={saving} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label>Company Name *</label>
-                  <Input required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Company Name" />
-                </div>
-                <div>
-                  <label>Phone</label>
-                  <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} placeholder="Phone" />
+                  <label htmlFor="carrier-name">Company Name *</label>
+                  <Input required id="carrier-name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Company Name" />
                 </div>
                 <div>
-                  <label>Email</label>
-                  <Input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} placeholder="Email" />
+                  <label htmlFor="carrier-phone">Phone</label>
+                  <Input id="carrier-phone" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} placeholder="Phone" />
                 </div>
                 <div>
-                  <label>Payment Rating (0-5)</label>
-                  <Input type="number" min="0" max="5" step="0.01" value={formData.payment_rating} onChange={(e) => setFormData({...formData, payment_rating: e.target.value})} placeholder="Rating" />
-                </div>
-                <div className="col-span-2">
-                  <label>Address</label>
-                  <Input value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} placeholder="Address" />
+                  <label htmlFor="carrier-email">Email</label>
+                  <Input type="email" id="carrier-email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} placeholder="Email" />
                 </div>
                 <div>
-                  <label>City</label>
-                  <Input value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} placeholder="City" />
+                  <label htmlFor="carrier-payment_rating">Payment Rating (0-5)</label>
+                  <Input type="number" min="0" max="5" step="0.01" id="carrier-payment_rating" value={formData.payment_rating} onChange={(e) => setFormData({...formData, payment_rating: e.target.value})} placeholder="Rating" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="carrier-address">Address</label>
+                  <Input id="carrier-address" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} placeholder="Address" />
                 </div>
                 <div>
-                  <label>State</label>
-                  <Input value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} placeholder="State" />
+                  <label htmlFor="carrier-city">City</label>
+                  <Input id="carrier-city" value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} placeholder="City" />
                 </div>
-                <div className="col-span-2">
-                  <label>Claims Office Address</label>
-                  <Input value={formData.claims_office_address} onChange={(e) => setFormData({...formData, claims_office_address: e.target.value})} placeholder="Claims Office Address" />
+                <div>
+                  <label htmlFor="carrier-state">State</label>
+                  <Input id="carrier-state" value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} placeholder="State" />
                 </div>
-                <div className="col-span-2">
-                  <label>Notes</label>
-                  <textarea className="w-full p-2 border rounded" value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} placeholder="Notes" />
+                <div className="sm:col-span-2">
+                  <label htmlFor="carrier-claims_office_address">Claims Office Address</label>
+                  <Input id="carrier-claims_office_address" value={formData.claims_office_address} onChange={(e) => setFormData({...formData, claims_office_address: e.target.value})} placeholder="Claims Office Address" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="carrier-notes">Notes</label>
+                  <textarea className="w-full p-2 border rounded bg-background" id="carrier-notes" value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} placeholder="Notes" />
                 </div>
               </div>
               <div className="flex gap-2">
                 <Button type="submit">{editingId ? "Update" : "Create"}</Button>
                 <Button type="button" variant="outline" onClick={resetForm}>Cancel</Button>
               </div>
-            </form>
+            </fieldset></form>
           </CardContent>
         </Card>
       )}
 
-      <Card>
+      <Input aria-label="Search carriers" placeholder="Search name or email" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="mb-4" />
+      {error ? <div role="alert"><ErrorMessage message="Failed to load insurance companies" /><Button onClick={() => refetch()}>Try again</Button></div> : isLoading ? <LoadingSpinner /> : <Card>
         <CardContent className="p-0">
+          {!data?.data?.data?.length && <p className="p-4">No carriers match this search.</p>}
+          <div className="md:hidden p-4 space-y-3">{data?.data?.data?.map((company: any) => <article key={company.id} className="border rounded p-3 space-y-2"><h2 className="font-semibold break-words">{company.name}</h2><p className="break-words">{company.email || "No email recorded"}</p><p>{company.phone || "No phone recorded"}</p>{canManage && <div className="flex gap-2"><Button variant="outline" size="sm" disabled={saving} onClick={() => handleEdit(company)}>Edit</Button><Button variant="destructive" size="sm" disabled={deleting} onClick={() => handleDelete(company.id)}>Delete</Button></div>}</article>)}</div>
+          <div className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -181,16 +192,17 @@ export default function InsurancePage() {
                   <TableCell>{company.payment_rating}</TableCell>
                   {canManage && (
                     <TableCell>
-                      <Button variant="outline" size="sm" onClick={() => handleEdit(company)}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDelete(company.id)}>Delete</Button>
+                      <Button variant="outline" size="sm" disabled={saving} onClick={() => handleEdit(company)}>Edit</Button>
+                      <Button variant="destructive" size="sm" disabled={deleting} onClick={() => handleDelete(company.id)}>Delete</Button>
                     </TableCell>
                   )}
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </Table></div>
         </CardContent>
-      </Card>
+      </Card>}
+      <div className="flex justify-between items-center mt-4 gap-2"><Button variant="outline" disabled={page<=1 || isLoading} onClick={() => setPage(p=>p-1)}>Previous</Button><span>Page {page} of {data?.data?.last_page || 1}</span><Button variant="outline" disabled={isLoading || page >= (data?.data?.last_page || 1)} onClick={() => setPage(p=>p+1)}>Next</Button></div>
     </div>
   );
 }

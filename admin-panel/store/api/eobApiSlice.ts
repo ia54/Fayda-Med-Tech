@@ -14,7 +14,7 @@ export interface Eob {
   patient_responsibility: number;
   service_date?: string;
   eob_date?: string;
-  ai_confidence?: number;
+  ai_confidence?: number | null;
   status: 'pending' | 'processed' | 'matched' | 'rejected';
   extracted_data?: any;
   notes?: string;
@@ -33,7 +33,7 @@ export interface EobStats {
 
 export const eobApiSlice = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
-    getEobs: builder.query<{ data: { data: Eob[] } }, any>({
+    getEobs: builder.query<{ data: { data: Eob[]; next_page_url: string | null } }, any>({
       query: (params) => ({
         url: '/eobs',
         params,

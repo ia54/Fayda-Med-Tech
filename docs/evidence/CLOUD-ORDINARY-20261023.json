@@ -1,0 +1,148 @@
+{
+  "git_head": "9e2468b1985c56a9e5a259326db82b35ac357317",
+  "git_status": "",
+  "browser": "154.0.8037.57",
+  "seeded_authentication": true,
+  "login_mfa_verified": false,
+  "steps": [
+    "Pharmacist clinical review saved and reloaded from initially unknown chart",
+    "Product verification retained through UI without changing stock quantity",
+    "collection: reserve, approve, label, simulated print, prepare, handover, billing draft, synthetic submission record and recorded receipt through UI; persisted and duplicate handover rejected; no payer transmission",
+    "delivery: reserve, approve, label, simulated print, prepare, handover, billing draft, synthetic submission record and recorded receipt through UI; persisted and duplicate handover rejected; no payer transmission"
+  ],
+  "api_probes": [
+    {
+      "role": "pharmacist",
+      "path": "/api/pharmacy/prescriptions/1/fills/1/actions",
+      "method": "POST",
+      "status": 422
+    },
+    {
+      "role": "pharmacist",
+      "path": "/api/pharmacy/prescriptions/2/fills/2/actions",
+      "method": "POST",
+      "status": 422
+    },
+    {
+      "role": "outsider",
+      "path": "/api/pharmacy/patients/1",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "role": "outsider",
+      "path": "/api/pharmacy/stock/1",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "role": "outsider",
+      "path": "/api/pharmacy/prescriptions/1",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "role": "unassigned",
+      "path": "/api/pharmacy/patients/1",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "role": "unassigned",
+      "path": "/api/pharmacy/stock/1",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "role": "unassigned",
+      "path": "/api/pharmacy/prescriptions/1",
+      "method": "GET",
+      "status": 404
+    },
+    {
+      "role": "biller",
+      "path": "/api/pharmacy/patients/1",
+      "method": "GET",
+      "status": 403
+    },
+    {
+      "role": "technician",
+      "path": "/api/pharmacy/patients/1/clinical",
+      "method": "PUT",
+      "status": 403
+    }
+  ],
+  "stock": {
+    "initial": 50,
+    "final": 30,
+    "reserved": 0,
+    "dispensed_events": 2
+  },
+  "invoices": 2,
+  "recorded_receipts": 2,
+  "audit_actions": {
+    "approve": 2,
+    "collected": 1,
+    "coverage_recorded": 2,
+    "delivered": 1,
+    "dispatch": 1,
+    "fill_created": 2,
+    "label_print_recorded": 2,
+    "label_retained": 2,
+    "prepare_claim": 2,
+    "prescription_received": 2,
+    "ready": 2,
+    "record_submission": 2
+  },
+  "clinical_release": false,
+  "hardware_verified": false,
+  "provider_calls": false,
+  "blocked_external_hosts": [
+    "va.vercel-scripts.com"
+  ],
+  "api_5xx_count": 0,
+  "source_files": 732,
+  "archive": {
+    "path": "/workspace/.cloud-tools/evidence/recovery-20261023/ordinary-browser-acceptance.tar.gz",
+    "bytes": 624452,
+    "sha256": "34c2905657081150799d5e2846e27cb60d9926a496455f59927930577006711e",
+    "excludes": [
+      "sessions.json",
+      "private keys"
+    ]
+  },
+  "files": {
+    "ordinary-pharmacy-result.json": {
+      "sha256": "1197bc75caadc2cb88f23e4c97162ff6f8459ee14d37810d1fc7dcb4ef0df7cd",
+      "bytes": 143072
+    },
+    "ordinary.sqlite": {
+      "sha256": "e813e211f8b783593a0977d2909046fa03739188a22e2f027aff6b9743c00b95",
+      "bytes": 1662976
+    },
+    "seed.log": {
+      "sha256": "5a8bbc6e16cb704867eecac14762e3977d396a99ff6d36d154698cd5a8920a22",
+      "bytes": 285
+    },
+    "browser.log": {
+      "sha256": "f85ab11588679c9e03ab0e38eab25ce2f63551cc682424af9fc1de9edc8ed6b4",
+      "bytes": 3225
+    },
+    "collection-complete.png": {
+      "sha256": "5e932fdb6b8b39c9452f870943fde9f047210f856aa35906753fa41f655ee12c",
+      "bytes": 190467
+    },
+    "collection-receipt.png": {
+      "sha256": "8191ae9f609ee440ef5d99eaa6000404199243af4b36a82558c6928e405187c7",
+      "bytes": 84524
+    },
+    "delivery-complete.png": {
+      "sha256": "6916094d79a6f8b766e6555ba20521ee4cbf0c039b119123dc2ceea3b16b626a",
+      "bytes": 210424
+    },
+    "delivery-receipt.png": {
+      "sha256": "f28023c4613e363ed1ffd9134539c4563c612b5f07ca7068c829a549d7e0ac50",
+      "bytes": 93459
+    }
+  }
+}

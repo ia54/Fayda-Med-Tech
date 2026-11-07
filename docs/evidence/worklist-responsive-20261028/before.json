@@ -1,0 +1,39 @@
+{
+  "head": "b36c1eb7c4fe89d2b0ee1e8ea13bfee5b41cdea9",
+  "build_id": "wlAhq8PHITSqormb8Nn5B",
+  "results": [
+    {
+      "width": 960,
+      "container_width": 558,
+      "table_width": 800,
+      "overflow": true,
+      "open_action_initially_inside": false,
+      "open_action_right": 1126.890625,
+      "container_right": 903,
+      "container_keyboard_focusable": false,
+      "scroll_hint": false
+    },
+    {
+      "width": 390,
+      "container_width": 308,
+      "table_width": 800,
+      "overflow": true,
+      "open_action_initially_inside": false,
+      "open_action_right": 826.171875,
+      "container_right": 349,
+      "container_keyboard_focusable": false,
+      "scroll_hint": false
+    },
+    {
+      "width": 1440,
+      "container_width": 1038,
+      "table_width": 1038,
+      "overflow": false,
+      "open_action_initially_inside": true,
+      "open_action_right": 1364.890625,
+      "container_right": 1383,
+      "container_keyboard_focusable": false,
+      "scroll_hint": false
+    }
+  ]
+}

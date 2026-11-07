@@ -104,7 +104,7 @@ export function UserProfile({ user, onLogout }: UserProfileProps) {
               />
 
             </div>
-            <div className="user-profile-info min-w-0">
+            <div className="user-profile-info min-w-0 !hidden sm:!flex">
               <span className="user-profile-name truncate block text-xs font-medium">
                 {user?.full_name || 'User'}
               </span>
@@ -185,13 +185,13 @@ export function UserProfile({ user, onLogout }: UserProfileProps) {
                 <span className="text-sm">View Profile</span>
               </div>
             </Link>
-            <Link href="/dashboard/admin/settings" className="user-profile-action group p-2">
+            <Link href="/dashboard/account-security" className="user-profile-action group p-2">
               <div className="flex items-center flex-1">
                 <Settings className="user-profile-action-icon group-hover:text-accent-foreground w-4 h-4" />
-                <span className="text-sm">Settings</span>
+                <span className="text-sm">Account security</span>
               </div>
             </Link>
-            <Link href="/notifications" className="user-profile-action group p-2">
+            <Link href="/dashboard/notifications" className="user-profile-action group p-2">
               <div className="flex items-center flex-1">
                 <Bell className="user-profile-action-icon group-hover:text-accent-foreground w-4 h-4" />
                 <span className="text-sm">Notifications</span>

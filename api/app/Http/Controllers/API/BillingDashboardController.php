@@ -14,6 +14,7 @@ class BillingDashboardController extends Controller
 {
     public function index(Request $request)
     {
+        abort_unless($request->user()->organization_id, 403, 'Organization context required.');
         try {
             $user = $request->user();
             $orgId = $user->organization_id;
@@ -50,7 +51,7 @@ class BillingDashboardController extends Controller
                         'patient' => $invoice->case ? $invoice->case->title : 'Unknown Patient',
                         'issue' => 'Claim Denied by Payer',
                         'priority' => 'High',
-                        'payer' => $invoice->metadata['payer'] ?? 'Blue Cross',
+                        'payer' => $invoice->metadata['payer'] ?? 'Not recorded',
                         'amount' => '$' . number_format($invoice->amount, 2),
                         'assigned' => $invoice->updated_at->diffForHumans(),
                         'type' => 'Denial',
@@ -66,7 +67,7 @@ class BillingDashboardController extends Controller
                     return [
                         'id' => 'VAL-' . $issue->id,
                         'patient' => 'Bulk Processing',
-                        'issue' => $issue->issue_description,
+                        'issue' => $issue->description,
                         'priority' => ucfirst($issue->severity),
                         'payer' => 'N/A',
                         'amount' => 'N/A',
@@ -78,7 +79,7 @@ class BillingDashboardController extends Controller
             $workQueuePreview = $priorityInvoices->concat($priorityValidation)->sortByDesc('assigned');
 
             // Recent Appeals
-            $recentAppeals = ClaimAppeal::latest()
+            $recentAppeals = ClaimAppeal::with('invoice.case')->latest()
                 ->where('organization_id', $orgId)
                 ->limit(5)
                 ->get()
@@ -86,12 +87,12 @@ class BillingDashboardController extends Controller
                     return [
                         'id' => 'APP-' . $appeal->id,
                         'claimId' => 'CLM-' . $appeal->invoice_id,
-                        'patient' => 'Patient ' . $appeal->invoice_id,
-                        'payer' => $appeal->payer_name ?? 'Insurance',
+                        'patient' => $appeal->invoice?->case?->title ?? 'Not recorded',
+                        'payer' => $appeal->payer_name ?? 'Not recorded',
                         'reason' => $appeal->reason_category,
                         'status' => ucfirst($appeal->status),
                         'generated' => $appeal->created_at->format('Y-m-d'),
-                        'aiAssisted' => true,
+                        'aiAssisted' => false,
                     ];
                 });
 
@@ -107,13 +108,8 @@ class BillingDashboardController extends Controller
                     ];
                 });
 
-            // Payer Performance (Mocked data since we don't have enough distribution yet)
-            $payerPerformance = [
-                ['payer' => 'Medicare', 'rate' => 94.2, 'color' => 'bg-chart-2'],
-                ['payer' => 'Blue Cross', 'rate' => 89.7, 'color' => 'bg-primary'],
-                ['payer' => 'Aetna', 'rate' => 87.3, 'color' => 'bg-accent'],
-                ['payer' => 'Cigna', 'rate' => 82.1, 'color' => 'bg-chart-3'],
-            ];
+            // No payer acceptance dataset is connected yet.
+            $payerPerformance = [];
 
             return response()->json([
                 'status' => true,

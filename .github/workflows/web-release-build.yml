@@ -1,0 +1,121 @@
+name: Production-origin web build
+on:
+  pull_request:
+    paths: ['admin-panel/**', 'frontend/**', 'deploy/production/**', '.github/workflows/web-release-build.yml']
+  push:
+    branches: [main]
+    paths: ['admin-panel/**', 'frontend/**', 'deploy/production/**', '.github/workflows/web-release-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: web-release-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  web-assets:
+    name: Linux production-origin asset candidate
+    runs-on: ubuntu-latest
+    container: node:22-bookworm
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_API_URL: https://api.faydamed.tech
+      NEXT_PUBLIC_API_BASE_URL: https://api.faydamed.tech/api
+      VITE_BASE_URL: https://api.faydamed.tech
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify asset packaging boundaries
+        run: node --test deploy/production/tests/web_asset_package.test.mjs deploy/production/tests/godaddy_pilot_package.test.mjs
+      - name: Install locked admin dependencies
+        working-directory: admin-panel
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+      - name: Build admin for real API origin
+        working-directory: admin-panel
+        run: corepack pnpm build
+      - name: Install and build public website
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run test:security
+          npm run build
+      - name: Assemble and inspect candidate without starting a listener
+        id: package
+        run: |
+          node deploy/production/web_asset_package.mjs "$GITHUB_WORKSPACE" "$RUNNER_TEMP/fayda-web-candidate"
+          printf 'directory=%s\n' "$RUNNER_TEMP/fayda-web-candidate" >> "$GITHUB_OUTPUT"
+      - name: Verify packaged archive against pinned source objects
+        run: |
+          python3 - "$RUNNER_TEMP/fayda-web-candidate" "$GITHUB_WORKSPACE" <<'PY'
+          import json, subprocess, sys
+          from pathlib import Path
+          output, repo = map(Path, sys.argv[1:])
+          record = json.loads((output / 'BUILD-RECORD.json').read_text())
+          subprocess.run(['python3', str(repo / 'deploy/production/verify_web_assets.py'),
+                          str(output / record['archive']), '--sha256', record['sha256'],
+                          '--commit', record['commit'], '--repository', str(repo)], check=True)
+          PY
+      - name: Retain verified candidate files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: faydamed-web-candidate-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ steps.package.outputs.directory }}/*.*
+          if-no-files-found: error
+          retention-days: 14
+
+  managed-pilot-ui:
+    name: Locked private pilot UI package
+    runs-on: ubuntu-latest
+    container: node:22-bookworm
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify managed dependency and startup contracts
+        run: |
+          python3 -m unittest discover -s deploy/production/tests -p test_managed_dependency_contract.py -v
+          node --test deploy/production/tests/managed_build.test.mjs deploy/production/tests/managed_preview.test.mjs admin-panel/tests/pilot-gateway.test.mjs
+      - name: Package exact committed private UI source
+        run: |
+          mkdir "$RUNNER_TEMP/fayda-managed-candidate"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import os, pathlib, subprocess, zipfile
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          result = subprocess.run(['python3', 'deploy/production/managed_node_source_package.py', '--repo', os.environ['GITHUB_WORKSPACE'], '--output', str(root / 'fayda-managed-candidate/ui-source.zip')], text=True, capture_output=True)
+          if result.returncode:
+              detail = (result.stderr + result.stdout)[-8000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=Managed source packaging failed::' + detail)
+              raise SystemExit(result.returncode)
+          (root / 'fayda-managed-candidate/package.json').write_text(result.stdout)
+          with zipfile.ZipFile(root / 'fayda-managed-candidate/ui-source.zip') as archive:
+              archive.extractall(root / 'fayda-managed-build')
+          PY
+      - name: Install and audit locked managed dependencies
+        run: |
+          cd "$RUNNER_TEMP/fayda-managed-build"
+          npm exec --yes --package=npm@11.9.0 -- npm ci --ignore-scripts --no-audit --no-fund
+          npm exec --yes --package=npm@11.9.0 -- npm audit
+      - name: Build managed source without gateway credentials or listener
+        run: |
+          cd "$RUNNER_TEMP/fayda-managed-build"
+          npm exec --yes --package=npm@11.9.0 -- npm run build
+          test -s .next/standalone/server.js
+          test -d .next/standalone/.next/static
+          test -d .next/standalone/public
+          cp .next/BUILD_ID "$RUNNER_TEMP/fayda-managed-candidate/BUILD_ID"
+      - name: Retain secret-free private UI source candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: faydamed-private-ui-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/fayda-managed-candidate/*
+          if-no-files-found: error
+          retention-days: 14

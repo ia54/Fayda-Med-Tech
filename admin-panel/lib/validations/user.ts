@@ -7,6 +7,8 @@ export const UserRoleEnum = z.enum([
   'attorney',
   'medical_biller',
   'provider_staff',
+  'pharmacist',
+  'pharmacy_technician',
   'client',
 ]);
 
@@ -46,8 +48,7 @@ export const userSchema = z.object({
 
   organization_id: z
     .number({
-      required_error: 'Organization is required',
-      invalid_type_error: 'Organization must be selected',
+      error: issue => issue.input === undefined ? 'Organization is required' : 'Organization must be selected',
     })
     .positive('Organization is required'),
 
@@ -93,6 +94,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   attorney: 'Attorney',
   medical_biller: 'Medical Biller',
   provider_staff: 'Provider Staff',
+  pharmacist: 'Pharmacist',
+  pharmacy_technician: 'Pharmacy Technician',
   client: 'Client (Patient)',
 };
 

@@ -1,0 +1,7 @@
+Options -Indexes -MultiViews
+DirectoryIndex index.php
+RewriteEngine On
+RewriteRule !^(index\.php|api/[A-Za-z0-9_/-]+)$ - [F,END]
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteRule ^api/ index.php [END]

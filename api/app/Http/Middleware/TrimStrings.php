@@ -15,5 +15,7 @@ class TrimStrings extends Middleware
         'current_password',
         'password',
         'password_confirmation',
+        // Literal pharmacy source text must retain leading/trailing whitespace for evidence hashes.
+        'transcription_pages.*',
     ];
 }

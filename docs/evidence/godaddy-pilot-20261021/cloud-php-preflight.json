@@ -1,0 +1,39 @@
+{
+    "php_version": "8.3.35",
+    "php_83": true,
+    "sapi": "cli",
+    "extensions": {
+        "ctype": true,
+        "curl": true,
+        "dom": true,
+        "fileinfo": true,
+        "filter": true,
+        "hash": true,
+        "intl": true,
+        "json": true,
+        "mbstring": true,
+        "openssl": true,
+        "pcre": true,
+        "pdo": true,
+        "pdo_mysql": true,
+        "session": true,
+        "sodium": true,
+        "tokenizer": true,
+        "xml": true,
+        "zip": true,
+        "bcmath": true
+    },
+    "memory_limit": "128M",
+    "upload_max_filesize": "2M",
+    "post_max_size": "8M",
+    "max_execution_time": "0",
+    "passed": true,
+    "not_verified": [
+        "web PHP matches CLI",
+        "MySQL version and grants",
+        "cron and worker availability",
+        "private storage access denial",
+        "Passenger Node 22 and memory",
+        "TLS and approved origins"
+    ]
+}

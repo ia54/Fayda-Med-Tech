@@ -1,0 +1,9 @@
+
+In CurlDownloader.php line 407:
+                                                                               
+  curl error 56 while downloading https://packagist.org/api/security-advisori  
+  es/: CONNECT tunnel failed, response 403                                     
+                                                                               
+
+audit [--no-dev] [-f|--format FORMAT] [--locked] [--abandoned ABANDONED] [--ignore-severity IGNORE-SEVERITY] [--ignore-unreachable]
+

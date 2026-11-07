@@ -1,0 +1,14 @@
+{
+  "base_commit": "7bce3ca7a10b47ac88a61e0a8273250b7ea9dfbf",
+  "application_source_diff_from_base": "",
+  "files": {
+    "api/tests/Support/SyntheticDocumentRecovery.php": "65bbaaa86e17f2241274e3e4d616add9447fd11f6e9e60fa30f0f4b8891b4549",
+    "api/tests/Recovery/CoordinatedDocumentRecoveryTest.php": "9be515355ff493de3e055ca7b8b2bd11ae6d84db94ebaec52a033ed4cf770de7",
+    "api/tests/Feature/PharmacyWorkflowTest.php": "af9fceb2d6c8f781d3ee1b25c288800cb20d2a020d8db2ca3c7d52c975cf14dc",
+    "api/tests/Browser/CloudSharedRoleFixtureTest.php": "3b6c52681f149ee8d2e70a58d2deeed99ae111a965bb78b15a9141be98fc6bf3",
+    "api/tests/Browser/CloudBrowserFixture.php": "5769049ab1c39c826a720933fb8375454c35c5e6553b8713a8083e886d596bc6",
+    "admin-panel/tests/browser/role-demo.mjs": "62018878ccb09b0b98c7f768d111b376752c35950b1c0e1661a3f1fcff182255",
+    "deploy/cloud/start-synthetic.sh": "7ac341264aafcf0f46b9a8a098d10d7171abbbc884e84b7cd438247c6f741b7c",
+    ".github/workflows/backend-checks.yml": "742609d9a4efbd6234612be4be0a647ef5d1d4bdc5ffb0b0a39ee45ff7d9ff1e"
+  }
+}

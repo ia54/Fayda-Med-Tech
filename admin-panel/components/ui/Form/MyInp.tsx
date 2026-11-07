@@ -14,13 +14,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Eye, EyeOff, Plus, Upload, X } from "lucide-react";
-import dynamic from "next/dynamic";
 import React, { ReactNode, useState } from "react";
 import { Controller, useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 import { Image } from "antd";
-
-const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false });
 
 type TMyInp = {
   name: string;
@@ -34,8 +31,7 @@ type TMyInp = {
   | "date"
   | "time"
   | "select"
-  | "textarea"
-  | "rich-text";
+  | "textarea";
   // size?: "sm" | "md" | "lg";        // ← shadcn doesn't have this → use className
   // color?: ...                        // ← ignored / use className
   // radius?: ...                       // ← ignored / use className
@@ -51,7 +47,7 @@ type TMyInp = {
   selectionMode?: "single" | "multiple";
   // For array type (using useFieldArray)
   fields?: any[]; // from useFieldArray
-  append?: (value: string) => void;
+  append?: (value: { value: string }) => void;
   remove?: (index: number) => void;
   existingImageUrl?: string;
 };
@@ -232,42 +228,6 @@ export default function MyInp({
                   <X className="h-4 w-4" />
                 </Button>
               )}
-            </div>
-          )}
-        />
-
-        {errorMessage && (
-          <p className="text-sm text-destructive">{errorMessage}</p>
-        )}
-      </div>
-    );
-  }
-
-  if (type === "rich-text") {
-    return (
-      <div className={cn("grid w-full gap-1.5", className)}>
-        {label && <Label htmlFor={name}>{label}</Label>}
-
-        <Controller
-          name={name}
-          control={control}
-          defaultValue={defaultValue ?? ""}
-          render={({ field }) => (
-            <div className="relative">
-              <ReactQuill
-                theme="snow"
-                value={field.value ?? ""}
-                onChange={field.onChange}
-                // Optional: pass ref if you need to focus programmatically
-                // ref={field.ref}
-                placeholder={placeholder}
-                readOnly={disabled}
-                className={cn(
-                  "min-h-[120px] [&_.ql-container]:min-h-[150px]",
-                  // Add red border on error (optional styling)
-                  errorMessage && "[&_.ql-container]:border-destructive",
-                )}
-              />
             </div>
           )}
         />

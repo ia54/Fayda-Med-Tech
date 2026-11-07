@@ -1,0 +1,15 @@
+{
+  "admin-panel/app/(private)/dashboard/admin/application/about/problemSolving/page.tsx": "cb9f52470704046c02924be9610e4d6bf2dbd306dde3aed62fb7fe5198e08d0b",
+  "admin-panel/app/(private)/dashboard/admin/application/home/whyNow/page.tsx": "0ae55131c16ddb660509a6cf5698e025cfbea311623291595bf9c5e90568b640",
+  "admin-panel/app/schemas/about.schema.ts": "a1c538d2c5c346bbb675f6fd736ff4f9299598ecfa072b7fc501424162364968",
+  "admin-panel/app/schemas/homepage.schema.ts": "e2d9a05bc560e8e62e5403196c3d73a5284d62513645ee605865a840b90417a3",
+  "admin-panel/app/schemas/testimonial.schema.ts": "c91308f2b08c25fb00d1f7b866dc0c1e3261d4fa1b25ccd9751ed95813127374",
+  "admin-panel/components/cases/CaseForm.tsx": "9255f477a1a51baa6a0f68ed4e0508a641ddb952137d505859e5843ccfd2eb12",
+  "admin-panel/lib/validations/organization.ts": "8c9f4acadfbd3f6fa635b22acfb2d354c733f8b6d37d12598f2ada860462d677",
+  "admin-panel/lib/validations/user.ts": "d33a9c17b9b140e0fef7527529f84bc451c36671c7da34ad54170c3f564e165c",
+  "admin-panel/package.json": "94944c9df91b2b447553a8a53fe5a1821c2539d776f75c85082e3b2aadd9c843",
+  "admin-panel/pnpm-lock.yaml": "ed8c3e3b15fcff4d33d1b82672ddc528c78e9f67ded3de19bbac43d2f1760d08",
+  "admin-panel/tests/schema-validation.test.mjs": "ce3649339c8d01647176bcc4605ff6f3fbe9449f2178c502ba906c0dce422e32",
+  "frontend/package-lock.json": "80928691fedbac132d8c1584d8f7fb9a707e78d6107da6244b2fa8052b8c7529",
+  "frontend/package.json": "598622732b9fae33fe51b5931effc9aae63977147f59b4d2f2c0c5b3a2b4080f"
+}

@@ -198,6 +198,7 @@ class CaseController extends Controller
     public function update(Request $request, $id)
     {
         $user = $request->user();
+        abort_if($user->role !== 'admin' && !$user->organization_id, 403);
         $query = CaseModel::query();
 
         if ($user->role === 'attorney') {
@@ -211,7 +212,7 @@ class CaseController extends Controller
         $validator = Validator::make($request->all(), [
             'title' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'status' => 'nullable|in:New,Intake,Active,Demand,Settlement,Closed',
+            'status' => 'sometimes|required|in:New,Intake,Active,Demand,Settlement,Closed',
             'accident_date' => 'nullable|date',
             'sol_date' => 'nullable|date',
             'jurisdiction' => 'nullable|string|max:255',
@@ -227,19 +228,23 @@ class CaseController extends Controller
             ], 422);
         }
 
-        $oldStatus = $case->status;
-        $case->update($request->all());
-        $newStatus = $case->fresh()->status;
+        \Illuminate\Support\Facades\DB::transaction(function () use ($case, $validator) {
+            $case->refresh();
+            $oldStatus = $case->status;
+            $case->update($validator->validated());
+            $newStatus = $case->fresh()->status;
 
-        if ($oldStatus !== $newStatus) {
-            $this->logTimeline(
-                $case->id,
-                'milestone',
-                "Status Changed: {$newStatus}",
-                "The case status has been updated from '{$oldStatus}' to '{$newStatus}'.",
-                ['old_status' => $oldStatus, 'new_status' => $newStatus]
-            );
-        }
+            if ($oldStatus !== $newStatus) {
+                $this->logTimeline(
+                    $case->id,
+                    'milestone',
+                    "Status Changed: {$newStatus}",
+                    "The case status has been updated from '{$oldStatus}' to '{$newStatus}'.",
+                    ['old_status' => $oldStatus, 'new_status' => $newStatus]
+                );
+            }
+
+        });
 
         return new CaseResource($case);
     }

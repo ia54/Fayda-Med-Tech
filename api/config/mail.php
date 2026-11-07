@@ -34,6 +34,16 @@ return [
     */
 
     'mailers' => [
+        'pilot_login' => [
+            'transport' => env('PILOT_LOGIN_MAIL_TRANSPORT', 'array'),
+            'path' => '/usr/sbin/sendmail -bs -i',
+            'host' => env('PILOT_LOGIN_SMTP_HOST'),
+            'port' => env('PILOT_LOGIN_SMTP_PORT', 587),
+            'encryption' => 'tls',
+            'username' => env('PILOT_LOGIN_SMTP_USERNAME'),
+            'password' => env('PILOT_LOGIN_SMTP_PASSWORD'),
+            'timeout' => 15,
+        ],
         'smtp' => [
             'transport' => 'smtp',
             'url' => env('MAIL_URL'),

@@ -1,0 +1,44 @@
+{
+  "screens": [
+    {
+      "role": "firm_admin",
+      "tab": "Parties",
+      "file": "firm-admin-extra-parties.png",
+      "route": "/dashboard/legal/cases/1",
+      "utc": "2026-10-28T08:36:38.902Z",
+      "visible_text": "Back to Dashboard\nEdit Case\nGenerate Demand\nSYN-CLOUD-OWN\nNew\nSYNTHETIC cloud assigned case\nNo jurisdiction specified\n\nNo description provided for this case.\n\nKEY DATES\n\nACCIDENT DATE\n\nSep 28, 2026\n\nSTATUTE OF LIMITATIONS\n\nN/A\n\nTOTAL CASE VALUE\n\n$0.00\n\nParties\nDocuments\nInsurance\nLiens\nSettlement\nMedical\nTimeline\nU\nUnnamed Party\nClient\n\nU\nUnnamed Party\nAttorney\n\nAdd New Party\n\nAssign Client, Defendant, or Witness",
+      "in_original_local_video": false
+    },
+    {
+      "role": "firm_admin",
+      "tab": "Documents",
+      "file": "firm-admin-extra-documents.png",
+      "route": "/dashboard/legal/cases/1",
+      "utc": "2026-10-28T08:36:40.081Z",
+      "visible_text": "Back to Dashboard\nEdit Case\nGenerate Demand\nSYN-CLOUD-OWN\nNew\nSYNTHETIC cloud assigned case\nNo jurisdiction specified\n\nNo description provided for this case.\n\nKEY DATES\n\nACCIDENT DATE\n\nSep 28, 2026\n\nSTATUTE OF LIMITATIONS\n\nN/A\n\nTOTAL CASE VALUE\n\n$0.00\n\nParties\nDocuments\nInsurance\nLiens\nSettlement\nMedical\nTimeline\nCase Documents\nLegal filings, medical records, and correspondence\nUpload Document\nNo Documents Found\n\nUpload medical records or filings to connect them with this case.\n\nPrevious\nPage 1 of 1\nNext",
+      "in_original_local_video": false
+    },
+    {
+      "role": "firm_admin",
+      "tab": "Insurance",
+      "file": "firm-admin-extra-insurance.png",
+      "route": "/dashboard/legal/cases/1",
+      "utc": "2026-10-28T08:36:41.315Z",
+      "visible_text": "Back to Dashboard\nEdit Case\nGenerate Demand\nSYN-CLOUD-OWN\nNew\nSYNTHETIC cloud assigned case\nNo jurisdiction specified\n\nNo description provided for this case.\n\nKEY DATES\n\nACCIDENT DATE\n\nSep 28, 2026\n\nSTATUTE OF LIMITATIONS\n\nN/A\n\nTOTAL CASE VALUE\n\n$0.00\n\nParties\nDocuments\nInsurance\nLiens\nSettlement\nMedical\nTimeline\nInsurance & Coverage\n\nRecord reported coverage and policy limits\n\nAdd Coverage\nNo Coverage Recorded\n\nAdd insurance policies involved in this case to track limits and claims.\n\nRecord First Policy\nPrevious\nPage 1 of 1\nNext",
+      "in_original_local_video": false
+    },
+    {
+      "role": "firm_admin",
+      "tab": "Timeline",
+      "file": "firm-admin-extra-timeline.png",
+      "route": "/dashboard/legal/cases/1",
+      "utc": "2026-10-28T08:36:42.488Z",
+      "visible_text": "Back to Dashboard\nEdit Case\nGenerate Demand\nSYN-CLOUD-OWN\nNew\nSYNTHETIC cloud assigned case\nNo jurisdiction specified\n\nNo description provided for this case.\n\nKEY DATES\n\nACCIDENT DATE\n\nSep 28, 2026\n\nSTATUTE OF LIMITATIONS\n\nN/A\n\nTOTAL CASE VALUE\n\n$0.00\n\nParties\nDocuments\nInsurance\nLiens\nSettlement\nMedical\nTimeline\nJourney Just Beginning\n\nNo timeline events have been recorded for this case yet.",
+      "in_original_local_video": false
+    }
+  ],
+  "writes": [],
+  "protected_tables_unchanged": true,
+  "source": "393c4846430a33cb4edf0de54f7e5266cc856403",
+  "build_id": "qRrgsGlzjF0d_B5SOPXOY"
+}

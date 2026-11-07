@@ -38,9 +38,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 export default function NotificationsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const { data, isLoading, isFetching } = useGetNotificationsQuery({ page });
-  const [markAsRead] = useMarkAsReadMutation();
-  const [markAllAsRead] = useMarkAllAsReadMutation();
+  const { data, isLoading, isFetching, isError, refetch } = useGetNotificationsQuery({ page });
+  const [markAsRead, { isLoading: isMarkingRead }] = useMarkAsReadMutation();
+  const [markAllAsRead, { isLoading: isMarkingAll }] = useMarkAllAsReadMutation();
+
+  const [actionError, setActionError] = React.useState<string | null>(null);
+
+  const markRead = async (id?: string) => {
+    setActionError(null);
+    try {
+      if (id) await markAsRead(id).unwrap();
+      else await markAllAsRead().unwrap();
+    } catch {
+      setActionError("Could not mark notifications as read. Please try again.");
+    }
+  };
 
   const notifications = data?.data?.notifications || [];
   const unreadCount = data?.data?.unread_count || 0;
@@ -81,7 +93,8 @@ export default function NotificationsPage() {
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={() => markAllAsRead()}
+              disabled={isMarkingAll || isMarkingRead}
+              onClick={() => markRead()}
               className="border-primary/20 hover:bg-primary/5 text-primary"
             >
               <CheckCheck className="h-4 w-4 mr-2" />
@@ -91,6 +104,7 @@ export default function NotificationsPage() {
         </div>
       </div>
 
+      {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
       <div className="grid gap-6">
         <Card className="bg-card/50 backdrop-blur-sm border-border/50">
           <CardHeader className="pb-3 border-b border-border/50">
@@ -104,7 +118,8 @@ export default function NotificationsPage() {
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Filter notifications..."
+                  aria-label="Filter notifications on this page"
+                  placeholder="Filter this page..."
                   className="pl-9 bg-background/50 border-border/50 h-9"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -125,11 +140,16 @@ export default function NotificationsPage() {
                   </div>
                 ))}
               </div>
+            ) : isError ? (
+              <div role="alert" className="p-6 text-center">
+                <p>Could not load notifications.</p>
+                <Button variant="outline" className="mt-3" onClick={() => refetch()}>Try again</Button>
+              </div>
             ) : filteredNotifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
                 <Bell className="h-12 w-12 opacity-10 mb-4" />
                 <p className="text-lg font-medium">No notifications found</p>
-                <p className="text-sm">We'll let you know when something important happens.</p>
+                <p className="text-sm">{search ? 'Try another search or clear the filter for this page.' : "We'll let you know when something important happens."}</p>
               </div>
             ) : (
               <div className="divide-y divide-border/50">
@@ -184,7 +204,8 @@ export default function NotificationsPage() {
                             variant="ghost" 
                             size="sm" 
                             className="h-7 text-[10px] text-muted-foreground hover:text-primary hover:bg-primary/5"
-                            onClick={() => markAsRead(notification.id)}
+                            disabled={isMarkingRead || isMarkingAll}
+                            onClick={() => markRead(notification.id)}
                           >
                             Mark as read
                           </Button>
@@ -193,12 +214,13 @@ export default function NotificationsPage() {
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button aria-label="Notification actions" variant="ghost" size="icon" className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 transition-opacity">
                           <MoreVertical className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => markAsRead(notification.id)}>
+                        <DropdownMenuItem disabled={isMarkingRead || isMarkingAll}
+                            onClick={() => markRead(notification.id)}>
                           <CheckCheck className="h-4 w-4 mr-2" />
                           Mark as read
                         </DropdownMenuItem>

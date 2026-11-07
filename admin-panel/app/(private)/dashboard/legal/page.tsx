@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import { useSelector } from "react-redux"
+import { RootState } from "@/store/store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,23 +20,28 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useToast } from "@/hooks/use-toast"
 
 export default function LegalDashboard() {
+  const role = useSelector((state: RootState) => state.auth.user?.role)
   const [searchTerm, setSearchTerm] = useState("")
+
+  const [page, setPage] = useState(1)
 
   // Fetch real stats
   const {
     data: statsData,
     isLoading: isStatsLoading,
+    refetch: retryStats,
     error: statsError
   } = useGetFirmStatsQuery()
 
   // Fetch real cases
   const {
-    data: casesData,
-    isLoading: isCasesLoading,
+    currentData: casesData,
+    isFetching: isCasesLoading,
+    refetch: retryCases,
     error: casesError
   } = useGetCasesQuery({
     search: searchTerm,
-    per_page: 10
+    per_page: 10, page
   })
 
   const [updateCase, { isLoading: isSettling }] = useUpdateCaseMutation()
@@ -45,7 +52,7 @@ export default function LegalDashboard() {
       await updateCase({ id, data: { status: 'Settlement' } }).unwrap()
       toast({
         title: "Success",
-        description: "Case marked as settled",
+        description: "Case moved to the Settlement stage; no payment or disbursement was recorded",
       })
     } catch (error) {
       toast({
@@ -65,6 +72,7 @@ export default function LegalDashboard() {
   }
   const recentNotifications = statsData?.data?.recent_activity || []
   const hasError = !!(statsError || casesError)
+  if (hasError) return <div role="alert" className="space-y-3"><p>Could not load the legal dashboard.</p><Button onClick={() => { retryStats(); retryCases() }}>Try again</Button></div>
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50/30 via-white to-green-50/20 dark:from-emerald-950/20 dark:via-slate-950 dark:to-green-950/20">
@@ -102,14 +110,14 @@ export default function LegalDashboard() {
                 {isStatsLoading ? <Skeleton className="h-8 w-16" /> : stats.active_cases}
               </div>
               <p className="text-xs text-emerald-600 dark:text-slate-300 mt-1">
-                {isStatsLoading ? <Skeleton className="h-3 w-20" /> : "+2 this month"}
+                {isStatsLoading ? <Skeleton className="h-3 w-20" /> : "New, intake, active and demand stages"}
               </p>
             </CardContent>
           </Card>
 
           <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm border-emerald-100 dark:border-emerald-900/50 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-emerald-700 dark:text-white">Total Recovery</CardTitle>
+              <CardTitle className="text-sm font-medium text-emerald-700 dark:text-white">Settlement / Closed Case Value</CardTitle>
               <DollarSign className="h-4 w-4 text-emerald-600 dark:text-slate-300" />
             </CardHeader>
             <CardContent>
@@ -117,14 +125,14 @@ export default function LegalDashboard() {
                 {isStatsLoading ? <Skeleton className="h-8 w-24" /> : `$${stats.total_recovery.toLocaleString()}`}
               </div>
               <p className="text-xs text-emerald-600 dark:text-slate-300 mt-1">
-                {isStatsLoading ? <Skeleton className="h-3 w-24" /> : statsData?.data?.recovery_growth || "+0% this month"}
+                {isStatsLoading ? <Skeleton className="h-3 w-24" /> : "Recorded valuations, not money received"}
               </p>
             </CardContent>
           </Card>
 
           <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm border-emerald-100 dark:border-emerald-900/50 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-emerald-700 dark:text-white">Pending Amount</CardTitle>
+              <CardTitle className="text-sm font-medium text-emerald-700 dark:text-white">Active Case Value</CardTitle>
               <Clock className="h-4 w-4 text-emerald-600 dark:text-slate-300" />
             </CardHeader>
             <CardContent>
@@ -146,7 +154,7 @@ export default function LegalDashboard() {
               <div className="text-2xl font-bold text-emerald-900 dark:text-white">
                 {isStatsLoading ? <Skeleton className="h-8 w-12" /> : stats.settlements_ready}
               </div>
-              <p className="text-xs text-emerald-600 dark:text-slate-300 mt-1">Ready for processing</p>
+              <p className="text-xs text-emerald-600 dark:text-slate-300 mt-1">Cases in the settlement stage</p>
             </CardContent>
           </Card>
         </div>
@@ -155,8 +163,8 @@ export default function LegalDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="lg:col-span-2 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm border-emerald-100 dark:border-emerald-900/50">
             <CardHeader>
-              <CardTitle className="text-emerald-900 dark:text-white">Revenue & Collections</CardTitle>
-              <CardDescription className="dark:text-slate-300">Monthly recovery totals across all cases</CardDescription>
+              <CardTitle className="text-emerald-900 dark:text-white">Settlement / Closed Case Values</CardTitle>
+              <CardDescription className="dark:text-slate-300">Grouped by last case update; not a payment report</CardDescription>
             </CardHeader>
             <CardContent className="h-[300px]">
               {isStatsLoading ? (
@@ -182,7 +190,7 @@ export default function LegalDashboard() {
                       />
                       <Tooltip 
                         contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                        formatter={(value: number) => [`$${value.toLocaleString()}`, 'Revenue']}
+                        formatter={(value: number) => [`$${value.toLocaleString()}`, 'Case value']}
                       />
                       <Bar dataKey="amount" fill="#059669" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -225,16 +233,17 @@ export default function LegalDashboard() {
                   <div className="text-center py-4 text-sm text-slate-500">No workload data available</div>
                 )}
               </div>
-              <Button variant="ghost" className="w-full mt-6 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-xs" asChild>
+              {role !== "attorney" && <Button variant="ghost" className="w-full mt-6 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 text-xs" asChild>
                 <Link href="/dashboard/legal/users">Manage Team</Link>
-              </Button>
+              </Button>}
             </CardContent>
           </Card>
         </div>
 
+        <div className="flex items-center justify-between gap-3"><Button variant="outline" disabled={page <= 1 || isCasesLoading} onClick={() => setPage(p => p - 1)}>Previous cases</Button><span>Page {page} of {casesData?.meta.last_page || 1}</span><Button variant="outline" disabled={isCasesLoading || page >= (casesData?.meta.last_page || 1)} onClick={() => setPage(p => p + 1)}>Next cases</Button></div>
         {/* Main Content */}
         <Tabs defaultValue="cases" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 bg-emerald-50/50 dark:bg-emerald-900/20 backdrop-blur-sm">
+          <TabsList className="grid h-auto w-full grid-cols-2 md:grid-cols-4 bg-emerald-50/50 dark:bg-emerald-900/20 backdrop-blur-sm">
             <TabsTrigger value="cases" className="data-[state=active]:bg-emerald-600 dark:data-[state=active]:bg-emerald-500 data-[state=active]:text-white">
               My Cases
             </TabsTrigger>
@@ -269,7 +278,7 @@ export default function LegalDashboard() {
                       <Input
                         placeholder="Search cases..."
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
                         className="pl-10 bg-white/50 dark:bg-slate-800/50 border-emerald-200 dark:border-emerald-800 focus:border-emerald-400 dark:focus:border-emerald-500"
                       />
                     </div>
@@ -315,7 +324,7 @@ export default function LegalDashboard() {
                                 <div className="text-sm text-emerald-600 dark:text-slate-300">
                                   Total Value:{" "}
                                   <span className="font-semibold text-emerald-900 dark:text-white">
-                                    ${case_.total_case_value.toLocaleString()}
+                                    ${Number(case_.total_case_value || 0).toLocaleString()}
                                   </span>
                                 </div>
                               </div>
@@ -358,13 +367,13 @@ export default function LegalDashboard() {
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Button
+                            <Button disabled
                               variant="outline"
                               size="sm"
                               className="border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-white hover:bg-emerald-50 dark:hover:bg-emerald-900/50 bg-transparent"
                             >
                               <Download className="w-4 h-4 mr-2" />
-                              Download Lien Pack
+                              Lien pack export unavailable
                             </Button>
                           </div>
                         </div>
@@ -380,7 +389,7 @@ export default function LegalDashboard() {
             <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm border-emerald-100 dark:border-emerald-900/50">
               <CardHeader>
                 <CardTitle className="text-emerald-900 dark:text-white">Settlement Notes</CardTitle>
-                <CardDescription className="dark:text-slate-300">Mark settlement dates and amounts</CardDescription>
+                <CardDescription className="dark:text-slate-300">Change the workflow stage; this does not record a settlement payment</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -391,12 +400,12 @@ export default function LegalDashboard() {
                           <div>
                             <h3 className="font-semibold text-emerald-900 dark:text-white">{case_.title}</h3>
                             <p className="text-sm text-emerald-600 dark:text-slate-300">
-                              {case_.case_number} • Total Value: ${case_.total_case_value.toLocaleString()}
+                              {case_.case_number} • Total Value: ${Number(case_.total_case_value || 0).toLocaleString()}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
                             {case_.status === "Settlement" || case_.status === "settled" ? (
-                              <Badge className="bg-emerald-600">Settled</Badge>
+                              <Badge className="bg-emerald-600">{case_.status === "settled" ? "Settled" : "Settlement stage"}</Badge>
                             ) : (
                               <Button
                                 variant="outline"
@@ -406,7 +415,7 @@ export default function LegalDashboard() {
                                 className="border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-white hover:bg-emerald-50 dark:hover:bg-emerald-900/50 bg-transparent"
                               >
                                 {isSettling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                                Mark as Settled
+                                Move to Settlement
                               </Button>
                             )}
                           </div>

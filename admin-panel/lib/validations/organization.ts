@@ -19,8 +19,8 @@ export const SUBSCRIPTION_PLANS = [
 
 export const organizationSchema = z.object({
   org_name: z.string().min(1, "Required"),
-  org_type: z.enum(ORG_TYPES, { required_error: "Required" }),
-  subscription_plan: z.enum(SUBSCRIPTION_PLANS, { required_error: "Required" }),
+  org_type: z.enum(ORG_TYPES, { error: issue => issue.input === undefined ? "Required" : undefined }),
+  subscription_plan: z.enum(SUBSCRIPTION_PLANS, { error: issue => issue.input === undefined ? "Required" : undefined }),
   email: z.string().min(1, "Required").email("Invalid email"),
   no_of_employees: z.number().optional(),
   monthly_revenue: z.number().optional(),

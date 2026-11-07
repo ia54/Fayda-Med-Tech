@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\ServiceProvider;
 
 return [
+    'frontend_url' => env('FRONTEND_URL'),
+    'public_url' => env('PUBLIC_URL'),
 
     /*
     |--------------------------------------------------------------------------
@@ -165,6 +167,7 @@ return [
          * Application Service Providers...
          */
         App\Providers\AppServiceProvider::class,
+        App\Providers\SyntheticPilotServiceProvider::class,
         App\Providers\AuthServiceProvider::class,
         // App\Providers\BroadcastServiceProvider::class,
         App\Providers\EventServiceProvider::class,

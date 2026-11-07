@@ -1,0 +1,38 @@
+{
+  "synthetic-attorney.mp4": {
+    "sha256": "2875d538b826b44e89fb70a55905622e6f8d6e55cc7697b4289dd63c05ea04e6",
+    "bytes": 87747,
+    "seconds": 4.6,
+    "codec": "h264",
+    "width": 1280,
+    "height": 900,
+    "audio": false
+  },
+  "synthetic-biller.mp4": {
+    "sha256": "0b75e4bf1fe75ee0eef67b16dcfd4e55871643a0ec2de9e235681ed4d3d037a5",
+    "bytes": 200440,
+    "seconds": 8.4,
+    "codec": "h264",
+    "width": 1280,
+    "height": 900,
+    "audio": false
+  },
+  "synthetic-firm_admin.mp4": {
+    "sha256": "561f5513b85b568882cc686ae089c01e72e7cab00d580622bfc4edfaca201604",
+    "bytes": 186582,
+    "seconds": 8.6,
+    "codec": "h264",
+    "width": 1280,
+    "height": 900,
+    "audio": false
+  },
+  "synthetic-provider.mp4": {
+    "sha256": "1b9bded27f31af7cb05a073c2eed6074d74dc7f8a1f60d65175ab6879f831a4e",
+    "bytes": 192024,
+    "seconds": 8.4,
+    "codec": "h264",
+    "width": 1280,
+    "height": 900,
+    "audio": false
+  }
+}

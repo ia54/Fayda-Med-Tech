@@ -44,7 +44,7 @@ export default function BillingReportsPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
           { label: "Claims Processed", value: stats.claims_processed, icon: FileText, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "AI Appeals", value: stats.appeals_generated, icon: Bot, color: "text-purple-600", bg: "bg-purple-50" },
+          { label: "Appeal Drafts", value: stats.appeals_generated, icon: Bot, color: "text-purple-600", bg: "bg-purple-50" },
           { label: "Success Rate", value: stats.success_rate, icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
           { label: "Work Queue", value: stats.work_queue, icon: AlertTriangle, color: "text-amber-600", bg: "bg-amber-50" },
         ].map((item, idx) => (

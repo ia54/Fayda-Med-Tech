@@ -1,0 +1,126 @@
+{
+  "passed": true,
+  "browser": "154.0.8037.57",
+  "scope": "Extracted ZIP npm ci + npm build + npm start with injected cloud PORT=3000; hydrated login form and static assets; no login submission or hosting evidence",
+  "login_verified": false,
+  "host_validation": false,
+  "blocked_hosts": [],
+  "responses": [
+    {
+      "path": "/auth/login",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/media/0b78ff376f6b9734-s.p.woff2",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/css/531c1fcb1e69d47b.css",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/css/423aa1b1e4aa5679.css",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/media/723e11e5093b8e80.p.woff2",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/webpack-4a00b5b23c71e3b9.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/main-app-7725c9d2f4534afd.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/4909-5833c0da806d22ce.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/1255-8dc91b756d944555.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/1213-893dcb8c56e0bb4d.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/2410-f0d62cf2eac7ff64.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/4bd1b696-100b9d70ed4e49c1.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/9511-ccea3868da0eb470.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/8234-148654e3eb69e2f5.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/8720-1a27e2f69afa3d88.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/5239-9a33e3a80e63e22d.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/5394-1071707feb11f321.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/9577-fbd1decdb7002f08.js",
+      "status": 200
+    },
+    {
+      "path": "/images/fayda-logo.png",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/1321-b01be5dac4ae93c2.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/7174-97e26866eb836011.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/app/layout-40aa05ad49bf7f8b.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/2619-04bc32f026a0d946.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/7692-be2677bed2e5d98b.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/app/(public)/auth/login/page-cbdb10ca2a586b9d.js",
+      "status": 200
+    },
+    {
+      "path": "/medical-pharmacy-background-pattern.png",
+      "status": 200
+    },
+    {
+      "path": "/_vercel/insights/script.js",
+      "status": 404
+    },
+    {
+      "path": "/auth/forgot-password",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/app/(public)/auth/forgot-password/page-4ba9e56afca48434.js",
+      "status": 200
+    }
+  ]
+}

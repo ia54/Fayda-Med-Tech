@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useGetDocumentsQuery, useAssignSignersMutation } from "@/store/api/documentsApiSlice"
+import { useGetDocumentsQuery, useAssignSignersMutation, useGetEligibleSignersQuery } from "@/store/api/documentsApiSlice"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -17,11 +17,13 @@ export function SendSignatureRequest() {
   const [assignSigners, { isLoading: isAssigning }] = useAssignSignersMutation()
 
   const [selectedDocId, setSelectedDocId] = useState<string>("")
+  const [signerId, setSignerId] = useState("")
+  const { data: eligible, isFetching: loadingSigners } = useGetEligibleSignersQuery(Number(selectedDocId), { skip: !selectedDocId })
   const [signerName, setSignerName] = useState("")
   const [signerEmail, setSignerEmail] = useState("")
 
   const handleSendRequest = async () => {
-    if (!selectedDocId || !signerName || !signerEmail) {
+    if (!selectedDocId || !signerId || !signerName || !signerEmail) {
       toast.error("Please fill in all fields")
       return
     }
@@ -31,6 +33,7 @@ export function SendSignatureRequest() {
         documentId: Number(selectedDocId),
         signers: [
           {
+            user_id: Number(signerId),
             name: signerName,
             email: signerEmail,
             signing_order: 1
@@ -39,6 +42,7 @@ export function SendSignatureRequest() {
       }).unwrap()
 
       toast.success("Signature request assigned successfully")
+      setSignerId("")
       setSignerName("")
       setSignerEmail("")
       setSelectedDocId("")
@@ -61,7 +65,7 @@ export function SendSignatureRequest() {
       <CardContent className="space-y-6 pt-4">
         <div className="space-y-2">
           <Label htmlFor="document" className="text-sm font-medium">Select Document</Label>
-          <Select value={selectedDocId} onValueChange={setSelectedDocId}>
+          <Select value={selectedDocId} onValueChange={value => { setSelectedDocId(value); setSignerId(""); setSignerName(""); setSignerEmail(""); }}>
             <SelectTrigger id="document" className="w-full">
               <SelectValue placeholder="Select a document..." />
             </SelectTrigger>
@@ -81,32 +85,22 @@ export function SendSignatureRequest() {
           </Select>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="signerName" className="text-sm font-medium">Signer Name</Label>
-            <Input 
-              id="signerName" 
-              placeholder="e.g. John Doe" 
-              value={signerName}
-              onChange={(e) => setSignerName(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="signerEmail" className="text-sm font-medium">Signer Email</Label>
-            <Input 
-              id="signerEmail" 
-              type="email" 
-              placeholder="john@example.com" 
-              value={signerEmail}
-              onChange={(e) => setSignerEmail(e.target.value)}
-            />
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="signer-account">Signer account</Label>
+          <Select value={signerId} onValueChange={value => {
+            const signer = eligible?.data.find(user => String(user.id) === value)
+            setSignerId(value); setSignerName(signer ? `${signer.first_name} ${signer.last_name}` : ""); setSignerEmail(signer?.email || "")
+          }} disabled={!selectedDocId || loadingSigners}>
+            <SelectTrigger id="signer-account"><SelectValue placeholder={loadingSigners ? "Loading accounts…" : "Select an existing account"} /></SelectTrigger>
+            <SelectContent>{eligible?.data.map(user => <SelectItem key={user.id} value={String(user.id)}>{user.first_name} {user.last_name} — {user.email}</SelectItem>)}</SelectContent>
+          </Select>
+          <p className="text-sm text-muted-foreground">Only the selected account can sign in the portal. External recipients must use the DocuSign workflow.</p>
         </div>
       </CardContent>
       <CardFooter className="bg-muted/50 px-6 py-4 border-t border-border/50">
         <Button 
           onClick={handleSendRequest} 
-          disabled={isAssigning || !selectedDocId || !signerName || !signerEmail}
+          disabled={isAssigning || !selectedDocId || !signerId || !signerName || !signerEmail}
           className="ml-auto"
         >
           {isAssigning ? "Sending..." : "Send Request"}

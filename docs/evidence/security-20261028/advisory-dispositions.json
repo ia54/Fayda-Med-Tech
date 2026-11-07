@@ -1,0 +1,196 @@
+{
+  "retrieved_at_utc": "2026-10-28T05:43:24.751520+00:00",
+  "sources": "Official GitHub Advisory Database pages fetched through inherited HTTPS proxy. No policy changes or bypass.",
+  "advisories": {
+    "GHSA-2464-fhr4-w9xw": {
+      "package": "next",
+      "title": "Next.js: Unauthenticated Remote Code Execution in Image Optimization API when SVG files are used",
+      "severity": "critical",
+      "url": "https://github.com/advisories/GHSA-2464-fhr4-w9xw",
+      "official_affected_and_patched_versions": "Affected versions\n>= 10.0.0, <= 15.5.27\n>= 16.0.0, <= 16.4.0\nPatched versions\n15.5.28\n16.4.1",
+      "official_page_sha256": "4ace6b49b086c8576e8552b507c0e595c0b47898acf88ae083e30165508b83be",
+      "resolved_version": "15.5.28 (sharp 0.35.5)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-p3m5-59mp-jv5r": {
+      "package": "next",
+      "title": "Next.js: Denial of Service in App Router using Server Actions",
+      "severity": "high",
+      "url": "https://github.com/advisories/GHSA-p3m5-59mp-jv5r",
+      "official_affected_and_patched_versions": "Affected versions\n>= 13.0.0, <= 15.5.27\n>= 16.0.0, <= 16.4.0\nPatched versions\n15.5.28\n16.4.1",
+      "official_page_sha256": "4102f009745f28a4831af8a6c197461ae8bd6084ea0abb1888a12bbfb7522653",
+      "resolved_version": "15.5.28 (sharp 0.35.5)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-cg2g-xh64-v4q7": {
+      "package": "dompurify",
+      "title": "DOMPurify SAFE_FOR_TEMPLATES bypass: split template expressions survive in attached shadow root content on DOM output modes",
+      "severity": "critical",
+      "url": "https://github.com/advisories/GHSA-cg2g-xh64-v4q7",
+      "official_affected_and_patched_versions": "Affected versions\n>= 3.4.4, <= 3.4.16\nPatched versions\n3.4.17",
+      "official_page_sha256": "c9bb8a7b6fb5d50840af29ea037e230076a846c5a582dd29c672f14e01998621",
+      "resolved_version": "3.4.17 (both apps)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-mrv2-3pqr-j5jr": {
+      "package": "dompurify",
+      "title": "DOMPurify IN_PLACE: hook that removes a parent or sibling leaves the detached subtree's event handlers armed (incomplete fix for GHSA-p98j-92pf-mc4p)",
+      "severity": "high",
+      "url": "https://github.com/advisories/GHSA-mrv2-3pqr-j5jr",
+      "official_affected_and_patched_versions": "Affected versions\n<= 3.4.16\nPatched versions\n3.4.17",
+      "official_page_sha256": "c9f165c02fff543b311f243b157d28a370047b2400a9b9fc99ebda6bd7679070",
+      "resolved_version": "3.4.17 (both apps)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-c6gr-qvv4-5v3f": {
+      "package": "dompurify",
+      "title": "DOMPurify: SMIL attributeName=href guard is skipped when PARSER_MEDIA_TYPE is application/xhtml+xml",
+      "severity": "low",
+      "url": "https://github.com/advisories/GHSA-c6gr-qvv4-5v3f",
+      "official_affected_and_patched_versions": "Affected versions\n<= 3.4.16\nPatched versions\n3.4.17",
+      "official_page_sha256": "037c48326378fc5d185961d97f2804856d7e8231fccef81c6de214bdca4a5dec",
+      "resolved_version": "3.4.17 (both apps)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-mrhx-c7xc-m3w5": {
+      "package": "zod",
+      "title": "Zod can exhaust memory while validating oversized constrained collections",
+      "severity": "high",
+      "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+      "official_affected_and_patched_versions": "Affected versions\n< 4.6.6\nPatched versions\n4.6.6",
+      "official_page_sha256": "8b5ac8e30171fc865e0f6d5b3496218d03556c873a7d13654dc204535ec2f88f",
+      "resolved_version": "4.6.6",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-4qv8-2p9j-2685": {
+      "package": "undici",
+      "title": "undici vulnerable to Denial of Service via unbounded memory in the EventSource parser",
+      "severity": "moderate",
+      "url": "https://github.com/advisories/GHSA-4qv8-2p9j-2685",
+      "official_affected_and_patched_versions": "Affected versions\n>= 6.5.0, < 6.29.1\n>= 7.0.0, < 7.30.1\n>= 8.0.0, < 8.12.2\nPatched versions\n6.29.1\n7.30.1\n8.12.2",
+      "official_page_sha256": "b89b7bed3293afefd454673e2bd40d2a5f4e4809fdf39a15025c8a1c9d621fa3",
+      "resolved_version": "8.12.3 (jsdom development dependency)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-f72v-6w45-q472": {
+      "package": "undici",
+      "title": "undici vulnerable to Subresource Integrity bypass via non-lowercase algorithm tokens",
+      "severity": "moderate",
+      "url": "https://github.com/advisories/GHSA-f72v-6w45-q472",
+      "official_affected_and_patched_versions": "Affected versions\n>= 7.15.0, < 7.30.1\n>= 8.0.0, < 8.12.2\nPatched versions\n7.30.1\n8.12.2",
+      "official_page_sha256": "bce08c2e85264b35b2e9c94619ceb60646b03ef1e91ff8e32c5d73cffa82bd68",
+      "resolved_version": "8.12.3 (jsdom development dependency)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-xjj6-f33q-929c": {
+      "package": "undici",
+      "title": "undici vulnerable to Denial of Service via unhandled error on excessive content-encodings",
+      "severity": "high",
+      "url": "https://github.com/advisories/GHSA-xjj6-f33q-929c",
+      "official_affected_and_patched_versions": "Affected versions\n>= 6.23.0, < 6.29.1\n>= 7.18.0, < 7.30.1\n>= 8.0.0, < 8.12.2\nPatched versions\n6.29.1\n7.30.1\n8.12.2",
+      "official_page_sha256": "67b806ecaa3d7d4948bb4f8f8eb8580b199bae76a017c4c88baee669122d81d3",
+      "resolved_version": "8.12.3 (jsdom development dependency)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-4w7w-5xrc-9h26": {
+      "package": "undici",
+      "title": "undici vulnerable to cache poisoning and cross-user disclosure via cross-origin redirects",
+      "severity": "high",
+      "url": "https://github.com/advisories/GHSA-4w7w-5xrc-9h26",
+      "official_affected_and_patched_versions": "Affected versions\n>= 7.0.0, < 7.30.1\n>= 8.0.0, < 8.12.2\nPatched versions\n7.30.1\n8.12.2",
+      "official_page_sha256": "bf21b0b59607eec1f8a63a811de7574224ebea23202cc3736c3ff9f37eb70e87",
+      "resolved_version": "8.12.3 (jsdom development dependency)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-2m5v-pch6-74hx": {
+      "package": "undici",
+      "title": "undici vulnerable to TLS certificate validation bypass via dropped tls options in Agent",
+      "severity": "high",
+      "url": "https://github.com/advisories/GHSA-2m5v-pch6-74hx",
+      "official_affected_and_patched_versions": "Affected versions\n>= 4.0.0, < 6.29.1\n>= 7.0.0, < 7.30.1\n>= 8.0.0, < 8.12.2\nPatched versions\n6.29.1\n7.30.1\n8.12.2",
+      "official_page_sha256": "482b71aee352fa6c169d5140e586e14e285c226d399d3335b800d89a49c0bf40",
+      "resolved_version": "8.12.3 (jsdom development dependency)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-qrxm-fqhp-jwvm": {
+      "package": "undici",
+      "title": "undici vulnerable to Denial of Service via TLS 1.2 certificate-changing renegotiation",
+      "severity": "high",
+      "url": "https://github.com/advisories/GHSA-qrxm-fqhp-jwvm",
+      "official_affected_and_patched_versions": "Affected versions\n>= 4.2.1, < 6.29.1\n>= 7.0.0, < 7.30.1\n>= 8.0.0, < 8.12.2\nPatched versions\n6.29.1\n7.30.1\n8.12.2",
+      "official_page_sha256": "356dfd82730f74417702af02584c4a5d385959b42162dcd10fca3065d3c17768",
+      "resolved_version": "8.12.3 (jsdom development dependency)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-9fm3-97px-rjf6": {
+      "package": "undici",
+      "title": "undici WebSocket client vulnerable to Denial of Service via unbounded automatic PONG buffering",
+      "severity": "moderate",
+      "url": "https://github.com/advisories/GHSA-9fm3-97px-rjf6",
+      "official_affected_and_patched_versions": "Affected versions\n>= 5.15.0, < 6.29.1\n>= 7.0.0, < 7.30.1\n>= 8.0.0, < 8.12.2\nPatched versions\n6.29.1\n7.30.1\n8.12.2",
+      "official_page_sha256": "f8bd051fdbc85d0e819e593d439b6fb5aaade072b00426c18ab26bdc8efb4ac1",
+      "resolved_version": "8.12.3 (jsdom development dependency)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-55wc-3pg8-jfw6": {
+      "package": "undici",
+      "title": "undici vulnerable to Denial of Service via unhandled exception in the decompress interceptor",
+      "severity": "moderate",
+      "url": "https://github.com/advisories/GHSA-55wc-3pg8-jfw6",
+      "official_affected_and_patched_versions": "Affected versions\n>= 7.15.0, < 7.30.1\n>= 8.0.0, < 8.12.2\nPatched versions\n7.30.1\n8.12.2",
+      "official_page_sha256": "6f4d3e28eba59e20228d7f0452bdfceeb714cf0856a37f8ee52c784718f29d18",
+      "resolved_version": "8.12.3 (jsdom development dependency)",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-698v-4r3x-3vcv": {
+      "package": "vite",
+      "title": "launch-editor: escapeCmdArgs() omits % escaping on Windows",
+      "severity": "moderate",
+      "url": "https://github.com/advisories/GHSA-698v-4r3x-3vcv",
+      "official_affected_and_patched_versions": "Affected versions\n<= 2.14.1\nPatched versions\n2.14.2\nnpm\nvite\n(\nnpm\n)\n>= 8.3.0, <= 8.3.2\n>= 8.2.0, <= 8.2.3\n>= 8.0.0, <= 8.1.5\n>= 7.0.0, <= 7.3.6\n<= 6.4.3\n8.3.3\n8.2.4\n8.1.6\n7.3.7\n6.4.4\nnpm\nvite-plus\n(\nnpm\n)\n<= 1.0.0\n1.1.0",
+      "official_page_sha256": "8d25443433644e23b12b3159c4a3a1a03fe061d4305de8d9ef6e6ce6c6c69105",
+      "resolved_version": "7.3.7",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-r825-w8mm-5pxw": {
+      "package": "vite",
+      "title": "launch-editor: Editor CLI flag misinterpretation causing arbitrary command execution for some editors",
+      "severity": "moderate",
+      "url": "https://github.com/advisories/GHSA-r825-w8mm-5pxw",
+      "official_affected_and_patched_versions": "Affected versions\n<= 2.14.1\nPatched versions\n2.14.2\nnpm\nvite\n(\nnpm\n)\n>= 8.3.0, <= 8.3.2\n>= 8.2.0, <= 8.2.3\n>= 8.0.0, <= 8.1.5\n>= 7.0.0, <= 7.3.6\n<= 6.4.3\n8.3.3\n8.2.4\n8.1.6\n7.3.7\n6.4.4\nnpm\nvite-plus\n(\nnpm\n)\n<= 1.0.0\n1.1.0",
+      "official_page_sha256": "023ebabf5af5e32b6500bc35c47d7a5837a78825c8a65887a6b7e7875e1a67ef",
+      "resolved_version": "7.3.7",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-587h-7wmj-h5pm": {
+      "package": "vite",
+      "title": "launch-editor: `fs.existsSync()` existence check can be bypassed on Windows",
+      "severity": "high",
+      "url": "https://github.com/advisories/GHSA-587h-7wmj-h5pm",
+      "official_affected_and_patched_versions": "Affected versions\n<= 2.14.1\nPatched versions\n2.14.2\nnpm\nvite\n(\nnpm\n)\n>= 8.3.0, <= 8.3.2\n>= 8.2.0, <= 8.2.3\n>= 8.0.0, <= 8.1.5\n>= 7.0.0, <= 7.3.6\n<= 6.4.3\n8.3.3\n8.2.4\n8.1.6\n7.3.7\n6.4.4\nnpm\nvite-plus\n(\nnpm\n)\n<= 1.0.0\n1.1.0",
+      "official_page_sha256": "a554af8f5aab0e02b10f7a7d683b115cfda0dc37072b9845f32197a3882f587f",
+      "resolved_version": "7.3.7",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-9jrq-w75r-8gcw": {
+      "package": "vite",
+      "title": "Vite: Cross origin script execution through Vite custom middleware",
+      "severity": "low",
+      "url": "https://github.com/advisories/GHSA-9jrq-w75r-8gcw",
+      "official_affected_and_patched_versions": "Affected versions\n>= 8.3.0, <= 8.3.2\n>= 8.2.0, <= 8.2.3\n>= 8.0.0, <= 8.1.5\n>= 7.0.0, <= 7.3.6\n<= 6.4.3\nPatched versions\n8.3.3\n8.2.4\n8.1.6\n7.3.7\n6.4.4\nnpm\nvite-plus\n(\nnpm\n)\n<= 1.0.0\n1.1.0",
+      "official_page_sha256": "e8eb75e9a0fc5c8cc2eb32c39758b5d51752a8028dc09fa369a5e4ac9347b419",
+      "resolved_version": "7.3.7",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    },
+    "GHSA-rq7h-c2jc-7f22": {
+      "package": "vite",
+      "title": "Vite: Files outside `server.fs.allow` could be served when project paths match system paths on non-Windows machine",
+      "severity": "moderate",
+      "url": "https://github.com/advisories/GHSA-rq7h-c2jc-7f22",
+      "official_affected_and_patched_versions": "Affected versions\n>= 8.3.0, <= 8.3.2\n>= 8.2.0, <= 8.2.3\n>= 8.0.0, <= 8.1.5\n>= 7.0.0, <= 7.3.6\n<= 6.4.3\nPatched versions\n8.3.3\n8.2.4\n8.1.6\n7.3.7\n6.4.4\nnpm\nvite-plus\n(\nnpm\n)\n<= 1.0.0\n1.1.0",
+      "official_page_sha256": "3df6ef42e36a240017ac7d3d6776d72908535a08eb303e75d7e45e412d83f47d",
+      "resolved_version": "7.3.7",
+      "disposition": "Upgraded to the supported fixed release; final package audit reports no advisory."
+    }
+  }
+}

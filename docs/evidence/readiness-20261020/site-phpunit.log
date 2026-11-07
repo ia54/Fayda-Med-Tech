@@ -1,0 +1,10 @@
+PHPUnit 11.5.56 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.3.35
+Configuration: /workspace/Fayda-Med-Tech/api/phpunit.xml
+
+...                                                                 3 / 3 (100%)
+
+Time: 00:01.936, Memory: 48.50 MB
+
+OK (3 tests, 36 assertions)

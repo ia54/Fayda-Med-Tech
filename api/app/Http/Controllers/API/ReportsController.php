@@ -27,7 +27,7 @@ class ReportsController extends Controller
      */
     public function caseStatus(Request $request)
     {
-        $query = CaseModel::with(['creator', 'parties']);
+        $query = $this->casesForReport($request)->with(['creator', 'parties']);
 
         if ($request->filled('status')) $query->where('status', $request->status);
         if ($request->filled('attorney_id')) {
@@ -57,49 +57,77 @@ class ReportsController extends Controller
      */
     public function revenueByPeriod(Request $request)
     {
-        $period = $request->get('period', 'monthly');
-        $dateFrom = $request->get('date_from', now()->subYear());
-        $dateTo = $request->get('date_to', now());
-
-        $totalInvoiced = Invoice::whereBetween('created_at', [$dateFrom, $dateTo])->sum('amount');
-        $totalCollected = Payment::whereBetween('created_at', [$dateFrom, $dateTo])->sum('amount');
-        $totalOutstanding = $totalInvoiced - $totalCollected;
+        $invoiceQuery = $this->forOrganization(Invoice::class, $request);
+        $data = $request->validate([
+            'period' => 'sometimes|in:monthly,quarterly,yearly',
+            'date_from' => 'sometimes|date_format:Y-m-d',
+            'date_to' => 'sometimes|date_format:Y-m-d',
+        ]);
+        $dateFrom = $data['date_from'] ?? now()->subYear()->toDateString();
+        $dateTo = $data['date_to'] ?? now()->toDateString();
+        if ($dateFrom > $dateTo) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['date_to' => 'The end date must be on or after the start date.']);
+        }
+        $invoices = $invoiceQuery->whereDate('created_at', '>=', $dateFrom)->whereDate('created_at', '<=', $dateTo)->get();
+        $periodPayments = $this->forOrganization(Payment::class, $request)
+            ->whereDate('payment_date', '>=', $dateFrom)->whereDate('payment_date', '<=', $dateTo)->get();
+        $cohortPayments = $this->forOrganization(Payment::class, $request)
+            ->whereIn('invoice_id', $invoices->pluck('id'))->whereDate('payment_date', '<=', $dateTo)->get();
+        $sumCents = fn ($records) => $records->sum(fn ($record) => (int) round((float) $record->amount * 100));
+        $invoiced = $sumCents($invoices);
+        $cohortCollected = $sumCents($cohortPayments);
 
         $report = $this->storeReport($request, 'revenue', [
-            'period' => $period,
+            'basis' => 'Range totals, not grouped periods. Invoices use creation dates; receipts use recorded payment dates and include reversals. Outstanding is the balance of invoices created in this range after receipts dated through the end date. Includes all invoice statuses; this is not recognized accounting revenue.',
+            'period' => $data['period'] ?? 'monthly',
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
-            'total_invoiced' => $totalInvoiced,
-            'total_collected' => $totalCollected,
-            'total_outstanding' => $totalOutstanding,
-            'invoice_count' => Invoice::whereBetween('created_at', [$dateFrom, $dateTo])->count(),
-            'payment_count' => Payment::whereBetween('created_at', [$dateFrom, $dateTo])->count(),
+            'total_invoiced' => $invoiced / 100,
+            'total_collected' => $sumCents($periodPayments) / 100,
+            'collected_against_period_invoices' => $cohortCollected / 100,
+            'total_outstanding' => ($invoiced - $cohortCollected) / 100,
+            'invoice_count' => $invoices->count(),
+            'payment_count' => $periodPayments->count(),
         ]);
 
         return response()->json(['status' => true, 'data' => $report]);
     }
 
     /**
-     * 3. Insurance Aging - Outstanding balances by insurer, 30/60/90/120+ days
+     * 3. Insurance Aging - Outstanding balances by insurer and invoice age
      */
     public function insuranceAging(Request $request)
     {
-        $invoices = Invoice::with(['case'])->where('status', 'sent')->get();
+        $invoices = $this->forOrganization(Invoice::class, $request)
+            ->with(['payments' => fn ($query) => $query->where('organization_id', $request->user()->organization_id)])
+            ->where('status', 'sent')->get();
         $aging = [];
 
         foreach ($invoices as $invoice) {
-            $days = $invoice->created_at->diffInDays(now());
+            // Signed receipt entries include reversals. Accumulate integer cents.
+            $received = $invoice->payments->sum(fn ($payment) => (int) round((float) $payment->amount * 100));
+            $balance = (int) round((float) $invoice->amount * 100) - $received;
+            if ($balance <= 0) continue;
+            $days = $invoice->created_at->copy()->startOfDay()->diffInDays(now()->startOfDay());
             $bucket = $days <= 30 ? '0-30' : ($days <= 60 ? '31-60' : ($days <= 90 ? '61-90' : '90+'));
             $insurer = $invoice->metadata['payer'] ?? 'Unknown';
 
             if (!isset($aging[$insurer])) {
                 $aging[$insurer] = ['0-30' => 0, '31-60' => 0, '61-90' => 0, '90+' => 0, 'total' => 0];
             }
-            $aging[$insurer][$bucket] += $invoice->amount;
-            $aging[$insurer]['total'] += $invoice->amount;
+            $aging[$insurer][$bucket] += $balance;
+            $aging[$insurer]['total'] += $balance;
         }
 
-        $report = $this->storeReport($request, 'insurance_aging', ['aging' => $aging]);
+        foreach ($aging as &$buckets) {
+            foreach ($buckets as &$cents) $cents = $cents / 100;
+            unset($cents);
+        }
+        unset($buckets);
+        $report = $this->storeReport($request, 'insurance_aging', [
+            'basis' => 'Sent invoices with a positive balance after recorded receipts and reversals; calendar days since invoice creation.',
+            'aging' => $aging,
+        ]);
         return response()->json(['status' => true, 'data' => $report]);
     }
 
@@ -108,22 +136,22 @@ class ReportsController extends Controller
      */
     public function settlementSummary(Request $request)
     {
-        $settlements = CaseSettlement::with(['case'])->get();
-        $totalGross = $settlements->sum('settlement_amount');
-        
-        // Safely check for columns that might not exist if migration failed
-        $attorneyFees = Schema::hasColumn('case_settlements', 'attorney_fees') ? $settlements->sum('attorney_fees') : 0;
-        $costs = Schema::hasColumn('case_settlements', 'costs') ? $settlements->sum('costs') : 0;
-        
-        $totalFees = $attorneyFees + $costs;
-        $totalNetToClient = $totalGross - $totalFees;
-
+        $this->captureCaseScope($request);
+        abort_unless($request->user()->organization_id && in_array($request->user()->role, ['admin', 'firm_admin', 'attorney'], true), 403);
+        $query = CaseSettlement::where('organization_id', $request->user()->organization_id)->current()->where('status', 'completed');
+        if ($request->user()->role === 'attorney') $query->whereHas('case', fn ($q) => $q->assignedToAttorney($request->user()->id));
+        $settlements = $query->get();
+        $unknown = $settlements->whereNull('other_deductions')->count();
+        $sum = fn ($field) => $settlements->sum(fn ($s) => CaseSettlement::cents($s->$field ?? 0)) / 100;
         $report = $this->storeReport($request, 'settlement', [
+            'basis' => 'Current completed records; excludes pending and replaced records. Not cash receipts.',
             'total_settlements' => $settlements->count(),
-            'total_gross_settlement' => $totalGross,
-            'total_attorney_fees' => $settlements->sum('attorney_fees'),
-            'total_costs' => $settlements->sum('costs'),
-            'total_net_to_client' => $totalNetToClient,
+            'total_gross_settlement' => $sum('settlement_amount'),
+            'total_attorney_fees' => $sum('attorney_fees'),
+            'total_costs' => $sum('costs'),
+            'total_other_deductions' => $unknown ? null : $sum('other_deductions'),
+            'unknown_allocation_count' => $unknown,
+            'total_net_to_client' => $unknown ? null : $settlements->sum(fn ($s) => CaseSettlement::cents($s->net_to_client)) / 100,
         ]);
         return response()->json(['status' => true, 'data' => $report]);
     }
@@ -133,18 +161,22 @@ class ReportsController extends Controller
      */
     public function attorneyProduction(Request $request)
     {
-        $attorneys = User::where('role', 'attorney')->get();
+        $this->captureCaseScope($request);
+        abort_unless($request->user()->organization_id && in_array($request->user()->role, ['admin', 'firm_admin', 'attorney'], true), 403);
+        $attorneyQuery = User::where('organization_id', $request->user()->organization_id)->where('role', 'attorney');
+        if ($request->user()->role === 'attorney') $attorneyQuery->whereKey($request->user()->id);
+        $attorneys = $attorneyQuery->get();
         $production = [];
 
         foreach ($attorneys as $attorney) {
-            $caseQuery = CaseModel::whereHas('parties', fn($q) => $q->where('user_id', $attorney->id));
-            
+            $caseQuery = CaseModel::where('organization_id', $request->user()->organization_id)->assignedToAttorney($attorney->id);
+
             $totalCases = $caseQuery->count();
-            $closedCases = (clone $caseQuery)->whereIn('status', ['settled', 'closed'])->count();
-            
-            $feesGenerated = Schema::hasColumn('case_settlements', 'attorney_fees') 
-                ? CaseSettlement::whereHas('case', fn($q) => 
-                    $q->whereHas('parties', fn($pq) => $pq->where('user_id', $attorney->id))
+            $closedCases = (clone $caseQuery)->where('status', 'Closed')->count();
+
+            $feesGenerated = Schema::hasColumn('case_settlements', 'attorney_fees')
+                ? CaseSettlement::where('organization_id', $request->user()->organization_id)->current()->where('status', 'completed')->whereHas('case', fn($q) =>
+                    $q->assignedToAttorney($attorney->id)
                   )->sum('attorney_fees')
                 : 0;
 
@@ -166,19 +198,21 @@ class ReportsController extends Controller
      */
     public function providerBilling(Request $request)
     {
-        $providers = Provider::all();
+        $providers = $this->forOrganization(Provider::class, $request)->get();
         $billing = [];
 
         foreach ($providers as $provider) {
-            $invoices = Invoice::where('metadata->provider_id', $provider->id)->get();
-            $payments = Payment::where('metadata->provider_id', $provider->id)->get();
+            $invoices = $this->forOrganization(Invoice::class, $request)->where('metadata->provider_id', $provider->id)->get();
+            $payments = $this->forOrganization(Payment::class, $request)->whereIn('invoice_id', $invoices->pluck('id'))->get();
+            $billed = round((float) $invoices->sum('amount'), 2);
+            $received = round((float) $payments->sum('amount'), 2);
 
             $billing[] = [
                 'provider_id' => $provider->id,
                 'provider_name' => $provider->name,
-                'total_billed' => $invoices->sum('amount'),
-                'total_collected' => $payments->sum('amount'),
-                'outstanding' => $invoices->sum('amount') - $payments->sum('amount'),
+                'total_billed' => $billed,
+                'total_collected' => $received,
+                'outstanding' => round($billed - $received, 2),
                 'invoice_count' => $invoices->count(),
             ];
         }
@@ -192,35 +226,68 @@ class ReportsController extends Controller
      */
     public function lienSummary(Request $request)
     {
-        $totalLiensCount = Lien::count();
-        $totalLiensAmount = Lien::sum('amount');
-        $totalReductions = Lien::sum('reduction_amount');
-        $totalOutstanding = $totalLiensAmount - $totalReductions;
-
+        $liens = $this->forOrganization(Lien::class, $request)
+            ->whereIn('case_id', $this->casesForReport($request)->select('id'));
+        $records = $liens->get();
+        $gross = $reductions = $open = $unknown = $unknownOpen = $conflicts = $closed = 0;
+        $cents = fn ($value) => (int) round((float) $value * 100);
+        foreach ($records as $lien) {
+            $amount = $cents($lien->amount);
+            $gross += $amount;
+            $negotiated = $lien->negotiated_amount === null ? null : $cents($lien->negotiated_amount);
+            $reduction = $lien->reduction_amount === null ? null : $cents($lien->reduction_amount);
+            $conflict = $amount < 0 || ($negotiated !== null && ($negotiated < 0 || $negotiated > $amount))
+                || ($reduction !== null && ($reduction < 0 || $reduction > $amount))
+                || ($negotiated !== null && $reduction !== null && $negotiated + $reduction !== $amount);
+            $isClosed = in_array($lien->status, ['settled', 'released'], true);
+            if ($isClosed) $closed++;
+            if ($conflict) $conflicts++;
+            if ($conflict || ($negotiated === null && $reduction === null)) {
+                $unknown++;
+                if (!$isClosed) $unknownOpen++;
+                continue;
+            }
+            $recordedReduction = $reduction ?? ($amount - $negotiated);
+            $reductions += $recordedReduction;
+            if (!$isClosed) $open += $amount - $recordedReduction;
+        }
         $report = $this->storeReport($request, 'lien_summary', [
-            'total_liens' => $totalLiensCount,
-            'total_lien_amount' => $totalLiensAmount,
-            'total_negotiated_reductions' => $totalReductions,
-            'total_outstanding' => $totalOutstanding,
+            'basis' => 'Recorded lien amounts, not verified payments or legal releases. Open totals exclude records marked settled or released. Missing or inconsistent negotiated/reduction amounts remain unknown; known subtotals are not complete balances.',
+            'total_liens' => $records->count(),
+            'total_lien_amount' => $gross / 100,
+            'total_negotiated_reductions' => $unknown ? null : $reductions / 100,
+            'known_negotiated_reductions' => $reductions / 100,
+            'unknown_reduction_count' => $unknown,
+            'total_outstanding' => $unknownOpen ? null : $open / 100,
+            'known_open_amount' => $open / 100,
+            'unknown_open_amount_count' => $unknownOpen,
+            'conflicting_amount_count' => $conflicts,
+            'closed_record_count' => $closed,
         ]);
         return response()->json(['status' => true, 'data' => $report]);
     }
 
     /**
-     * 8. OCR Processing Log - Documents processed, extraction accuracy, errors
+     * 8. OCR Processing Log - Processing outcomes; accuracy is not measured
      */
     public function ocrProcessingLog(Request $request)
     {
-        $ocrResults = OcrResult::with(['document'])->get();
+        $query = $this->forOrganization(OcrResult::class, $request);
+        $documentIds = $this->captureDocumentScope($request);
+        $ocrResults = $query->whereIn('document_id', $documentIds)
+            ->select(['id', 'document_id', 'provider', 'status', 'processed_at'])->latest('id')->get();
         $total = $ocrResults->count();
-        $successful = $ocrResults->where('status', 'completed')->count();
+        $successful = $ocrResults->where('status', 'processed')->count();
         $failed = $ocrResults->where('status', 'failed')->count();
 
         $report = $this->storeReport($request, 'ocr_log', [
             'total_processed' => $total,
             'successful' => $successful,
             'failed' => $failed,
-            'accuracy_rate' => $total > 0 ? round(($successful / $total) * 100, 1) . '%' : '0%',
+            'basis' => 'Processing attempts for currently accessible documents. Successful processing does not establish extraction accuracy. Results list shows the latest 50 attempts.',
+            'processing' => $ocrResults->where('status', 'processing')->count(),
+            'processing_success_rate' => $total > 0 ? round(($successful / $total) * 100, 1) . '%' : null,
+            'accuracy_rate' => null,
             'results' => $ocrResults->take(50),
         ]);
         return response()->json(['status' => true, 'data' => $report]);
@@ -231,8 +298,13 @@ class ReportsController extends Controller
      */
     public function signatureActivity(Request $request)
     {
-        $signatures = Signature::with(['document'])->get();
+        $query = $this->forOrganization(Signature::class, $request);
+        $documentIds = $this->captureDocumentScope($request);
+        $signatures = $query->whereIn('document_id', $documentIds)
+            ->where(fn ($query) => $query->whereNull('provider_event')->orWhere('provider_event', '!=', 'documents_archived'))
+            ->get();
         $report = $this->storeReport($request, 'signature_activity', [
+            'basis' => 'Signature activity records for currently accessible documents; excludes archive events. Counts are not unique envelopes or current document states.',
             'total' => $signatures->count(),
             'completed' => $signatures->where('status', 'completed')->count(),
             'pending' => $signatures->where('status', 'pending')->count(),
@@ -247,7 +319,7 @@ class ReportsController extends Controller
      */
     public function userActivityLog(Request $request)
     {
-        $logs = AuditLog::with(['user'])
+        $logs = $this->forOrganization(AuditLog::class, $request)->with(['user'])
             ->when($request->filled('user_id'), fn($q) => $q->where('user_id', $request->user_id))
             ->latest()
             ->paginate($request->get('per_page', 50));
@@ -260,7 +332,7 @@ class ReportsController extends Controller
      */
     public function documentAuditTrail(Request $request)
     {
-        $logs = AuditLog::where('auditable_type', 'App\Models\Document')
+        $logs = $this->forOrganization(AuditLog::class, $request)->where('auditable_type', 'App\Models\Document')
             ->with(['user'])
             ->when($request->filled('document_id'), fn($q) => $q->where('auditable_id', $request->document_id))
             ->latest()
@@ -274,7 +346,7 @@ class ReportsController extends Controller
      */
     public function hipaaComplianceLog(Request $request)
     {
-        $logs = AuditLog::where('event_type', 'PHI_ACCESS')
+        $logs = $this->forOrganization(AuditLog::class, $request)->where('event', 'PHI_ACCESS')
             ->with(['user'])
             ->when($request->filled('user_id'), fn($q) => $q->where('user_id', $request->user_id))
             ->latest()
@@ -288,8 +360,8 @@ class ReportsController extends Controller
      */
     public function collectionRateReport(Request $request)
     {
-        $totalBilled = Invoice::sum('amount');
-        $totalCollected = Payment::sum('amount');
+        $totalBilled = $this->forOrganization(Invoice::class, $request)->sum('amount');
+        $totalCollected = $this->forOrganization(Payment::class, $request)->sum('amount');
         $collectionRate = $totalBilled > 0 ? round(($totalCollected / $totalBilled) * 100, 1) : 0;
 
         $report = $this->storeReport($request, 'collection_rate', [
@@ -297,8 +369,8 @@ class ReportsController extends Controller
             'total_collected' => $totalCollected,
             'collection_rate' => $collectionRate . '%',
             'outstanding' => $totalBilled - $totalCollected,
-            'invoice_count' => Invoice::count(),
-            'payment_count' => Payment::count(),
+            'invoice_count' => $this->forOrganization(Invoice::class, $request)->count(),
+            'payment_count' => $this->forOrganization(Payment::class, $request)->count(),
         ]);
         return response()->json(['status' => true, 'data' => $report]);
     }
@@ -308,7 +380,7 @@ class ReportsController extends Controller
      */
     public function referralSourceReport(Request $request)
     {
-        $cases = CaseModel::all();
+        $cases = $this->casesForReport($request)->get();
         $sources = [];
 
         foreach ($cases as $case) {
@@ -329,9 +401,10 @@ class ReportsController extends Controller
      */
     public function reportHistory(Request $request)
     {
+        $request->validate(['per_page' => 'sometimes|integer|min:1|max:100']);
         return response()->json([
             'status' => true,
-            'data' => ReportGeneration::with(['generator'])
+            'data' => $this->visibleSavedReports($request)->with(['generator'])
                 ->latest()
                 ->paginate($request->get('per_page', 20)),
         ]);
@@ -340,12 +413,83 @@ class ReportsController extends Controller
     /**
      * Show a specific generated report
      */
-    public function showReport($id)
+    public function showReport(Request $request, $id)
     {
         return response()->json([
             'status' => true,
-            'data' => ReportGeneration::with(['generator', 'definition'])->findOrFail($id),
+            'data' => $this->visibleSavedReports($request)->with(['generator', 'definition'])->findOrFail($id),
         ]);
+    }
+
+    private function forOrganization(string $model, Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        abort_unless($request->user()->organization_id, 403);
+        $this->captureCaseScope($request);
+        $query = $model::query();
+        return $query->where($query->getModel()->qualifyColumn('organization_id'), $request->user()->organization_id);
+    }
+
+    private function casesForReport(Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = $this->forOrganization(CaseModel::class, $request);
+        if ($request->user()->role === 'attorney') $query->assignedToAttorney($request->user()->id);
+        return $query;
+    }
+
+    private function visibleDocumentIds(Request $request): \Illuminate\Support\Collection
+    {
+        return Document::where('organization_id', $request->user()->organization_id)
+            ->visibleTo($request->user())->orderBy('id')->pluck('id');
+    }
+
+    private function captureDocumentScope(Request $request): \Illuminate\Support\Collection
+    {
+        $ids = $this->visibleDocumentIds($request);
+        $request->attributes->set('report_document_scope', hash('sha256', $ids->implode(',')));
+        return $ids;
+    }
+
+    private function currentCaseScope(Request $request): string
+    {
+        $ids = CaseModel::where('organization_id', $request->user()->organization_id)
+            ->assignedToAttorney($request->user()->id)->orderBy('id')->pluck('id');
+        return hash('sha256', $ids->implode(','));
+    }
+
+    private function captureCaseScope(Request $request): void
+    {
+        if ($request->user()->role === 'attorney' && !$request->attributes->has('report_case_scope')) {
+            // Capture before reading report data, not after assignments may change.
+            $request->attributes->set('report_case_scope', $this->currentCaseScope($request));
+        }
+    }
+
+    /** Saved snapshots must not bypass the scope used to generate them. */
+    private function visibleSavedReports(Request $request): \Illuminate\Database\Eloquent\Builder
+    {
+        $user = $request->user();
+        abort_unless($user->organization_id, 403);
+        $query = ReportGeneration::query()->where('organization_id', $user->organization_id);
+        $documentScope = hash('sha256', $this->visibleDocumentIds($request)->implode(','));
+        $query->where(fn ($q) => $q->whereNotIn('report_type', ['ocr_log', 'signature_activity'])
+            ->orWhere('parameters->_document_scope', $documentScope));
+        if ($user->role === 'firm_admin') {
+            // Platform-admin and legacy snapshots may contain a wider scope.
+            $query->whereIn('parameters->_generated_role', ['firm_admin', 'attorney', 'medical_biller', 'provider_staff']);
+        }
+        if ($user->role === 'attorney') {
+            $query->where('parameters->_case_scope', $this->currentCaseScope($request));
+        }
+        if (!in_array($user->role, ['admin', 'firm_admin'], true)) {
+            $types = ['case_status', 'revenue', 'insurance_aging', 'provider_billing', 'lien_summary', 'ocr_log', 'signature_activity', 'collection_rate', 'referral_source'];
+            if ($user->role === 'attorney') $types = array_merge($types, ['settlement', 'attorney_production']);
+            // Legacy snapshots lack trustworthy generation-role evidence. Staff
+            // can regenerate them through the currently authorized endpoint.
+            $query->where('generated_by', $user->id)
+                ->where('parameters->_generated_role', $user->role)
+                ->whereIn('report_type', $types);
+        }
+        return $query;
     }
 
     /**
@@ -353,12 +497,17 @@ class ReportsController extends Controller
      */
     private function storeReport(Request $request, string $type, array $summary): ReportGeneration
     {
+        $this->captureCaseScope($request);
+        $scope = $request->user()->role === 'attorney' ? ['_case_scope' => $request->attributes->get('report_case_scope')] : [];
+        if (in_array($type, ['ocr_log', 'signature_activity'], true)) {
+            $scope['_document_scope'] = $request->attributes->get('report_document_scope');
+        }
         return ReportGeneration::create([
             'organization_id' => $request->user()->organization_id,
             'generated_by' => $request->user()->id,
             'report_name' => ucwords(str_replace('_', ' ', $type)) . ' Report',
             'report_type' => $type,
-            'parameters' => $request->except('per_page'),
+            'parameters' => array_merge($request->except(['per_page', '_generated_role', '_case_scope', '_document_scope']), ['_generated_role' => $request->user()->role], $scope),
             'format' => $request->get('format', 'json'),
             'status' => 'completed',
             'completed_at' => now(),

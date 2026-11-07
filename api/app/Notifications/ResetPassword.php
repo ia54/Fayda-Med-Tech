@@ -47,17 +47,19 @@ class ResetPassword extends Notification
      * @return \Illuminate\Notifications\Messages\MailMessage
      */    public function toMail($notifiable)
     {
-        // For API-based applications, we can include the token and email in the URL
-        // This assumes your frontend is running on a different domain/port
-        $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
-        $url = $frontendUrl . '/reset-password?token=' . $this->token . '&email=' . urlencode($notifiable->email);
-        
+        $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
+        if (!filter_var($frontendUrl, FILTER_VALIDATE_URL)) {
+            throw new \RuntimeException('Password reset frontend URL is not configured.');
+        }
+        $url = $frontendUrl . '/auth/reset-password?' . http_build_query([
+            'token' => $this->token, 'email' => $notifiable->email,
+        ], '', '&', PHP_QUERY_RFC3986);
+
         return (new MailMessage)
             ->subject(Lang::get('Reset Password Notification'))
             ->line(Lang::get('You are receiving this email because we received a password reset request for your account.'))
             ->action(Lang::get('Reset Password'), $url)
             ->line(Lang::get('This password reset link will expire in :count minutes.', ['count' => config('auth.passwords.users.expire')]))
-            ->line(Lang::get('Your token is: ' . $this->token))
             ->line(Lang::get('If you did not request a password reset, no further action is required.'));
     }
 

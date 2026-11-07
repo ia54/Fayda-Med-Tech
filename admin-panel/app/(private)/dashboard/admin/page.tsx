@@ -12,14 +12,9 @@ import {
   Shield, 
   Settings,
   Bell,
-  Trash2,
-  Eye
 } from 'lucide-react';
 // Role protection is handled by the layout file
-import { useModal } from '@/hooks/useModal';
-import { useNotifications } from '@/hooks/useNotifications';
 import { Badge } from '@/components/ui/badge';
-import { UserDetailsModal } from '@/components/modals/user-details-modal';
 import { useGetUsersQuery } from '@/store/api/usersApiSlice';
 import { useGetOrganizationsQuery } from '@/store/api/organizationsApiSlice';
 import { useGetCasesQuery } from '@/store/api/casesApiSlice';
@@ -28,65 +23,38 @@ import Link from 'next/link';
 
 export default function AdminDashboard() {
   const user = useSelector((state: RootState) => state.auth.user);
-  const { openConfirmModal, openCustomModal } = useModal();
-  const { showSuccess, showError, showInfo } = useNotifications();
-  
-  console.log('AdminDashboard rendered with user:', user);
-
-  const handleDeleteUser = () => {
-    openConfirmModal(
-      "Delete User",
-      "Are you sure you want to delete this user? This action cannot be undone.",
-      () => {
-        // Perform delete action
-        console.log("User deleted");
-        showSuccess("User Deleted", "The user has been successfully deleted.");
-      }
-    );
-  };
-
-  const handleViewUser = (userId: number) => {
-    openCustomModal(UserDetailsModal, {
-      user: {
-        id: userId,
-        name: "John Doe",
-        email: "john.doe@example.com",
-        role: "Administrator"
-      },
-      title: "User Details"
-    });
-    showInfo("User Viewed", `Viewing details for user ID: ${userId}`);
-  };
-
-  const { data: usersData } = useGetUsersQuery({});
-  const { data: orgsData } = useGetOrganizationsQuery({});
-  const { data: casesData } = useGetCasesQuery({});
-  const { data: auditData } = useGetAuditLogsQuery({ per_page: 5 });
+  const users = useGetUsersQuery({});
+  const organizations = useGetOrganizationsQuery({});
+  const cases = useGetCasesQuery({});
+  const audit = useGetAuditLogsQuery({ per_page: 5 });
+  const metric = (loading: boolean, failed: boolean, value: number | undefined) =>
+    loading ? 'Loading…' : failed || value === undefined ? 'Unavailable' : value;
+  const failed = users.isError || organizations.isError || cases.isError;
 
   const stats = [
     {
       title: "Total Users",
-      value: usersData?.data?.pagination?.total || "0",
+      value: metric(users.isLoading, users.isError, users.data?.data?.pagination?.total),
       icon: Users,
-      change: "+0%",
+      description: "Current total",
     },
     {
       title: "Organizations",
-      value: orgsData?.data?.pagination?.total || "0",
+      value: metric(organizations.isLoading, organizations.isError, organizations.data?.data?.pagination?.total),
       icon: Building,
-      change: "+0%",
+      description: "Current total",
     },
     {
-      title: "Active Cases",
-      value: casesData?.meta?.total || casesData?.data?.length || "0",
+      title: "Total Cases",
+      value: metric(cases.isLoading, cases.isError, cases.data?.meta?.total),
       icon: FileText,
-      change: "+0%",
+      description: "Current total",
     },
     {
       title: "System Health",
-      value: "99.9%",
+      value: "Not monitored",
       icon: BarChart3,
-      change: "Stable",
+      description: "No uptime monitoring connected",
     },
   ];
 
@@ -97,7 +65,7 @@ export default function AdminDashboard() {
     { title: "Audit Logs", icon: FileText, href: "/dashboard/admin/audit" },
     { title: "System Settings", icon: Settings, href: "/dashboard/admin/settings" },
     { title: "Security", icon: Shield, href: "/dashboard/admin/security" },
-    { title: "Notifications", icon: Bell, href: "/dashboard/admin/notifications" },
+    { title: "Notifications", icon: Bell, href: "/dashboard/notifications" },
   ];
 
   return (
@@ -111,10 +79,11 @@ export default function AdminDashboard() {
             <div>
               <h1 className="text-3xl font-bold">Admin Dashboard</h1>
               <p className="text-muted-foreground">
-                Welcome back, {user?.first_name} {user?.last_name}. Here's what's happening today.
+                Welcome back, {user?.first_name} {user?.last_name}. Here&apos;s what&apos;s happening today.
               </p>
             </div>
 
+            {failed && <div role="alert" className="space-y-2"><p>Some dashboard totals could not be loaded.</p><Button variant="outline" onClick={() => { users.refetch(); organizations.refetch(); cases.refetch(); }}>Retry totals</Button></div>}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {stats.map((stat, index) => {
                 const Icon = stat.icon;
@@ -129,7 +98,7 @@ export default function AdminDashboard() {
                     <CardContent>
                       <div className="text-2xl font-bold">{stat.value}</div>
                       <p className="text-xs text-muted-foreground">
-                        {stat.change} from last month
+                        {stat.description}
                       </p>
                     </CardContent>
                   </Card>
@@ -138,7 +107,7 @@ export default function AdminDashboard() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <Card className="col-span-2">
+              <Card className="md:col-span-2">
                 <CardHeader>
                   <CardTitle>Recent Activity</CardTitle>
                   <CardDescription>
@@ -147,7 +116,9 @@ export default function AdminDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {auditData?.data?.map((log: any) => (
+                    {audit.isLoading && <p role="status">Loading recent activity…</p>}
+                    {audit.isError && <div role="alert"><p>Recent activity could not be loaded.</p><Button variant="outline" onClick={() => audit.refetch()}>Retry activity</Button></div>}
+                    {!audit.isError && audit.data?.data?.map((log: any) => (
                       <div key={log.id} className="flex items-center justify-between border-b pb-2 last:border-0">
                         <div className="space-y-1">
                           <p className="text-sm font-medium leading-none">
@@ -162,7 +133,7 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     ))}
-                    {(!auditData?.data || auditData.data.length === 0) && (
+                    {(!audit.isLoading && !audit.isError && audit.data?.data?.length === 0) && (
                       <p className="text-center text-muted-foreground py-4 italic">No recent activity found.</p>
                     )}
                   </div>

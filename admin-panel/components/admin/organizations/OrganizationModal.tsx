@@ -1,4 +1,5 @@
 "use client";
+import { formatOrganizationDate } from "./formatOrganizationDate";
 
 import React, { useState } from "react";
 import { OrganizationForm } from "./OrganizationForm";
@@ -109,7 +110,7 @@ function OrganizationDetails({
     { label: "Tax/BIN Number", value: organization.tax_bin_no || "N/A" },
     {
       label: "Created",
-      value: new Date(organization.created_at).toLocaleDateString(),
+      value: formatOrganizationDate(organization.created_at),
     },
   ];
 

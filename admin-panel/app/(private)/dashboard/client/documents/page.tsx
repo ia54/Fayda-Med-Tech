@@ -6,9 +6,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { FileText, Upload, Download, Eye, Search, PenTool, File, Image, FileType2 } from "lucide-react"
+import { FileText, Upload, Download, Eye, Search, PenTool, File, Image as ImageIcon, FileType2 } from "lucide-react"
 import { useGetClientDocumentsQuery } from "@/store/api/billingApiSlice"
 import Link from "next/link"
+import { AuthenticatedDocumentPreview } from "@/components/AuthenticatedDocumentPreview"
 import { cn } from "@/lib/utils"
 
 const statusBadge: Record<string, { label: string; class: string }> = {
@@ -27,20 +28,18 @@ const signatureStatusBadge: Record<string, { label: string; class: string }> = {
 
 function getFileIcon(mimeType: string) {
   if (mimeType?.includes("pdf")) return <FileType2 className="h-5 w-5 text-red-500" />
-  if (mimeType?.includes("image")) return <Image className="h-5 w-5 text-blue-500" />
+  if (mimeType?.includes("image")) return <ImageIcon className="h-5 w-5 text-blue-500" />
   return <File className="h-5 w-5 text-slate-500" />
 }
 
 export default function ClientDocumentsPage() {
   const [searchTerm, setSearchTerm] = useState("")
-  const { data, isLoading } = useGetClientDocumentsQuery({ per_page: 20 })
+  const [page, setPage] = useState(1)
+  const { currentData: data, isFetching: isLoading, isError, refetch } = useGetClientDocumentsQuery({ per_page: 20, page, search: searchTerm })
 
   const documents = data?.data?.documents || []
 
-  const filteredDocs = documents.filter((doc: any) =>
-    doc.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    doc.original_name?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -70,18 +69,18 @@ export default function ClientDocumentsPage() {
               placeholder="Search documents..."
               className="pl-10"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
             />
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isError ? <div role="alert">Could not load documents. <Button onClick={() => refetch()}>Try again</Button></div> : isLoading ? (
             <div className="space-y-4">
               {[1, 2, 3, 4].map((i) => (
                 <Skeleton key={i} className="h-20 w-full rounded-xl" />
               ))}
             </div>
-          ) : filteredDocs.length === 0 ? (
+          ) : documents.length === 0 ? (
             <div className="text-center py-16">
               <FileText className="h-12 w-12 mx-auto text-slate-300 mb-4" />
               <h3 className="text-lg font-semibold text-slate-600 dark:text-slate-300">No documents found</h3>
@@ -92,7 +91,7 @@ export default function ClientDocumentsPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredDocs.map((doc: any) => {
+              {documents.map((doc: any) => {
                 const docStatus = statusBadge[doc.document_status] || statusBadge.draft
                 const sigStatus = signatureStatusBadge[doc.signature_status] || signatureStatusBadge.not_sent
                 const needsSignature = doc.signature_status === "pending" || doc.document_status === "sent_for_signature"
@@ -101,13 +100,13 @@ export default function ClientDocumentsPage() {
                   <div
                     key={doc.id}
                     className={cn(
-                      "flex items-center justify-between p-4 border rounded-xl transition-all duration-200 hover:shadow-md",
+                      "flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between p-4 border rounded-xl transition-all duration-200 hover:shadow-md",
                       needsSignature
                         ? "border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-800"
                         : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50"
                     )}
                   >
-                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className="flex items-center gap-4 flex-1 min-w-0 w-full">
                       <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800">
                         {getFileIcon(doc.mime_type)}
                       </div>
@@ -134,19 +133,18 @@ export default function ClientDocumentsPage() {
                     </div>
                     <div className="flex items-center gap-2 ml-4 shrink-0">
                       {needsSignature && (
-                        <Button size="sm" className="bg-amber-600 hover:bg-amber-700 shadow-lg shadow-amber-600/20">
-                          <PenTool className="h-3 w-3 mr-1" /> Sign
+                        <Button asChild size="sm" className="bg-amber-600 hover:bg-amber-700 shadow-lg shadow-amber-600/20">
+                          <Link href="/dashboard/client/signatures"><PenTool className="h-3 w-3 mr-1" /> Review signatures</Link>
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary" title="Preview">
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                      <AuthenticatedDocumentPreview id={doc.id} title={doc.title || doc.original_name} />
                     </div>
                   </div>
                 )
               })}
             </div>
           )}
+          <div className="mt-4 flex items-center justify-between gap-2"><Button variant="outline" disabled={page <= 1 || isLoading} onClick={() => setPage(p => p - 1)}>Previous</Button><span>Page {page} of {data?.data?.pagination?.last_page || 1}</span><Button variant="outline" disabled={isError || isLoading || page >= (data?.data?.pagination?.last_page || 1)} onClick={() => setPage(p => p + 1)}>Next</Button></div>
         </CardContent>
       </Card>
     </div>

@@ -1,0 +1,62 @@
+{
+  "attorney-legal-cases.png": {
+    "bytes": 198832,
+    "sha256": "370ffc810189d052451e5e9456680e5d32b48c4e96811ba28542a6eadb4a0739"
+  },
+  "biller-billing-invoices.png": {
+    "bytes": 79187,
+    "sha256": "3d784cbff205b5889c9e4e79e369ec2c6eadcc9c659c1195eaf038ed27c8b4b4"
+  },
+  "container-cleanup.txt": {
+    "bytes": 337,
+    "sha256": "0e9b26dacf96682a32eedf661653358ae68271f2aeaeabba38631c95270da3ce"
+  },
+  "firm_admin-legal-cases.png": {
+    "bytes": 209122,
+    "sha256": "6559feb0611a24bfdfc81dbede8e4a048f98a5f75b3583fed9f97aa6b9e176a6"
+  },
+  "ordinary-seed.txt": {
+    "bytes": 366,
+    "sha256": "eb09333493142facf4dbba4635e6817a6f7716aa930c44dcd58de3522b0a607e"
+  },
+  "provider-provider-claims.png": {
+    "bytes": 104691,
+    "sha256": "877b90f311cb689df45792ca7878835c3d4672c6b36c10e863c1071a4dbaef33"
+  },
+  "recovery-tests.txt": {
+    "bytes": 286,
+    "sha256": "7dfa5bbc0062b32ed663bda79501635874a4f1f56af0b3f53f3daa13758ebd0a"
+  },
+  "role-demo-result.json": {
+    "bytes": 98224,
+    "sha256": "8b5e505a06d635ed76a89647cfa1d6bc8a234ecaee5b13b90d191c7614b2c94a"
+  },
+  "shared-seed.txt": {
+    "bytes": 358,
+    "sha256": "c38ca36dfa1cd665591f8e815f179ea408788e9abb5950b67b21296837438267"
+  },
+  "source-binding.json": {
+    "bytes": 1070,
+    "sha256": "1e41d5244c8289240f693e47e76ea04b0512361140dfcf00744c46d855034c73"
+  },
+  "video-manifest.json": {
+    "bytes": 946,
+    "sha256": "ca51f56c80b681689a4c786e5104be2f9b1322f100abc8a4e644915184f64251"
+  },
+  "videos/synthetic-attorney.mp4": {
+    "bytes": 87747,
+    "sha256": "2875d538b826b44e89fb70a55905622e6f8d6e55cc7697b4289dd63c05ea04e6"
+  },
+  "videos/synthetic-biller.mp4": {
+    "bytes": 200440,
+    "sha256": "0b75e4bf1fe75ee0eef67b16dcfd4e55871643a0ec2de9e235681ed4d3d037a5"
+  },
+  "videos/synthetic-firm_admin.mp4": {
+    "bytes": 186582,
+    "sha256": "561f5513b85b568882cc686ae089c01e72e7cab00d580622bfc4edfaca201604"
+  },
+  "videos/synthetic-provider.mp4": {
+    "bytes": 192024,
+    "sha256": "1b9bded27f31af7cb05a073c2eed6074d74dc7f8a1f60d65175ab6879f831a4e"
+  }
+}

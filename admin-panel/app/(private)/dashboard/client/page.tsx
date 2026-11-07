@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
 import Link from "next/link"
 
 export default function ClientDashboard() {
-  const { data: clientData, isLoading } = useGetClientStatsQuery()
+  const { data: clientData, isLoading, isError, refetch } = useGetClientStatsQuery()
 
   const user = clientData?.data?.user || { name: "Valued Client" }
   const caseSummary = clientData?.data?.case_summary
@@ -37,6 +37,8 @@ export default function ClientDashboard() {
     )
   }
 
+  if (isError) return <div role="alert" className="space-y-4"><p>Could not load your dashboard.</p><Button onClick={() => refetch()}>Try again</Button></div>
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -46,13 +48,13 @@ export default function ClientDashboard() {
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="outline" className="px-4 py-1.5 text-sm font-semibold bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800">
-            Client Portal Verified
+            Client Portal
           </Badge>
         </div>
       </div>
 
       {/* Stats Quick View */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card className="bg-white/50 backdrop-blur-sm border-slate-200 dark:border-slate-800 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Case Status</CardTitle>
@@ -96,25 +98,16 @@ export default function ClientDashboard() {
 
         <Card className="bg-white/50 backdrop-blur-sm border-slate-200 dark:border-slate-800 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Net Recovery</CardTitle>
+            <CardTitle className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Recorded Payments</CardTitle>
             <Scale className="h-5 w-5 text-emerald-500" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.billing_summary.paid}</div>
-            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-bold">Recovered to date</p>
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-bold">Receipts less corrections</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-white/50 backdrop-blur-sm border-slate-200 dark:border-slate-800 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Lien Totals</CardTitle>
-            <Scale className="h-5 w-5 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-black text-slate-900 dark:text-white">{stats.billing_summary.total_liens || "$0.00"}</div>
-            <p className="text-xs text-slate-400 mt-2 font-medium">Pending medical liens</p>
-          </CardContent>
-        </Card>
+
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">
@@ -152,7 +145,7 @@ export default function ClientDashboard() {
                     <Link href="/dashboard/client/signatures">Sign Now</Link>
                   </Button>
                 ) : (
-                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Verified</Badge>
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">{doc.status || "Uploaded"}</Badge>
                 )}
               </div>
             )) : (
@@ -257,7 +250,7 @@ export default function ClientDashboard() {
           {[
             { label: "Upload Medical Bill", icon: Upload, href: "/dashboard/client/documents/upload", desc: "Submit new service records", color: "text-blue-600", bg: "bg-blue-50" },
             { label: "View My Cases", icon: FolderOpen, href: "/dashboard/client/cases", desc: "Check case status", color: "text-emerald-600", bg: "bg-emerald-50" },
-            { label: "Pay Invoice", icon: CreditCard, href: "/dashboard/client/invoices", desc: "Make a payment", color: "text-purple-600", bg: "bg-purple-50" },
+            { label: "View Invoices", icon: CreditCard, href: "/dashboard/client/invoices", desc: "Review bills and balances", color: "text-purple-600", bg: "bg-purple-50" },
             { label: "Pending Signatures", icon: PenTool, href: "/dashboard/client/signatures", desc: "Documents to sign", color: "text-amber-600", bg: "bg-amber-50" },
           ].map((action, i) => (
             <Button 

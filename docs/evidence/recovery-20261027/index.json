@@ -1,0 +1,30 @@
+{
+  "composer-audit.txt": {
+    "bytes": 289,
+    "sha256": "5bc2ed098c1dcfe70b507a427e4c5e80229dd56f519c52b5669bb965bcbdcda1"
+  },
+  "downloaded-SYN-prescription.pdf": {
+    "bytes": 77,
+    "sha256": "56d3c3138205d882a3499a87511ce49c1895f1d5a332d9b51700c9783471c792"
+  },
+  "php-focused.txt": {
+    "bytes": 287,
+    "sha256": "f3874aea95400211a2b0e6129db3f00137fae1b9d4f279ba7842e4c0babe8140"
+  },
+  "php-platform.txt": {
+    "bytes": 935,
+    "sha256": "14f13d0f2c6b5057fd0c9e5bd05b6f0c56fab4f776b2103a2f2a5a033193b215"
+  },
+  "pnpm-audit.json": {
+    "bytes": 4410,
+    "sha256": "bb86e9f0149faf1f8c1c665978dd8cc216d92929067d567bcee764e57fb10a31"
+  },
+  "prescription-source-mobile.png": {
+    "bytes": 433227,
+    "sha256": "02a618e7bc00a933af238aefcfb19a28a72ea9acf18c7d4f446a5f26adcb3043"
+  },
+  "prescription-source-result.json": {
+    "bytes": 100502,
+    "sha256": "b4df2b63c1772c2ad0b6db046187769c05e88a7959fd40b00bd4edc017b1bd5e"
+  }
+}

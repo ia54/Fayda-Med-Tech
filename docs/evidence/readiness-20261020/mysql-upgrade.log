@@ -1,0 +1,1 @@
+PASS: four additive migrations preserve legacy payment and settlement values; unknown fields remain null; repeat migration succeeds.

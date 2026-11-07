@@ -1,0 +1,44 @@
+TAP version 13
+# (node:243570) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: build overrides inherited development mode for all four required steps
+ok 1 - build overrides inherited development mode for all four required steps
+  ---
+  duration_ms: 6.691984
+  type: 'test'
+  ...
+# Subtest: build fails immediately when a required step fails
+ok 2 - build fails immediately when a required step fails
+  ---
+  duration_ms: 2.877367
+  type: 'test'
+  ...
+# (node:243571) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: preview refuses absent, malformed and out-of-range platform ports
+ok 3 - preview refuses absent, malformed and out-of-range platform ports
+  ---
+  duration_ms: 16.655093
+  type: 'test'
+  ...
+# Subtest: preview uses Next dev on the injected port and all interfaces after the guard
+ok 4 - preview uses Next dev on the injected port and all interfaces after the guard
+  ---
+  duration_ms: 6.325549
+  type: 'test'
+  ...
+# Subtest: deployment manifest preserves production commands
+ok 5 - deployment manifest preserves production commands
+  ---
+  duration_ms: 0.859898
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 214.176139

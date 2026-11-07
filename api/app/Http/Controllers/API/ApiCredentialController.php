@@ -31,27 +31,12 @@ class ApiCredentialController extends Controller
     {
         $user = auth()->user();
 
-        // Use query() to start a fresh builder and explicitly remove global scopes
-        // to ensure we can see both tenant-specific and system-wide credentials.
-        $query = ApiCredential::query()->withoutGlobalScopes();
-        
+        $query = ApiCredential::query();
         if ($user->role !== 'admin') {
-            // For non-admins, show their org's credentials AND system-wide ones (null org)
-            $query->where(function($q) use ($user) {
-                $q->where('organization_id', $user->organization_id)
-                  ->orWhereNull('organization_id');
-            });
+            // Tenant administrators must never receive platform credentials.
+            $query->where('organization_id', $user->organization_id);
         }
-        
         $credentials = $query->latest()->get();
-        
-        // We might want to mask the keys in the list for security
-        $credentials->map(function ($item) {
-            if ($item->key) {
-                $item->key_masked = substr($item->key, 0, 4) . '...' . substr($item->key, -4);
-            }
-            return $item;
-        });
 
         return response()->json([
             'status' => true,
@@ -101,11 +86,12 @@ class ApiCredentialController extends Controller
             ], 422);
         }
 
-        // Use withoutGlobalScopes here so we can find existing credentials
-        // regardless of the current tenant context during updateOrCreate.
-        $credential = ApiCredential::query()->withoutGlobalScopes()->updateOrCreate(
-            ['provider' => $request->provider, 'name' => $request->name],
-            $request->all()
+        $data = $validator->validated();
+        // Ownership comes from the authenticated context, never the request body.
+        $organizationId = $request->user()->organization_id;
+        $credential = ApiCredential::query()->updateOrCreate(
+            ['organization_id' => $organizationId, 'provider' => $data['provider'], 'name' => $data['name']],
+            $data
         );
 
         return response()->json([
@@ -188,7 +174,7 @@ class ApiCredentialController extends Controller
             ], 422);
         }
 
-        $credential->update($request->all());
+        $credential->update($validator->validated());
 
         return response()->json([
             'status' => true,

@@ -1,0 +1,25 @@
+{
+  "requests": 16,
+  "concurrency": 4,
+  "statuses": [
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200
+  ],
+  "scope": "Local extracted managed ZIP; no account/hosting acceptance",
+  "processes": "230802  230799 42792 npm start\n 230814  230802   764 sh\n 230815  230814 143884 next-server (v1",
+  "node_memory_status": "VmHWM:\t  168488 kB\nVmRSS:\t  143884 kB"
+}

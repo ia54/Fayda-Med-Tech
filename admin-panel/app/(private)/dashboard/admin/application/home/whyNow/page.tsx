@@ -45,6 +45,7 @@ export default function WhyNowSection() {
     const formData = new FormData();
 
     Object.entries(form).forEach(([key, value]) => {
+      if (key === "whyNowRightList") return; // The list is serialized once as JSON below.
       if (value instanceof File) {
         formData.append(key, value);
       } else if (value !== null && value !== undefined) {

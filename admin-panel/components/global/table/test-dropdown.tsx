@@ -76,20 +76,11 @@ export function TestDropdownTable() {
       name="Test Dropdown Table"
       data={data}
       columns={columns}
-      addNewComponent={
-        <Button>
-          <Plus className="h-4 w-4 mr-2" />
-          Add New
-        </Button>
-      }
-      exportConfig={{
-        onExport: (format) => console.log("Export:", format),
-        formats: ["csv", "excel"],
-      }}
-      toolbarConfig={{
-        showColumnToggle: true,
-        showRefresh: true,
-      }}
+      addNewButton={{ label: "Add New", onClick: () => console.log("Add New") }}
+      showColumnToggle
+      showRefreshButton
+      onRefresh={() => console.log("Refresh")}
+
     />
   );
 }

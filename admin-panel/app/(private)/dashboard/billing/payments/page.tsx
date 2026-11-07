@@ -1,13 +1,15 @@
 "use client"
 
 import { useState } from "react"
+import { useSelector } from "react-redux"
+import { RootState } from "@/store/store"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DollarSign, Search, Plus, Loader2, Download } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { useGetPaymentsQuery, useGetInvoicesQuery, useCreatePaymentMutation } from "@/store/api/billingApiSlice"
+import { Payment, useGetPaymentsQuery, useGetInvoicesQuery, useCreatePaymentMutation, useReversePaymentMutation } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
@@ -16,6 +18,15 @@ import { useToast } from "@/hooks/use-toast"
 
 export default function PaymentsPage() {
   const { toast } = useToast()
+  const role = useSelector((state: RootState) => state.auth.user?.role)
+  const canRecord = ["admin", "firm_admin", "medical_biller"].includes(role || "")
+  const [correction, setCorrection] = useState<Payment | null>(null)
+  const [reason, setReason] = useState("")
+  const [correctionError, setCorrectionError] = useState("")
+  const [reversePayment, {isLoading: reversing}] = useReversePaymentMutation()
+  const [error, setError] = useState("")
+  const [page, setPage] = useState(1)
+  const [invoiceSearch, setInvoiceSearch] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [isModalOpen, setIsModalOpen] = useState(false)
 
@@ -26,13 +37,14 @@ export default function PaymentsPage() {
   const [transactionId, setTransactionId] = useState("")
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0])
 
-  const { data: paymentsData, isLoading } = useGetPaymentsQuery({ search: searchTerm })
-  const { data: invoicesData } = useGetInvoicesQuery({ status: "sent,denied" })
+  const { currentData: paymentsData, isFetching: isLoading, isError, refetch } = useGetPaymentsQuery({ search: searchTerm, page })
+  const { data: invoicesData, isFetching: invoicesLoading, isError: invoicesFailed, refetch: retryInvoices } = useGetInvoicesQuery({ status: "sent,denied", search: invoiceSearch, per_page: 50 })
   const [recordPayment, { isLoading: isRecording }] = useCreatePaymentMutation()
 
   const handleRecordPayment = async () => {
-    if (!selectedInvoice || !amount || !paymentDate) {
-      toast({ title: "Validation Error", description: "All fields are required", variant: "destructive" })
+    setError("")
+    if (!selectedInvoice || !/^\d+(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0 || !paymentDate || !transactionId.trim()) {
+      setError("Select an invoice and enter a positive amount, payment date and reference.")
       return
     }
 
@@ -41,7 +53,7 @@ export default function PaymentsPage() {
         invoice_id: Number(selectedInvoice),
         amount: Number(amount),
         payment_method: method,
-        transaction_id: transactionId,
+        transaction_id: transactionId.trim(),
         payment_date: paymentDate
       }).unwrap()
 
@@ -51,8 +63,16 @@ export default function PaymentsPage() {
       setTransactionId("")
       toast({ title: "Success", description: "Payment recorded successfully" })
     } catch (err: any) {
-      toast({ title: "Error", description: err.data?.message || "Failed to record payment", variant: "destructive" })
+      setError(Object.values(err.data?.errors || {}).flat().join(" ") || err.data?.message || "Failed to record payment")
     }
+  }
+
+  async function reverseReceipt() {
+    if (!correction) return
+    setCorrectionError('')
+    if (!reason.trim()) { setCorrectionError('Explain why this receipt needs correcting.'); return }
+    try { await reversePayment({id: correction.id, reason: reason.trim()}).unwrap(); setCorrection(null); setReason('') }
+    catch (err: any) { setCorrectionError(err.data?.message || 'Could not reverse this receipt. Please try again.') }
   }
 
   return (
@@ -63,12 +83,7 @@ export default function PaymentsPage() {
           <p className="text-muted-foreground">Track and reconcile all incoming payments</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
-          </Button>
-          
-          <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          {canRecord && <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
@@ -78,32 +93,29 @@ export default function PaymentsPage() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Record New Payment</DialogTitle>
-                <DialogDescription>Apply a payment to an existing open invoice.</DialogDescription>
+                <DialogDescription>Record money already received outside this platform. This does not charge a card or transfer funds.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Select Invoice</Label>
-                  <Select value={selectedInvoice} onValueChange={setSelectedInvoice}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose an invoice" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {invoicesData?.data?.data?.map((inv: any) => (
-                        <SelectItem key={inv.id} value={String(inv.id)}>
-                          {inv.invoice_number} - {inv.case?.title} (${inv.amount})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="payment-invoice-search">Find an invoice</Label>
+                  <Input id="payment-invoice-search" value={invoiceSearch} onChange={e => setInvoiceSearch(e.target.value)} placeholder="Invoice number, patient or case" />
+                  <Label htmlFor="payment-invoice">Select Invoice</Label>
+                  <select id="payment-invoice" className="w-full rounded-md border bg-background p-2" value={selectedInvoice} onChange={e => setSelectedInvoice(e.target.value)} disabled={invoicesLoading || invoicesFailed}>
+                    <option value="">Choose an open invoice</option>
+                    {selectedInvoice && !invoicesData?.data.data.some(i => String(i.id) === selectedInvoice) && <option value={selectedInvoice}>Selected invoice #{selectedInvoice}</option>}
+                    {invoicesData?.data.data.map(inv => <option key={inv.id} value={inv.id}>{inv.invoice_number} — ${(Number(inv.amount) - Number(inv.total_paid || 0)).toFixed(2)} outstanding</option>)}
+                  </select>
+                  {invoicesFailed && <p role="alert">Could not load invoices. <Button onClick={() => retryInvoices()}>Retry</Button></p>}
+                  {!invoicesLoading && !invoicesFailed && invoicesData?.data.data.length === 0 && <p>No matching open invoices.</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Amount ($)</Label>
-                    <Input type="number" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                    <Label htmlFor="payment-amount">Amount ($)</Label>
+                    <Input id="payment-amount" type="number" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                    <Label>Payment Date</Label>
-                    <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+                    <Label htmlFor="payment-date">Payment Date</Label>
+                    <Input id="payment-date" type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -121,10 +133,11 @@ export default function PaymentsPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Transaction ID / Check #</Label>
-                  <Input placeholder="TXN-123..." value={transactionId} onChange={(e) => setTransactionId(e.target.value)} />
+                  <Label htmlFor="payment-reference">Receipt / Transaction ID / Check #</Label>
+                  <Input id="payment-reference" placeholder="TXN-123..." value={transactionId} onChange={(e) => setTransactionId(e.target.value)} />
                 </div>
               </div>
+              {error && <p role="alert" className="text-destructive">{error}</p>}
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
                 <Button onClick={handleRecordPayment} disabled={isRecording}>
@@ -133,7 +146,7 @@ export default function PaymentsPage() {
                 </Button>
               </DialogFooter>
             </DialogContent>
-          </Dialog>
+          </Dialog>}
         </div>
       </div>
 
@@ -146,13 +159,13 @@ export default function PaymentsPage() {
                 placeholder="Search by transaction ID..."
                 className="pl-10"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1) }}
               />
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isError ? <p role="alert">Could not load payments. <Button onClick={() => refetch()}>Try again</Button></p> : isLoading ? (
             <div className="space-y-4">
               {[1, 2, 3, 4, 5].map((i) => (
                 <Skeleton key={i} className="h-12 w-full" />
@@ -168,24 +181,24 @@ export default function PaymentsPage() {
                     <TableHead>Amount</TableHead>
                     <TableHead>Method</TableHead>
                     <TableHead>Transaction ID</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>Correction history</TableHead>
+
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paymentsData?.data?.data?.map((payment) => (
                     <TableRow key={payment.id}>
-                      <TableCell>{payment.payment_date}</TableCell>
+                      <TableCell>{payment.payment_date.slice(0, 10)}</TableCell>
                       <TableCell className="font-medium">{payment.invoice?.invoice_number || "N/A"}</TableCell>
-                      <TableCell className="text-emerald-600 font-semibold">${Number(payment.amount).toLocaleString()}</TableCell>
+                      <TableCell className="text-emerald-600 font-semibold">${Number(payment.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="capitalize">
                           {payment.payment_method.replace('_', ' ')}
                         </Badge>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{payment.transaction_id || "-"}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">Details</Button>
-                      </TableCell>
+                      <TableCell>{payment.reversal_of_id ? <span>Reversal of receipt #{payment.reversal_of_id}: {payment.notes}</span> : payment.reversal ? <span>Reversed: {payment.reversal.notes}</span> : canRecord ? <Button variant="outline" size="sm" aria-label={`Correct ${payment.transaction_id}`} onClick={() => { setCorrection(payment); setReason(''); setCorrectionError('') }}>Correct receipt</Button> : <span>Recorded receipt</span>}</TableCell>
+
                     </TableRow>
                   ))}
                   {paymentsData?.data?.data?.length === 0 && (
@@ -199,6 +212,8 @@ export default function PaymentsPage() {
           )}
         </CardContent>
       </Card>
+      <div className="flex justify-between items-center"><Button variant="outline" disabled={page <= 1 || isLoading} onClick={() => setPage(p => p-1)}>Previous</Button><span>Page {page} of {paymentsData?.data.last_page || 1}</span><Button variant="outline" disabled={isLoading || isError || !paymentsData || page >= paymentsData.data.last_page} onClick={() => setPage(p => p+1)}>Next</Button></div>
+      <Dialog open={!!correction} onOpenChange={open => { if (!open && !reversing) setCorrection(null) }}><DialogContent><DialogHeader><DialogTitle>Reverse recorded receipt</DialogTitle><DialogDescription>This adds an equal negative entry and reopens the invoice balance. The original receipt remains in history. No money is refunded or transferred.</DialogDescription></DialogHeader><p>{correction?.transaction_id} · ${Number(correction?.amount || 0).toFixed(2)}</p><Label htmlFor="correction-reason">Correction reason</Label><Input id="correction-reason" value={reason} onChange={e => setReason(e.target.value)} disabled={reversing} />{correctionError && <p role="alert">{correctionError}</p>}<DialogFooter><Button variant="outline" disabled={reversing} onClick={() => setCorrection(null)}>Cancel</Button><Button disabled={reversing} onClick={reverseReceipt}>Reverse receipt entry</Button></DialogFooter></DialogContent></Dialog>
     </div>
   )
 }

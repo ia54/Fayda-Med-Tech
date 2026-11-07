@@ -1,0 +1,173 @@
+{
+  "date": "2026-10-20",
+  "conditional_target_date": "2026-10-27",
+  "timezone": "America/New_York",
+  "source_head": "6d4ff872eede0973f3de32e25fce7a53019886b9",
+  "browser_observed_clean_git_status": "",
+  "optimized_build_application_commit": "5ccae8f",
+  "later_source_changes": "browser runner only; then documentation/evidence",
+  "browser_evidence": "readiness-20261020/site-readiness-result.json",
+  "browser_scope": {
+    "visible_roles": [
+      "pharmacist",
+      "pharmacy_technician"
+    ],
+    "viewports": [
+      {
+        "role": "pharmacist",
+        "viewport": {
+          "width": 1440,
+          "height": 1100
+        },
+        "dialog": {
+          "x": 384,
+          "y": 110,
+          "width": 672,
+          "height": 880
+        }
+      },
+      {
+        "role": "technician",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "dialog": {
+          "x": 19.5,
+          "y": 63.3046875,
+          "width": 351,
+          "height": 717.390625
+        }
+      }
+    ],
+    "seeded_authentication": true,
+    "login_mfa_verified": false,
+    "retry": "one-shot injected HTTP 500 then real API retry",
+    "keyboard_escape_and_focus_return": true,
+    "denied_role_browser_fetch": {
+      "client": 403,
+      "attorney": 403,
+      "firm_admin": 403,
+      "provider": 403,
+      "biller": 403,
+      "platform_admin": 403
+    },
+    "unchanged_protected_tables": 79,
+    "source_file_hashes": 727,
+    "asset_hashes": {
+      "admin-panel/app/globals.css": "68520bc29940c0672356ee0797276bc2ce7a72a66ad9727022996efef9423482",
+      "admin-panel/package.json": "bf8ef0236ed11bf8f0f15eae03bfb9c4a5aed4ffac82a2532c2b202af6eee503",
+      "admin-panel/pnpm-lock.yaml": "9041df02daa7cc17596ad4322e075f49f97b4afc71871d8db854b85d5ce1f259",
+      "admin-panel/pnpm-workspace.yaml": "c137bf02e1d59d82e07131b0128756ed8dd5302bbbcbfb647c355f6568a2131e",
+      "admin-panel/patches/braces@3.0.3.patch": "3d857c3d76cc5c6a762599ba26d522b234f01fba5ae3548b49615f5700a252dc"
+    },
+    "clinical_operational_release_enabled": false
+  },
+  "api_checks": {
+    "SQLite": {
+      "tests": 3,
+      "assertions": 36
+    },
+    "MySQL 8.0.46": {
+      "tests": 3,
+      "assertions": 36
+    },
+    "MariaDB 10.11.19": {
+      "tests": 3,
+      "assertions": 36
+    }
+  },
+  "node_checks": {
+    "dependencies": 3,
+    "session": 5,
+    "documents": 2,
+    "typecheck": "passed",
+    "optimized_build_routes": 120,
+    "lint": "skipped_by_existing_configuration_not_claimed_passed"
+  },
+  "synthetic_recovery": {
+    "engines": [
+      "MySQL 8.0.46",
+      "MariaDB 10.11.19"
+    ],
+    "tables_rows_and_schema_matched_per_engine": 141,
+    "private_file_bytes_equal": true,
+    "four_additive_migrations_legacy_values_preserved": true,
+    "production_recovery_verified": false,
+    "GITHUB_ACTIONS_variable": "local disposable guard only; not hosted evidence"
+  },
+  "source_only_package": {
+    "archive": "/workspace/.cloud-tools/continuation-20261020/source-6d4ff872eede0973f3de32e25fce7a53019886b9.tar.gz",
+    "commit": "6d4ff872eede0973f3de32e25fce7a53019886b9",
+    "files": 1215,
+    "migrations": 137,
+    "production_ready": false,
+    "sha256": "736e64ecdab5853bb8c3e76fc3328259d2ceaaa7a652df2e73e5f8efc29ac556",
+    "source_only": true,
+    "tree": "f0fbe7415c11fb8173db00617ef25af108ea359c"
+  },
+  "source_only_package_verification": {
+    "commit": "6d4ff872eede0973f3de32e25fce7a53019886b9",
+    "files": 1215,
+    "production_ready": false,
+    "sha256": "736e64ecdab5853bb8c3e76fc3328259d2ceaaa7a652df2e73e5f8efc29ac556",
+    "source_only": true,
+    "verified": true
+  },
+  "fixture_database": {
+    "path": "/workspace/.cloud-tools/site-readiness-20261020-release/shared.sqlite",
+    "sha256": "7c1bed75255a63c8137c9bfaeeb34ca2e2eae286e27f00e1052bed6b7164437c",
+    "synthetic_only": true,
+    "distribution": "retained private local fixture; sessions/signing keys excluded from review evidence"
+  },
+  "hosted_ci": {
+    "verified_head": "ce839f40d36656c147166d63c88689071ee40617",
+    "six_checks": "SUCCESS",
+    "source": "Owner independent verification reported October 20",
+    "source_head_or_later_checks": "unverified"
+  },
+  "environment": {
+    "saved_draft_revision": 12,
+    "saved_repository_ref": "ce839f40d36656c147166d63c88689071ee40617",
+    "install_script_set": true,
+    "start_skill_set": true,
+    "privacy": "Only me owner-reported",
+    "secret_and_runtime_variable_requirements": 0,
+    "prepared_start_update": "/workspace/.cloud-tools/start-skill-20261020-prepared.md",
+    "new_update_saved": false,
+    "reason": "Preserve owner-reported unsaved UI changes; coordination question pending",
+    "publication": "unverified",
+    "fresh_task_restoration": "unverified",
+    "supported_publication_operation_recovery_tool": false
+  },
+  "remaining_browser_acceptance": [
+    "Owner walkthrough/feedback and synthetic pilot acceptance",
+    "Full accessibility conformance, physical/mobile devices and printers/scanners",
+    "Approved real-origin hosting and configured services",
+    "Per-site sterile/nonsterile, controlled/hazardous clinical and professional acceptance; no live dispensing enabled"
+  ],
+  "retained_files": {
+    "admin-audit-final.json": "a0e8eba670659373054814305f09a727bd2bcdab8a1e36be5fcf65b6794f9a44",
+    "admin-build-layout.log": "e7f38169272600750bd27f7e29b3f4f5f4ddd96c234c6f5b313088314d830026",
+    "admin-frozen-accepted.log": "ff77f87c288e379f9689e7dc885a29bbbed9027214bd89ec38478c332326b79c",
+    "admin-typecheck.log": "cfef3c099df76daf08e5abe411d1792fc42f15135e082e3d5d45d94461194187",
+    "braces-accepted.log": "1927869d2455165301cb319e858f62a09d803610a563ff50d34e0802dc8a060e",
+    "composer-audit.log": "df132c0eb6f2d4c7367fccaeb8ce636e02f70dc9bff0d4df12eed4e1b75dc751",
+    "dependency-evidence.json": "8fedaa14a344d6bf2b63754d3132a4d67bb8234b07880b8f4cff699973ebaf79",
+    "document-tests.log": "0d818a8133bec4aff2a31da274763541e7fe3df2ef28bd89909281c781107681",
+    "mariadb-restore.log": "9b9b2cc208222366503899d40c9d833c60edfaa689b98c8ff8ef01a443942196",
+    "mariadb-upgrade.log": "29e6dd5fc7f0bd7f5632271faa1c03249f56cbd2a6e11157d606d11938d8f8ff",
+    "mysql-restore.log": "9b9b2cc208222366503899d40c9d833c60edfaa689b98c8ff8ef01a443942196",
+    "mysql-upgrade.log": "29e6dd5fc7f0bd7f5632271faa1c03249f56cbd2a6e11157d606d11938d8f8ff",
+    "role-smoke.log": "b0af16419c2f853fe4c31b348c21c26cf03692f96f2551d44e61318d28074797",
+    "route-smoke-final.log": "e2576306236ce138766b320f1da613e2c8c8a38ab282e98ee9cc247dbb108929",
+    "session-tests.log": "40323200e06eb8db990fad2cce51c1bb337ba3e7c836d758e8699e7420ce9c6e",
+    "site-mariadb.log": "6a55047d4a8eb9a38e2969d4f1650e0675e3144058bff208caa2fc2181749703",
+    "site-mysql.log": "8250537704dd1aef301561f7fe55e088c3252e5e69f6e4da6ad27e956f0b2488",
+    "site-phpunit.log": "7b5f55f762e7a99c50d43fc76f067fe75b9a9804878ff393cf7a427fdb9371a7",
+    "site-readiness-pharmacist.png": "5f1978bdb5b7776fbf10c3f5866c521e8cb46fa877fe14f6521367cebec45acb",
+    "site-readiness-result.json": "999650ab1070a4f279916498f73ad58aa31c516e8b4d7d03d8d72a90f5c9776f",
+    "site-readiness-technician-scrolled.png": "8b7718eea788fad720536e4df07dd2bd545ed2748b40cab811d52a3e13f1bb05",
+    "site-readiness-technician.png": "728c6cc744dd991f0825bac939e0ecc3126bcf42fbdb46e7265af45f58dacf5d"
+  }
+}

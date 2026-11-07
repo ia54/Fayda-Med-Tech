@@ -1,0 +1,2 @@
+PASS: 141 restored tables match every row and schema definition.
+PASS: synthetic database restored into a separate target and private-file archive restored byte-for-byte.

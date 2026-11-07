@@ -24,6 +24,7 @@ import { useGetCaseByIdQuery } from "@/store/api/casesApiSlice"
 import { useGetDocumentsQuery } from "@/store/api/billingApiSlice"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CaseInsuranceTab } from "@/components/cases/tabs/CaseInsuranceTab"
+import { AuthenticatedDocumentPreview } from "@/components/AuthenticatedDocumentPreview"
 import { CaseLienTab } from "@/components/cases/tabs/CaseLienTab"
 import { CaseSettlementTab } from "@/components/cases/tabs/CaseSettlementTab"
 import { CaseMedicalTab } from "@/components/cases/tabs/CaseMedicalTab"
@@ -40,11 +41,13 @@ export default function CaseDetailsPage() {
   const params = useParams()
   const router = useRouter()
   const caseId = parseInt(params.id as string)
+  const [documentPage, setDocumentPage] = useState(1)
+  const [documentSearch, setDocumentSearch] = useState("")
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isAddPartyOpen, setIsAddPartyOpen] = useState(false)
   
   const { data: caseData, isLoading, error, refetch } = useGetCaseByIdQuery(caseId)
-  const { data: docsResponse, isLoading: isDocsLoading } = useGetDocumentsQuery({ case_id: caseId })
+  const { currentData: docsResponse, isFetching: isDocsLoading, isError: documentsError, refetch: reloadDocuments } = useGetDocumentsQuery({ case_id: caseId, page: documentPage, per_page: 10, search: documentSearch })
   const user = useSelector((state: RootState) => state.auth.user)
   const isClient = user?.role === 'client'
   
@@ -206,7 +209,7 @@ export default function CaseDetailsPage() {
                 </div>
                 <div>
                   <p className="text-[10px] text-muted-foreground uppercase font-bold">Total Case Value</p>
-                  <p className="text-sm font-bold text-emerald-900">${(c.total_case_value || 0).toLocaleString()}</p>
+                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">${(c.total_case_value || 0).toLocaleString()}</p>
                 </div>
               </div>
             </CardContent>
@@ -215,32 +218,32 @@ export default function CaseDetailsPage() {
 
         {/* Tabs Section */}
         <Tabs defaultValue="parties" className="w-full">
-          <TabsList className="bg-emerald-50/50 p-1 border border-emerald-100">
-            <TabsTrigger value="parties" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700">
+          <TabsList className="flex w-full h-auto flex-wrap justify-start bg-emerald-50/50 dark:bg-slate-900 p-1 border border-emerald-100 dark:border-emerald-900/50 dark:text-slate-300">
+            <TabsTrigger value="parties" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-slate-800 dark:data-[state=active]:text-emerald-200">
               <User className="h-4 w-4 mr-2" />
               Parties
             </TabsTrigger>
-            <TabsTrigger value="documents" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700">
+            <TabsTrigger value="documents" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-slate-800 dark:data-[state=active]:text-emerald-200">
               <FileText className="h-4 w-4 mr-2" />
               Documents
             </TabsTrigger>
-            <TabsTrigger value="insurance" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700">
+            <TabsTrigger value="insurance" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-slate-800 dark:data-[state=active]:text-emerald-200">
               <ShieldAlert className="h-4 w-4 mr-2" />
               Insurance
             </TabsTrigger>
-            <TabsTrigger value="liens" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700">
+            <TabsTrigger value="liens" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-slate-800 dark:data-[state=active]:text-emerald-200">
               <Scale className="h-4 w-4 mr-2" />
               Liens
             </TabsTrigger>
-            <TabsTrigger value="settlement" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700">
+            <TabsTrigger value="settlement" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-slate-800 dark:data-[state=active]:text-emerald-200">
               <DollarSign className="h-4 w-4 mr-2" />
               Settlement
             </TabsTrigger>
-            <TabsTrigger value="medical" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700">
+            <TabsTrigger value="medical" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-slate-800 dark:data-[state=active]:text-emerald-200">
               <History className="h-4 w-4 mr-2" />
               Medical
             </TabsTrigger>
-            <TabsTrigger value="timeline" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700">
+            <TabsTrigger value="timeline" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 dark:data-[state=active]:bg-slate-800 dark:data-[state=active]:text-emerald-200">
               <Clock className="h-4 w-4 mr-2" />
               Timeline
             </TabsTrigger>
@@ -286,44 +289,47 @@ export default function CaseDetailsPage() {
           </TabsContent>
 
           <TabsContent value="documents" className="mt-6">
-            <Card className="border-emerald-100 bg-white/70 backdrop-blur-sm shadow-sm overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between pb-4">
+            <Card className="border-emerald-100 dark:border-emerald-900/50 bg-white/70 dark:bg-slate-900/70 backdrop-blur-sm shadow-sm overflow-hidden">
+              <CardHeader className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between pb-4">
                 <div>
                   <CardTitle className="text-lg">Case Documents</CardTitle>
-                  <CardDescription>Legal filings, medical records, and correspondence</CardDescription>
+                  <CardDescription className="dark:text-slate-300">Legal filings, medical records, and correspondence</CardDescription>
                 </div>
                 <Button 
                   size="sm" 
                   className="bg-emerald-600 hover:bg-emerald-700" 
-                  onClick={() => router.push('/dashboard/legal/documents/upload')}
+                  onClick={() => router.push(`/dashboard/legal/documents/upload?case_id=${caseId}`)}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Upload Document
                 </Button>
               </CardHeader>
               <CardContent className="p-0">
-                {isDocsLoading ? (
+                <div className="p-4"><input aria-label="Search case documents" className="w-full rounded-md border bg-background p-2 text-sm" placeholder="Search document titles or filenames" value={documentSearch} onChange={e => { setDocumentSearch(e.target.value); setDocumentPage(1) }} /></div>
+                {documentsError ? <div className="p-6"><p role="alert">Could not load case documents.</p><Button onClick={() => reloadDocuments()}>Try again</Button></div> : isDocsLoading ? (
                   <div className="p-8 space-y-4">
                     {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
                   </div>
                 ) : documents.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-emerald-50/50 text-emerald-900 font-semibold uppercase text-[10px] tracking-wider">
+                  <div>
+                    <div className="space-y-3 p-4 md:hidden">{documents.map((doc: any) => <article key={doc.id} className="rounded border p-3 space-y-2"><p className="font-medium break-words">{doc.title || doc.original_name}</p><p className="text-sm capitalize">{doc.document_status || 'available'}</p><AuthenticatedDocumentPreview id={doc.id} title={doc.title || doc.original_name} /></article>)}</div>
+                    <div className="hidden md:block overflow-x-auto"><table className="w-full text-sm text-left">
+                      <thead className="bg-emerald-50/50 dark:bg-emerald-950/50 text-emerald-900 dark:text-emerald-100 font-semibold uppercase text-[10px] tracking-wider">
                         <tr>
                           <th className="px-6 py-3">Document Name</th>
                           <th className="px-6 py-3">Category</th>
                           <th className="px-6 py-3">Status</th>
                           <th className="px-6 py-3">Date</th>
+                          <th className="px-6 py-3">Open</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-emerald-50">
+                      <tbody className="divide-y divide-emerald-50 dark:divide-emerald-900/50">
                         {documents.map((doc: any) => (
-                          <tr key={doc.id} className="hover:bg-emerald-50/30 transition-colors">
+                          <tr key={doc.id} className="hover:bg-emerald-50/30 dark:hover:bg-emerald-950/30 transition-colors">
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
                                 <FileText className="h-4 w-4 text-emerald-600" />
-                                <span className="font-medium text-emerald-950">{doc.original_name}</span>
+                                <span className="font-medium text-emerald-950 dark:text-emerald-100">{doc.original_name}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4">
@@ -343,20 +349,26 @@ export default function CaseDetailsPage() {
                             <td className="px-6 py-4 text-muted-foreground whitespace-nowrap">
                               {format(new Date(doc.created_at), "MMM dd, yyyy")}
                             </td>
+                            <td className="px-4 py-4"><AuthenticatedDocumentPreview id={doc.id} title={doc.title || doc.original_name} /></td>
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </table></div>
                   </div>
                 ) : (
                   <div className="p-12 text-center space-y-4">
                     <FileText className="h-12 w-12 text-emerald-100 mx-auto" />
                     <div className="space-y-1">
-                      <h3 className="font-semibold text-emerald-900">No Documents Found</h3>
+                      <h3 className="font-semibold text-emerald-900 dark:text-emerald-100">No Documents Found</h3>
                       <p className="text-sm text-muted-foreground">Upload medical records or filings to connect them with this case.</p>
                     </div>
                   </div>
                 )}
+                <div className="flex justify-between items-center gap-2 p-4">
+                  <Button variant="outline" disabled={documentPage <= 1 || isDocsLoading} onClick={() => setDocumentPage(p => p - 1)}>Previous</Button>
+                  <span className="text-sm">Page {documentPage} of {docsResponse?.data?.pagination?.last_page || 1}</span>
+                  <Button variant="outline" disabled={isDocsLoading || documentPage >= (docsResponse?.data?.pagination?.last_page || 1)} onClick={() => setDocumentPage(p => p + 1)}>Next</Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

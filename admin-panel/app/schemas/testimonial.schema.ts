@@ -6,7 +6,7 @@ const testimonialValidationSchema = z.object({
     comment: z.string().trim().min(1, { message: "Comment is required!" }),
     commented_by: z.string().trim().min(1, { message: "Commented By is required!" }),
     position: z.string().trim().min(1, { message: "Position is required!" }),
-    status: z.boolean({ invalid_type_error: "Status must be a boolean!" }).optional(),
+    status: z.boolean({ error: "Status must be a boolean!" }).optional(),
 });
 
 

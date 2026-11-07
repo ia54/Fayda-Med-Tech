@@ -21,7 +21,9 @@ export default function ClientDocumentUploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [dragActive, setDragActive] = useState(false)
 
-  const { data: casesData } = useGetClientCasesQuery({})
+  const [caseSearch, setCaseSearch] = useState("")
+  const [error, setError] = useState("")
+  const { data: casesData, isFetching: casesLoading, isError: casesFailed, refetch } = useGetClientCasesQuery({search: caseSearch, per_page: 50})
   const [uploadDocument, { isLoading: isUploading }] = useUploadDocumentMutation()
 
   const cases = casesData?.data || []
@@ -40,6 +42,7 @@ export default function ClientDocumentUploadPage() {
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
+    if (isUploading) return
     if (e.dataTransfer.files?.[0]) {
       setFile(e.dataTransfer.files[0])
       if (!title) setTitle(e.dataTransfer.files[0].name.replace(/\.[^/.]+$/, ""))
@@ -54,15 +57,20 @@ export default function ClientDocumentUploadPage() {
   }
 
   const handleUpload = async () => {
-    if (!file || !title) {
+    setError("")
+    if (isUploading) return
+    if (!file || !title.trim()) {
       toast({ title: "Missing fields", description: "Please provide a title and select a file.", variant: "destructive" })
       return
     }
 
+    if (file.size > 20 * 1024 * 1024) { setError("Choose a file no larger than 20 MB."); return }
+    if (!/\.(pdf|jpe?g|png|docx?)$/i.test(file.name)) { setError("Choose a PDF, JPG, PNG, DOC or DOCX file."); return }
+
     const formData = new FormData()
     formData.append("file", file)
-    formData.append("title", title)
-    if (selectedCase) {
+    formData.append("title", title.trim())
+    if (selectedCase && selectedCase !== "none") {
       formData.append("metadata[case_id]", selectedCase)
     }
 
@@ -71,6 +79,7 @@ export default function ClientDocumentUploadPage() {
       toast({ title: "Success", description: "Document uploaded successfully!" })
       router.push("/dashboard/client/documents")
     } catch (err: any) {
+      setError(Object.values(err.data?.errors || {}).flat().join(" ") || err.data?.message || "Upload failed. Please try again.")
       toast({
         title: "Upload failed",
         description: err.data?.message || "Failed to upload document. Please try again.",
@@ -119,7 +128,7 @@ export default function ClientDocumentUploadPage() {
                   <p className="font-bold text-slate-900 dark:text-white">{file.name}</p>
                   <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setFile(null)}>
+                <Button variant="outline" size="sm" disabled={isUploading} onClick={() => setFile(null)}>
                   Remove
                 </Button>
               </div>
@@ -133,10 +142,10 @@ export default function ClientDocumentUploadPage() {
                   <p className="text-sm text-muted-foreground mt-1">or click to browse</p>
                 </div>
                 <Input
-                  type="file"
+                  type="file" aria-label="Choose document" disabled={isUploading}
                   className="absolute inset-0 opacity-0 cursor-pointer"
                   onChange={handleFileSelect}
-                  accept=".pdf,.jpg,.jpeg,.png,.tiff,.doc,.docx"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                 />
               </div>
             )}
@@ -146,7 +155,7 @@ export default function ClientDocumentUploadPage() {
           <div className="space-y-2">
             <Label htmlFor="title">Document Title *</Label>
             <Input
-              id="title"
+              id="title" maxLength={255} disabled={isUploading}
               placeholder="e.g. MRI Results - March 2026"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -155,13 +164,16 @@ export default function ClientDocumentUploadPage() {
 
           {/* Case Association */}
           <div className="space-y-2">
-            <Label>Associate with Case (Optional)</Label>
-            <Select value={selectedCase} onValueChange={setSelectedCase}>
-              <SelectTrigger>
+            <Label htmlFor="case-search">Find your case (optional)</Label>
+            <Input id="case-search" value={caseSearch} disabled={isUploading} onChange={e => setCaseSearch(e.target.value)} placeholder="Search case number or title" />
+            <Label htmlFor="upload-case">Associate with Case (Optional)</Label>
+            <Select disabled={isUploading || casesLoading || casesFailed} value={selectedCase} onValueChange={setSelectedCase}>
+              <SelectTrigger id="upload-case">
                 <SelectValue placeholder="Select a case..." />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No specific case</SelectItem>
+                {selectedCase && selectedCase !== "none" && !cases.some(c => String(c.id) === selectedCase) && <SelectItem value={selectedCase}>Selected case #{selectedCase}</SelectItem>}
                 {cases.map((c: any) => (
                   <SelectItem key={c.id} value={String(c.id)}>
                     {c.case_number} — {c.title}
@@ -171,6 +183,9 @@ export default function ClientDocumentUploadPage() {
             </Select>
           </div>
 
+          <p className="text-sm text-muted-foreground">PDF, JPG, PNG, DOC or DOCX, up to 20 MB. Uploading does not submit a claim or request a signature.</p>
+          {casesFailed && <p role="alert">Could not load cases. <Button variant="outline" onClick={() => refetch()}>Retry cases</Button></p>}
+          {error && <p role="alert" className="text-destructive">{error}</p>}
           <div className="flex gap-3 pt-2">
             <Button variant="outline" asChild className="flex-1">
               <Link href="/dashboard/client/documents">Cancel</Link>
@@ -178,7 +193,7 @@ export default function ClientDocumentUploadPage() {
             <Button
               className="flex-1 bg-primary hover:bg-primary/90"
               onClick={handleUpload}
-              disabled={isUploading || !file || !title}
+              disabled={isUploading || casesLoading || casesFailed || !file || !title.trim()}
             >
               {isUploading ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Uploading...</>

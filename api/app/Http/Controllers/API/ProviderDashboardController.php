@@ -49,7 +49,7 @@ class ProviderDashboardController extends Controller
                         'id' => 'CLM-' . $invoice->invoice_number,
                         'patient' => $invoice->case ? $invoice->case->title : 'Unknown Patient',
                         'amount' => '$' . number_format($invoice->amount, 2),
-                        'payer' => $invoice->metadata['payer'] ?? 'Blue Cross',
+                        'payer' => $invoice->metadata['payer'] ?? 'Not recorded',
                         'status' => ucfirst($invoice->status),
                         'date' => $invoice->created_at->format('Y-m-d'),
                     ];
@@ -70,18 +70,22 @@ class ProviderDashboardController extends Controller
                     ];
                 });
 
-            // 4. Monthly Revenue (Last 6 months)
+            // Group by year and month; both local SQLite and production MySQL are supported.
+            $monthExpression = DB::connection()->getDriverName() === 'sqlite'
+                ? "strftime('%Y-%m', payment_date)"
+                : "DATE_FORMAT(payment_date, '%Y-%m')";
             $monthlyRevenue = Payment::whereHas('invoice', function($q) use ($organizationId) {
                 $q->where('organization_id', $organizationId);
             })
-            ->select(
-                DB::raw('MONTHNAME(payment_date) as month'),
-                DB::raw('SUM(amount) as total')
-            )
-            ->where('payment_date', '>=', now()->subMonths(6))
-            ->groupBy('month')
-            ->orderBy('payment_date')
-            ->get();
+                ->selectRaw($monthExpression . ' as month_key, SUM(amount) as total')
+                ->where('payment_date', '>=', now()->subMonths(6))
+                ->groupByRaw($monthExpression)
+                ->orderBy('month_key')
+                ->get()
+                ->map(fn ($row) => [
+                    'month' => \Carbon\Carbon::createFromFormat('!Y-m', $row->month_key)->format('M Y'),
+                    'total' => $row->total,
+                ]);
 
             // 5. Status Distribution
             $statusDistribution = Invoice::where('organization_id', $organizationId)
@@ -116,7 +120,7 @@ class ProviderDashboardController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'Failed to retrieve provider statistics',
-                'error' => $e->getMessage()
+                // Internal exception details must not be exposed to portal users.
             ], 500);
         }
     }

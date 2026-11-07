@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
@@ -138,7 +139,8 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->json('default_columns')->nullable();
             $table->json('filters')->nullable();
-            $table->json('available_formats')->default('["pdf","excel","csv"]');
+            // MySQL 8 requires JSON defaults to be expressions, even for literals.
+            $table->json('available_formats')->default(new Expression("('[\"pdf\",\"excel\",\"csv\"]')"));
             $table->boolean('is_system')->default(false);
             $table->boolean('is_active')->default(true);
             $table->timestamps();

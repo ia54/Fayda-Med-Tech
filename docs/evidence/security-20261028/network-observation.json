@@ -1,0 +1,32 @@
+{
+  "observed_at_utc": "2026-10-28 05:43:53 UTC",
+  "observations_current": true,
+  "phase": "running",
+  "spec_revision": "1",
+  "observed_spec_revision": "1",
+  "network_state": "enforced",
+  "mode": "restricted",
+  "presets": [
+    "package_managers"
+  ],
+  "custom_allowed_hosts": [],
+  "approved_custom_hosts_present": {
+    "api.github.com": false,
+    "packagist.org": false
+  },
+  "desired_draft_custom_hosts": [
+    "api.github.com",
+    "packagist.org"
+  ],
+  "runtime_apply_or_reload_tool_exposed": false,
+  "github_api_request": "Denied by proxy (403); no successful origin response",
+  "composer_audit_exit_code": 100,
+  "composer_audit": "CONNECT tunnel denied (403); result unknown, not clean",
+  "owner_reported_ui": {
+    "visibility": "Only me",
+    "unrestricted_internet": false,
+    "secrets": 0,
+    "draft_saved": true,
+    "published": false
+  }
+}

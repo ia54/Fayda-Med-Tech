@@ -4,6 +4,8 @@ import storage from 'redux-persist/lib/storage';
 import authReducer from './slices/authSlice';
 import modalReducer from './slices/modalSlice';
 import { apiSlice } from './api/apiSlice';
+import { browserSessionPersistence } from './browser-session.mjs';
+import { sessionBoundary } from './session-boundary.mjs';
 
 const rootPersistConfig = {
   key: 'root',
@@ -12,12 +14,14 @@ const rootPersistConfig = {
   whitelist: ['auth'],
 };
 
-const rootReducer = combineReducers({
+const combinedReducer = combineReducers({
   auth: authReducer,
   modal: modalReducer,
   [apiSlice.reducerPath]: apiSlice.reducer,
 });
 
+const boundary = sessionBoundary(apiSlice, combinedReducer);
+const rootReducer: typeof combinedReducer = boundary.reducer;
 const persistedReducer = persistReducer(rootPersistConfig, rootReducer);
 
 export const makeStore = () =>
@@ -28,7 +32,7 @@ export const makeStore = () =>
         serializableCheck: {
           ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
         },
-      }).concat(apiSlice.middleware),
+      }).concat(boundary.middleware, browserSessionPersistence, apiSlice.middleware),
     devTools: process.env.NODE_ENV !== 'production',
   });
 
